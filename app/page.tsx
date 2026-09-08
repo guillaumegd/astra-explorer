@@ -31,6 +31,7 @@ import {
   createGalaxy,
   type GalaxyEngine,
   type GalaxyMessages,
+  type SkyPointing,
   type SystemView,
 } from '@/lib/galaxy';
 import { formatNumber } from '@/lib/i18n';
@@ -44,6 +45,30 @@ function buildGalaxyMessages(t: Dictionary): GalaxyMessages {
     bodyKindLabel: (kind) => t.bodyKinds[kind],
     exploreBodyAria: t.system.exploreBodyAria,
   };
+}
+
+const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+
+// Renders the camera's live position in the scene as sky coordinates, so the
+// readout tracks the actual viewpoint instead of quoting a fixed, real target.
+function formatRightAscension(radians: number): string {
+  const twoPi = Math.PI * 2;
+  const turns = ((radians % twoPi) + twoPi) % twoPi;
+  const totalSeconds = Math.round((turns / twoPi) * 24 * 3600) % (24 * 3600);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${pad(h)}h ${pad(m)}m ${pad(s)}s`;
+}
+
+function formatDeclination(radians: number): string {
+  const degrees = (radians * 180) / Math.PI;
+  const sign = degrees < 0 ? '-' : '+';
+  const totalArcSeconds = Math.round(Math.abs(degrees) * 3600);
+  const d = Math.floor(totalArcSeconds / 3600);
+  const m = Math.floor((totalArcSeconds % 3600) / 60);
+  const s = totalArcSeconds % 60;
+  return `${sign}${pad(d)}° ${pad(m)}′ ${pad(s)}″`;
 }
 
 export default function Home() {
@@ -67,6 +92,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
+  const [pointing, setPointing] = useState<SkyPointing>({ ra: 0, dec: 0.62 });
   const galaxyMessages = useMemo(() => buildGalaxyMessages(t), [t]);
   // The mount effect below runs once; it reads translations through this ref
   // so a later locale change doesn't leave its error handlers stuck in
@@ -92,6 +118,7 @@ export default function Home() {
           setSystemView(view);
           if (view && window.innerWidth < 600) setPanel(false);
         },
+        setPointing,
       );
       queueMicrotask(() => {
         setReady(true);
@@ -223,7 +250,8 @@ export default function Home() {
           {t.intro.subtitleLine2}
         </p>
         <div className="coordinates">
-          RA 00h 42m 44s <span> / </span> DEC +41° 16′ 09″
+          RA {formatRightAscension(pointing.ra)} <span> / </span> DEC{' '}
+          {formatDeclination(pointing.dec)}
         </div>
       </section>
       <section className="body-inspector" aria-label={t.inspector.ariaLabel}>

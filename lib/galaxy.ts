@@ -33,6 +33,9 @@ export type GalaxyMessages = {
   exploreBodyAria: (name: string, kindLabel: string) => string;
 };
 export type SystemView = { root: BodyIdentity; members: BodyIdentity[] };
+// Where the camera currently sits relative to the galactic centre, expressed
+// the way a sky survey would: right ascension and declination, in radians.
+export type SkyPointing = { ra: number; dec: number };
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
   frameSystem: (scope: 'stellar' | 'local') => void;
@@ -147,6 +150,7 @@ export function createGalaxy(
   onSelection: (body: BodyIdentity | null) => void,
   onProximity: (value: number, kind: BodyIdentity['kind'] | null) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
+  onPointing: (pointing: SkyPointing) => void = () => {},
 ): GalaxyEngine {
   let messages = initialMessages;
   const renderer = new THREE.WebGLRenderer({
@@ -621,6 +625,7 @@ export function createGalaxy(
   let slowFrames = 0;
   let qualityCheck = 0;
   let lastFrame = performance.now();
+  let lastPointingReport = 0;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   let elapsed = 0,
     rotation = 0,
@@ -997,6 +1002,14 @@ export function createGalaxy(
     camera.updateProjectionMatrix();
     camera.lookAt(cameraTarget);
     camera.updateMatrixWorld();
+    if (now - lastPointingReport > 200) {
+      lastPointingReport = now;
+      const r = camera.position.length();
+      onPointing({
+        ra: Math.atan2(camera.position.x, camera.position.z),
+        dec: r > 1e-6 ? Math.asin(THREE.MathUtils.clamp(camera.position.y / r, -1, 1)) : 0,
+      });
+    }
     if (framed) {
       const position = new THREE.Vector3();
       guideParents.forEach((id, i) => {
