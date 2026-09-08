@@ -31,7 +31,7 @@ export function createStellarActivity(
     uColor: { value: new THREE.Color(color) },
     uActivity: {
       value:
-        kind === 'Naine rouge' ? 1.0 : kind === 'Naine blanche' ? 0.35 : 0.7,
+        kind === 'red-dwarf' ? 1.0 : kind === 'white-dwarf' ? 0.35 : 0.7,
     },
   };
   const coronaMaterial = new THREE.ShaderMaterial({

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Orbit,
   ArrowUpRight,
@@ -20,15 +20,34 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import {
   createAmbientSoundtrack,
   type AmbientSoundtrack,
 } from '@/lib/ambient-audio';
 import { Slider } from '@/components/ui/slider';
 import type { BodyIdentity } from '@/lib/stellar-lod';
-import { createGalaxy, type GalaxyEngine, type SystemView } from '@/lib/galaxy';
+import {
+  createGalaxy,
+  type GalaxyEngine,
+  type GalaxyMessages,
+  type SystemView,
+} from '@/lib/galaxy';
+import { formatNumber } from '@/lib/i18n';
+import { useLocale } from '@/lib/i18n/use-locale';
+import type { Dictionary } from '@/lib/i18n/types';
+
+function buildGalaxyMessages(t: Dictionary): GalaxyMessages {
+  return {
+    canvasHint: t.canvas.ariaLabel,
+    contextLost: t.canvas.contextLost,
+    bodyKindLabel: (kind) => t.bodyKinds[kind],
+    exploreBodyAria: t.system.exploreBodyAria,
+  };
+}
 
 export default function Home() {
+  const { locale, setLocale, t } = useLocale();
   const mount = useRef<HTMLDivElement>(null);
   const soundtrack = useRef<AmbientSoundtrack | null>(null);
   const [musicEnabled, setMusicEnabled] = useState(false);
@@ -48,17 +67,24 @@ export default function Home() {
   const [error, setError] = useState('');
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
+  const galaxyMessages = useMemo(() => buildGalaxyMessages(t), [t]);
+  // The mount effect below runs once; it reads translations through this ref
+  // so a later locale change doesn't leave its error handlers stuck in
+  // whichever language was active when the engine was first created.
+  const tRef = useRef(t);
+  useEffect(() => {
+    tRef.current = t;
+  });
   useEffect(() => {
     if (!mount.current) return;
     soundtrack.current = createAmbientSoundtrack(() => {
       setMusicEnabled(false);
-      setMusicError(
-        'Le son est indisponible. Réessayez en activant la musique.',
-      );
+      setMusicError(tRef.current.sound.unavailable);
     });
     try {
       engine.current = createGalaxy(
         mount.current,
+        buildGalaxyMessages(tRef.current),
         setError,
         setSelected,
         (value, kind) => soundtrack.current?.setProximity(value, kind),
@@ -75,11 +101,7 @@ export default function Home() {
         if (window.matchMedia('(max-width: 600px)').matches) setPanel(false);
       });
     } catch {
-      queueMicrotask(() =>
-        setError(
-          'Le rendu 3D ne peut pas démarrer. Activez l’accélération matérielle et rechargez la page.',
-        ),
-      );
+      queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
     }
     // Ambient music defaults to on; browsers block audio until a user gesture,
     // so this silently retries on the first interaction instead of erroring out.
@@ -115,6 +137,9 @@ export default function Home() {
   useEffect(() => {
     engine.current?.configure({ density, speed, tilt, paused, palette });
   }, [density, speed, tilt, paused, palette]);
+  useEffect(() => {
+    engine.current?.setMessages(galaxyMessages);
+  }, [galaxyMessages]);
   // Fades the interface out after a stretch of inactivity for an uninterrupted,
   // contemplative view; any activity brings it right back.
   useEffect(() => {
@@ -160,68 +185,78 @@ export default function Home() {
     <main
       className={`observatory ${immersive || idle ? 'immersive' : ''} ${systemView ? 'system-view' : ''}`}
     >
-      <div
-        ref={mount}
-        className="universe"
-        aria-label="Galaxie 3D interactive. Cliquez sur un astre pour le sélectionner, puis zoomez."
-      />
+      <div ref={mount} className="universe" aria-label={t.canvas.ariaLabel} />
       <div className="vignette" />
       <header className="topbar chrome">
         {/* oxlint-disable-next-line nextjs/no-html-link-for-pages -- Shared with the standalone static build, without a Next router. */}
-        <a className="brand" href="./" aria-label="Astra, accueil">
+        <a className="brand" href="./" aria-label={t.brand.home}>
           <Orbit size={27} />
           <span>
             ASTRA<span className="brand-dot">.</span>
           </span>
-          <span className="brand-caption">OBSERVATOIRE INTERACTIF</span>
+          <span className="brand-caption">{t.brand.caption}</span>
         </a>
         <div className="top-right">
           <span className="live">
-            <i /> SIMULATION EN DIRECT
+            <i /> {t.brand.live}
           </span>
           <span className="edition">EXP. 001</span>
+          <LanguageSwitcher
+            locale={locale}
+            onChange={setLocale}
+            label={t.language.label}
+          />
         </div>
       </header>
       <section className="intro chrome">
         <div className="eyebrow">
-          <span /> AU-DELÀ DU VISIBLE
+          <span /> {t.intro.eyebrow}
         </div>
         <h1>
-          Un univers.
+          {t.intro.titleLine1}
           <br />
-          <em>À portée de main.</em>
+          <em>{t.intro.titleLine2}</em>
         </h1>
         <p>
-          Explorez le mouvement des étoiles.
+          {t.intro.subtitleLine1}
           <br />
-          Un clic suffit à tout changer.
+          {t.intro.subtitleLine2}
         </p>
         <div className="coordinates">
           RA 00h 42m 44s <span> / </span> DEC +41° 16′ 09″
         </div>
       </section>
-      <section className="body-inspector" aria-label="Astre sélectionné">
+      <section className="body-inspector" aria-label={t.inspector.ariaLabel}>
         <div className="body-identity">
           <Crosshair size={16} />
           <div>
             <span className="eyebrow">
-              {selected ? selected.kind : 'EXPLORATION LIBRE'}
+              {selected ? t.bodyKinds[selected.kind] : t.inspector.freeExploration}
             </span>
             <strong>
-              {selected ? selected.name : 'Chaque point est un monde'}
+              {selected ? selected.name : t.inspector.everyPointIsAWorld}
             </strong>
           </div>
         </div>
         <p>
           {selected
-            ? `${selected.systemName} · ${selected.parentId === null ? 'Étoile centrale' : selected.kind === 'Satellite rocheux' ? 'Satellite de AST-' + String(selected.parentId + 1).padStart(6, '0') : 'Orbite autour de l’étoile'}`
-            : 'Sélectionnez un point, puis explorez sa surface.'}
+            ? `${selected.systemName} · ${
+                selected.parentId === null
+                  ? t.inspector.centralStar
+                  : selected.kind === 'rocky-moon'
+                    ? t.inspector.moonOf(
+                        'AST-' +
+                          String(selected.parentId + 1).padStart(6, '0'),
+                      )
+                    : t.inspector.orbitsTheStar
+              }`
+            : t.inspector.selectPrompt}
         </p>
         <div className="body-actions">
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Astre précédent"
+            aria-label={t.inspector.previousBody}
             onClick={() => engine.current?.nextBody(-1)}
           >
             <ChevronLeft />
@@ -230,13 +265,13 @@ export default function Home() {
             className="inspect-button"
             onClick={() => engine.current?.approach()}
           >
-            {selected ? 'Explorer cet astre' : 'Découvrir un astre'}
+            {selected ? t.inspector.exploreBody : t.inspector.discoverBody}
             <ArrowUpRight size={14} />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Astre suivant"
+            aria-label={t.inspector.nextBody}
             onClick={() => engine.current?.nextBody(1)}
           >
             <ChevronRight />
@@ -245,8 +280,12 @@ export default function Home() {
         {selected && (
           <div className="surface-camera-controls">
             <label id="tilt-label">
-              Inclinaison{' '}
-              <span>{tilt === null ? 'Auto · 60° max' : `${tilt}° max`}</span>
+              {t.inspector.tilt}{' '}
+              <span>
+                {tilt === null
+                  ? t.inspector.tiltAuto
+                  : t.inspector.tiltMax(tilt)}
+              </span>
             </label>
             <Slider
               aria-labelledby="tilt-label"
@@ -259,12 +298,14 @@ export default function Home() {
               }
             />
             <div>
-              <button onClick={() => setTilt(0)}>Vue verticale</button>
+              <button onClick={() => setTilt(0)}>
+                {t.inspector.verticalView}
+              </button>
               <button
                 aria-pressed={tilt === null}
                 onClick={() => setTilt(null)}
               >
-                Automatique
+                {t.inspector.automatic}
               </button>
             </div>
           </div>
@@ -275,33 +316,37 @@ export default function Home() {
             onClick={() => engine.current?.frameSystem('stellar')}
           >
             <Orbit size={13} />
-            Système stellaire
+            {t.inspector.stellarSystem}
           </Button>
           {selected && selected.parentId !== null && (
             <Button
               variant="ghost"
               onClick={() => engine.current?.frameSystem('local')}
             >
-              Planète et satellites
+              {t.inspector.planetAndMoons}
             </Button>
           )}
         </div>
         {systemView && (
           <output className="system-caption">
-            Vue de {systemView.root.name} · {systemView.members.length} astres ·
-            Cliquez sur un repère pour explorer
+            {t.inspector.systemCaption(
+              systemView.root.name,
+              systemView.members.length,
+            )}
           </output>
         )}
         {systemView && (
           <details className="system-members">
-            <summary>Voir les {systemView.members.length} astres</summary>
+            <summary>
+              {t.inspector.viewMembers(systemView.members.length)}
+            </summary>
             <div>
               {systemView.members.map((body) => (
                 <button
                   key={body.id}
                   onClick={() => engine.current?.inspectBody(body.id)}
                 >
-                  {body.name} · {body.kind}
+                  {body.name} · {t.bodyKinds[body.kind]}
                 </button>
               ))}
             </div>
@@ -313,23 +358,23 @@ export default function Home() {
             className="overview-button"
             onClick={() => engine.current?.overview()}
           >
-            Retour à la galaxie
+            {t.inspector.backToGalaxy}
           </Button>
         )}
       </section>
       <aside
         className={`control-panel chrome ${panel ? '' : 'collapsed'}`}
-        aria-label="Paramètres de la galaxie"
+        aria-label={t.panel.ariaLabel}
       >
         <div className="panel-heading">
           <div>
-            <span className="eyebrow">VOTRE UNIVERS</span>
-            <h2>Paramètres orbitaux</h2>
+            <span className="eyebrow">{t.panel.eyebrow}</span>
+            <h2>{t.panel.heading}</h2>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Masquer les paramètres"
+            aria-label={t.panel.hide}
             onClick={() => setPanel(false)}
           >
             <X />
@@ -337,8 +382,8 @@ export default function Home() {
         </div>
         <div className="control">
           <div className="control-label">
-            <span id="density-label">Densité stellaire</span>
-            <output>{new Intl.NumberFormat('fr-FR').format(density)}</output>
+            <span id="density-label">{t.panel.density}</span>
+            <output>{formatNumber(density, locale)}</output>
           </div>
           <Slider
             aria-labelledby="density-label"
@@ -349,13 +394,13 @@ export default function Home() {
             onValueChange={(v) => setDensity(Array.isArray(v) ? v[0] : v)}
           />
           <div className="scale">
-            <span>Éparse</span>
-            <span>Dense</span>
+            <span>{t.panel.sparse}</span>
+            <span>{t.panel.dense}</span>
           </div>
         </div>
         <div className="control">
           <div className="control-label">
-            <span id="speed-label">Vitesse de rotation</span>
+            <span id="speed-label">{t.panel.speed}</span>
             <output>
               {speed.toFixed(1)}
               <small> ×</small>
@@ -370,14 +415,14 @@ export default function Home() {
             onValueChange={(v) => setSpeed(Array.isArray(v) ? v[0] : v)}
           />
           <div className="scale">
-            <span>Immobile</span>
-            <span>Rapide</span>
+            <span>{t.panel.still}</span>
+            <span>{t.panel.fast}</span>
           </div>
         </div>
         <div className="palette-row">
-          <span>Spectre lumineux</span>
+          <span>{t.panel.spectrum}</span>
           <div className="palettes">
-            {['Boréal', 'Supernova', 'Émeraude'].map((name, i) => (
+            {t.panel.paletteNames.map((name, i) => (
               <Button
                 key={name}
                 className={`swatch swatch-${i} ${palette === i ? 'selected' : ''}`}
@@ -391,13 +436,14 @@ export default function Home() {
         </div>
         <div className="panel-footer">
           <span>
-            <i /> {paused ? 'Rotation suspendue' : 'Système en équilibre'}
+            <i />{' '}
+            {paused ? t.panel.rotationPaused : t.panel.systemBalanced}
           </span>
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Réinitialiser les paramètres"
-            title="Réinitialiser"
+            aria-label={t.panel.resetAria}
+            title={t.panel.resetTitle}
             onClick={reset}
           >
             <RotateCcw size={14} />
@@ -410,19 +456,19 @@ export default function Home() {
           variant="outline"
           onClick={() => setPanel(true)}
         >
-          <SlidersHorizontal /> Paramètres
+          <SlidersHorizontal /> {t.reopen}
         </Button>
       )}
       <div className="bottom-hint chrome">
         <span className="mouse-icon" />
-        <span>Clic : sélectionner</span>
+        <span>{t.hints.select}</span>
         <span className="hint-divider" />
-        <span className="secondary-hint">Molette ou pincement pour zoomer</span>
+        <span className="secondary-hint">{t.hints.zoom}</span>
       </div>
       <footer className="bottom-bar chrome">
         <div className="telemetry">
           <span>
-            <b>{new Intl.NumberFormat('fr-FR').format(density)}</b> PARTICULES
+            <b>{formatNumber(density, locale)}</b> {t.telemetry.particles}
           </span>
           <span className="telemetry-line" />
           <a
@@ -434,15 +480,13 @@ export default function Home() {
             Guillaume Girard
           </a>
         </div>
-        <span className="footer-note">L’INFINI COMMENCE ICI</span>
+        <span className="footer-note">{t.telemetry.tagline}</span>
       </footer>
-      <section className="sound-controls" aria-label="Ambiance sonore">
+      <section className="sound-controls" aria-label={t.sound.ariaLabel}>
         <Button
           variant="ghost"
           className="music-button"
-          aria-label={
-            musicEnabled ? 'Désactiver la musique' : 'Activer la musique'
-          }
+          aria-label={musicEnabled ? t.sound.disableMusic : t.sound.enableMusic}
           aria-pressed={musicEnabled}
           disabled={musicBusy}
           onClick={() => void toggleMusic()}
@@ -450,16 +494,16 @@ export default function Home() {
           {musicEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
           <span>
             {musicBusy
-              ? 'Ouverture…'
+              ? t.sound.opening
               : musicEnabled
-                ? 'Ambiance active'
-                : 'Activer l’ambiance'}
+                ? t.sound.active
+                : t.sound.activate}
           </span>
         </Button>
         {musicEnabled && (
           <div className="music-volume">
             <span id="music-volume-label" className="sr-only">
-              Volume de la musique
+              {t.sound.volumeLabel}
             </span>
             <Slider
               aria-labelledby="music-volume-label"
@@ -481,16 +525,16 @@ export default function Home() {
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Dézoomer"
+          aria-label={t.zoom.out}
           onClick={() => engine.current?.zoom(1 / 1.5)}
         >
           <Minus />
         </Button>
-        <span>ZOOM</span>
+        <span>{t.zoom.label}</span>
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Zoomer"
+          aria-label={t.zoom.in}
           onClick={() => engine.current?.zoom(1.5)}
         >
           <Plus />
@@ -501,9 +545,9 @@ export default function Home() {
           variant="ghost"
           size="icon"
           aria-label={
-            paused ? 'Reprendre la rotation' : 'Suspendre la rotation'
+            paused ? t.view.resumeRotationAria : t.view.pauseRotationAria
           }
-          title={paused ? 'Reprendre' : 'Pause'}
+          title={paused ? t.view.resumeTitle : t.view.pauseTitle}
           onClick={() => setPaused((v) => !v)}
         >
           {paused ? <Play /> : <Pause />}
@@ -512,15 +556,17 @@ export default function Home() {
         <Button
           variant="ghost"
           size="icon"
-          aria-label={immersive ? 'Quitter le mode immersif' : 'Mode immersif'}
-          title="Mode immersif · Échap pour quitter"
+          aria-label={
+            immersive ? t.view.exitImmersiveAria : t.view.enterImmersiveAria
+          }
+          title={t.view.immersiveTitle}
           onClick={() => setImmersive((v) => !v)}
         >
           {immersive ? <Minimize2 /> : <Maximize2 />}
         </Button>
       </div>
       {(!ready || error) && (
-        <output className="loading">{error || 'Allumage des étoiles…'}</output>
+        <output className="loading">{error || t.loading}</output>
       )}
     </main>
   );

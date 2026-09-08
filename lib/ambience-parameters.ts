@@ -43,7 +43,7 @@ export const soundProfiles: Record<
     sparkle: number;
   }
 > = {
-  'Naine rouge': {
+  'red-dwarf': {
     band: 220,
     q: 0.7,
     breath: 0.09,
@@ -52,7 +52,7 @@ export const soundProfiles: Record<
     tone: 0.04,
     sparkle: 0.005,
   },
-  'Étoile géante': {
+  'giant-star': {
     band: 420,
     q: 0.6,
     breath: 0.065,
@@ -61,7 +61,7 @@ export const soundProfiles: Record<
     tone: 0.04,
     sparkle: 0.01,
   },
-  'Étoile bleue': {
+  'blue-star': {
     band: 1700,
     q: 0.8,
     breath: 0.13,
@@ -70,7 +70,7 @@ export const soundProfiles: Record<
     tone: 0.025,
     sparkle: 0.018,
   },
-  'Naine blanche': {
+  'white-dwarf': {
     band: 2200,
     q: 1.2,
     breath: 0.11,
@@ -79,7 +79,7 @@ export const soundProfiles: Record<
     tone: 0.018,
     sparkle: 0.024,
   },
-  'Planète tellurique': {
+  'rocky-planet': {
     band: 650,
     q: 0.7,
     breath: 0.12,
@@ -88,7 +88,7 @@ export const soundProfiles: Record<
     tone: 0.012,
     sparkle: 0.014,
   },
-  'Monde océanique': {
+  'ocean-world': {
     band: 800,
     q: 0.45,
     breath: 0.085,
@@ -97,7 +97,7 @@ export const soundProfiles: Record<
     tone: 0.014,
     sparkle: 0.012,
   },
-  'Planète désertique': {
+  'desert-planet': {
     band: 1200,
     q: 1.6,
     breath: 0.055,
@@ -106,7 +106,7 @@ export const soundProfiles: Record<
     tone: 0.008,
     sparkle: 0.009,
   },
-  'Monde volcanique': {
+  'volcanic-world': {
     band: 140,
     q: 0.8,
     breath: 0.23,
@@ -115,7 +115,7 @@ export const soundProfiles: Record<
     tone: 0.045,
     sparkle: 0.004,
   },
-  'Planète glacée': {
+  'ice-planet': {
     band: 2800,
     q: 2,
     breath: 0.045,
@@ -124,7 +124,7 @@ export const soundProfiles: Record<
     tone: 0.006,
     sparkle: 0.07,
   },
-  'Géante gazeuse': {
+  'gas-giant': {
     band: 330,
     q: 1.3,
     breath: 0.16,
@@ -133,7 +133,7 @@ export const soundProfiles: Record<
     tone: 0.032,
     sparkle: 0.005,
   },
-  'Satellite rocheux': {
+  'rocky-moon': {
     band: 1600,
     q: 3,
     breath: 0.035,
@@ -142,7 +142,7 @@ export const soundProfiles: Record<
     tone: 0.005,
     sparkle: 0.04,
   },
-  Astéroïde: {
+  asteroid: {
     band: 2100,
     q: 4,
     breath: 0.028,

@@ -12,6 +12,7 @@ import {
   minimumOrbitRatio,
   type BodyIdentity,
   type BodyCandidate,
+  type BodyKind,
 } from './stellar-lod';
 import { particlePosition } from './particle-motion';
 
@@ -22,11 +23,21 @@ export type GalaxySettings = {
   paused: boolean;
   palette: number;
 };
+// Localized strings the engine needs for text it renders itself (canvas
+// aria-label, error messages, system-marker labels), decoupled from React so
+// a locale change can be pushed in via setMessages() without recreating it.
+export type GalaxyMessages = {
+  canvasHint: string;
+  contextLost: string;
+  bodyKindLabel: (kind: BodyKind) => string;
+  exploreBodyAria: (name: string, kindLabel: string) => string;
+};
 export type SystemView = { root: BodyIdentity; members: BodyIdentity[] };
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
   frameSystem: (scope: 'stellar' | 'local') => void;
   configure: (settings: GalaxySettings) => void;
+  setMessages: (messages: GalaxyMessages) => void;
   zoom: (factor: number) => void;
   approach: () => void;
   overview: () => void;
@@ -131,11 +142,13 @@ const impostorFragment = `
 
 export function createGalaxy(
   host: HTMLDivElement,
+  initialMessages: GalaxyMessages,
   onError: (error: string) => void,
   onSelection: (body: BodyIdentity | null) => void,
   onProximity: (value: number, kind: BodyIdentity['kind'] | null) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
 ): GalaxyEngine {
+  let messages = initialMessages;
   const renderer = new THREE.WebGLRenderer({
     antialias: false,
     alpha: false,
@@ -146,10 +159,7 @@ export function createGalaxy(
   host.appendChild(renderer.domElement);
   renderer.domElement.tabIndex = 0;
   renderer.domElement.setAttribute('role', 'button');
-  renderer.domElement.setAttribute(
-    'aria-label',
-    'Sélectionner un astre. Double-clic ou Entrée pour approcher. Plus et moins pour zoomer, flèches pour changer d’astre.',
-  );
+  renderer.domElement.setAttribute('aria-label', messages.canvasHint);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 180);
   const group = new THREE.Group();
@@ -560,13 +570,14 @@ export function createGalaxy(
     onSystemView({ root: describeBody(root), members });
     for (const member of members) {
       const marker = document.createElement('button');
+      const kindLabel = messages.bodyKindLabel(member.kind);
       marker.className = 'system-marker';
       marker.dataset.label = member.name;
       marker.dataset.central = String(member.id === root);
-      marker.title = member.kind;
+      marker.title = kindLabel;
       marker.setAttribute(
         'aria-label',
-        `Explorer ${member.name}, ${member.kind}`,
+        messages.exploreBodyAria(member.name, kindLabel),
       );
       marker.addEventListener('click', (event) => {
         event.stopPropagation();
@@ -720,9 +731,7 @@ export function createGalaxy(
     e.preventDefault();
     lost = true;
     cancelAnimationFrame(frame);
-    onError(
-      'La connexion à la carte graphique a été interrompue. Rechargez la page pour reprendre.',
-    );
+    onError(messages.contextLost);
   };
   // A tap selects only on release; a pinch must never trigger an accidental selection.
   const touches = new Map<number, THREE.Vector2>();
@@ -1192,6 +1201,22 @@ export function createGalaxy(
       );
       targetInner.set(palettes[next.palette][0]);
       targetOuter.set(palettes[next.palette][1]);
+    },
+    setMessages(next) {
+      messages = next;
+      renderer.domElement.setAttribute('aria-label', messages.canvasHint);
+      // Markers already on screen are re-labelled in place; frameSystem()
+      // will use the new messages for any it creates from here on.
+      framed?.members.forEach((member, i) => {
+        const marker = systemMarkers[i];
+        if (!marker) return;
+        const kindLabel = messages.bodyKindLabel(member.kind);
+        marker.title = kindLabel;
+        marker.setAttribute(
+          'aria-label',
+          messages.exploreBodyAria(member.name, kindLabel),
+        );
+      });
     },
     zoom: changeZoom,
     approach,

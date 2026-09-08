@@ -18,7 +18,7 @@ test('eruption events vary but remain reproducible across cache recreation', () 
 });
 
 test('activity fades with distance and releases all GPU resources', () => {
-  const activity = createStellarActivity(42, '#ff9875', 'Naine rouge');
+  const activity = createStellarActivity(42, '#ff9875', 'red-dwarf');
   const camera = new THREE.Vector3(0, 0, 4);
   activity.update(120, 1, 200, camera);
   assert.equal(activity.group.visible, true);
