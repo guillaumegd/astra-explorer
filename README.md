@@ -18,6 +18,14 @@ npx tsc --noEmit    # types
 npm test           # identités, mouvement, LOD et ressources
 ```
 
+## Publication sur OVH
+
+`npm run build:static` produit le site autonome dans `out/`. Transférer le contenu
+de ce dossier par FTP dans la racine dédiée à ASTRA. La pipeline GitHub automatise
+ce transfert à chaque push sur `main`, après configuration des secrets OVH.
+`npm run preview:static`
+permet une vérification locale. Voir [les étapes de déploiement](DEPLOYMENT.md).
+
 ## Explorer chaque astre
 
 - **Clic / toucher sur une particule** : sélectionner cet astre ; un repère et sa fiche indiquent son identifiant et son type.

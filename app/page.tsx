@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import {
   Orbit,
@@ -140,13 +139,14 @@ export default function Home() {
       />
       <div className="vignette" />
       <header className="topbar chrome">
-        <Link className="brand" href="/" aria-label="Astra, accueil">
+        {/* oxlint-disable-next-line nextjs/no-html-link-for-pages -- Shared with the standalone static build, without a Next router. */}
+        <a className="brand" href="./" aria-label="Astra, accueil">
           <Orbit size={27} />
           <span>
             ASTRA<span className="brand-dot">.</span>
           </span>
           <span className="brand-caption">OBSERVATOIRE INTERACTIF</span>
-        </Link>
+        </a>
         <div className="top-right">
           <span className="live">
             <i /> SIMULATION EN DIRECT

@@ -1,12 +1,17 @@
-name: Validate
+name: Validate and deploy OVH
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ovh-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -20,5 +25,33 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: python3 -m unittest discover -s tests -p '*_test.py'
       - run: npm run build
+      - run: npm run build:static
       - run: npx tsc --noEmit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astra-static
+          path: out/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: error
+
+  deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: astra-static
+          path: out/
+      - name: Publish over explicit FTPS
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIRECTORY: ${{ vars.FTP_DIRECTORY }}
+        run: python3 scripts/deploy-ftp.py
