@@ -1,9 +1,8 @@
-"""Upload the validated static artifact to a dedicated OVH directory over FTPS."""
+"""Upload the validated static artifact to a dedicated OVH directory over SFTP."""
 
-import ftplib
+import paramiko
 import os
 from pathlib import Path
-import ssl
 import sys
 
 
@@ -27,40 +26,41 @@ def publish():
     if any(path.is_symlink() for path in root.rglob('*')):
         raise ValueError('Static artifact must not contain symlinks.')
 
-    with ftplib.FTP_TLS(context=ssl.create_default_context(), timeout=60) as ftp:
-        print('FTPS: connecting to server', flush=True)
-        ftp.connect(os.environ['FTP_HOST'], 21)
-        print('FTPS: negotiating TLS and authenticating', flush=True)
-        ftp.login(os.environ['FTP_USERNAME'], os.environ['FTP_PASSWORD'])
-        print('FTPS: protecting data connection', flush=True)
-        ftp.prot_p()
-        # Require an existing destination, created with the OVH multisite setup.
-        print('FTPS: opening configured destination', flush=True)
-        ftp.cwd(directory)
-        destination = ftp.pwd()
-        print('FTPS: uploading static files', flush=True)
-        for path in files:
-            relative = path.relative_to(root)
-            if relative.as_posix() == 'index.html':
-                continue
-            ftp.cwd(destination)
-            for part in relative.parts[:-1]:
-                try:
-                    ftp.cwd(part)
-                except ftplib.error_perm:
-                    ftp.mkd(part)
-                    ftp.cwd(part)
-            with path.open('rb') as source:
-                ftp.storbinary('STOR ' + relative.name, source)
+    with paramiko.SSHClient() as client:
+        client.load_host_keys(str(Path(__file__).with_name('ovh_known_hosts')))
+        client.set_missing_host_key_policy(paramiko.RejectPolicy())
+        print('SFTP: connecting and authenticating with pinned host key', flush=True)
+        client.connect(
+            os.environ['FTP_HOST'], port=22,
+            username=os.environ['FTP_USERNAME'], password=os.environ['FTP_PASSWORD'],
+            look_for_keys=False, allow_agent=False, timeout=30,
+            auth_timeout=30, banner_timeout=30,
+        )
+        with client.open_sftp() as sftp:
+            sftp.get_channel().settimeout(60)
+            print('SFTP: opening configured destination', flush=True)
+            sftp.chdir(directory)
+            destination = sftp.getcwd()
+            print('SFTP: uploading static files', flush=True)
+            for path in files:
+                relative = path.relative_to(root)
+                if relative.as_posix() == 'index.html':
+                    continue
+                sftp.chdir(destination)
+                for part in relative.parts[:-1]:
+                    try:
+                        sftp.chdir(part)
+                    except FileNotFoundError:
+                        sftp.mkdir(part)
+                        sftp.chdir(part)
+                sftp.put(str(path), relative.name)
 
-        # Publish HTML only after all assets exist. Old assets remain available
-        # to visitors who loaded the previous version; never mirror-delete.
-        ftp.cwd(destination)
-        with (root / 'index.html').open('rb') as source:
-            ftp.storbinary('STOR index.html.uploading', source)
-        print('FTPS: publishing index.html', flush=True)
-        ftp.rename('index.html.uploading', 'index.html')
-    print(f'Published {len(files)} static files over FTPS.')
+            # Publish HTML last; keep old assets for already-open browser tabs.
+            sftp.chdir(destination)
+            sftp.put(str(root / 'index.html'), 'index.html.uploading')
+            print('SFTP: publishing index.html', flush=True)
+            sftp.posix_rename('index.html.uploading', 'index.html')
+    print(f'Published {len(files)} static files over SFTP.')
 
 
 if __name__ == '__main__':
@@ -68,9 +68,8 @@ if __name__ == '__main__':
         publish()
     except ValueError as error:
         sys.exit(str(error))
-    except (OSError, ftplib.Error) as error:
+    except (OSError, paramiko.SSHException) as error:
         # Do not echo connection details or credentials from server responses.
-        code = str(error)[:3]
-        detail = f'FTP response {code}' if code.isdigit() else type(error).__name__
-        print(f'FTPS failure category: {detail}', file=sys.stderr)
-        sys.exit('FTPS deployment failed. Check OVH credentials, TLS, directory and write permissions. Previous assets were retained.')
+        detail = type(error).__name__
+        print(f'SFTP failure category: {detail}', file=sys.stderr)
+        sys.exit('SFTP deployment failed. Check OVH credentials, SSH host key, directory and write permissions. Previous assets were retained.')

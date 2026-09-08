@@ -39,7 +39,7 @@ Dans l'onglet **Secrets**, ajouter les trois secrets du dépôt :
 
 | Secret | Valeur |
 | --- | --- |
-| `FTP_HOST` | Nom du serveur FTP fourni par OVH, sans `ftp://` ni chemin |
+| `FTP_HOST` | `ftp.cluster123.hosting.ovh.net` (serveur SFTP, sans protocole ni chemin) |
 | `FTP_USERNAME` | Identifiant FTP OVH |
 | `FTP_PASSWORD` | Mot de passe FTP OVH |
 
@@ -64,8 +64,8 @@ publication. Le fichier `www/.htaccess` du site principal reste indépendant.
 1. installe les dépendances, vérifie le lint et les tests ;
 2. compile les versions historique et statique et vérifie les types ;
 3. conserve `out/` comme artefact téléchargeable pendant 14 jours ;
-4. envoie cet artefact sur OVH par **FTPS explicite sur le port 21**, avec
-   vérification du certificat et chiffrement des données ;
+4. envoie cet artefact sur OVH par **SFTP sur le port 22**, avec
+   vérification de la clé SSH et chiffrement des données ;
 5. transfère les assets avant de remplacer `index.html` par renommage du fichier
    temporaire. Les anciens assets restent disponibles ; aucun nettoyage distant
    automatique n'est effectué.
@@ -76,6 +76,11 @@ fait échouer clairement le job de publication ; aucun transfert n'est effectué
 La pipeline peut aussi être relancée via **Actions → Validate and deploy OVH →
 Run workflow**, en sélectionnant `main`. Les secrets ne doivent jamais être
 inscrits dans les sources ni envoyés dans une conversation.
+
+La clé SSH publique du serveur est fixée dans `scripts/ovh_known_hosts` à partir
+de la première connexion observée le 8 septembre 2026. Toute modification de clé
+doit être vérifiée auprès d’OVH avant de mettre ce fichier à jour. Le script
+refuse les clés inconnues ou différentes. SFTP doit être activé dans OVH FTP-SSH.
 
 Le déploiement initial nécessite ces secrets et le dossier OVH. Pour revenir à
 une version précédente, annuler le commit concerné avec `git revert`, puis

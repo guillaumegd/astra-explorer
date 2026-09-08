@@ -25,6 +25,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: python3 -m pip install -r scripts/requirements-deploy.txt
       - run: python3 -m unittest discover -s tests -p '*_test.py'
       - run: npm run build
       - run: npm run build:static
@@ -48,7 +49,8 @@ jobs:
         with:
           name: astra-static
           path: out/
-      - name: Publish over explicit FTPS
+      - run: python3 -m pip install -r scripts/requirements-deploy.txt
+      - name: Publish over SFTP
         env:
           FTP_HOST: ${{ secrets.FTP_HOST }}
           FTP_USERNAME: ${{ secrets.FTP_USERNAME }}

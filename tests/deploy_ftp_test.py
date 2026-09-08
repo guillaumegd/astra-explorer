@@ -24,7 +24,7 @@ class DeploymentTests(unittest.TestCase):
     def test_unsafe_destinations_fail_before_connecting(self):
         for directory in ('', '/', 'www', '../www', 'astra/../www'):
             with self.subTest(directory=directory), patch.dict(os.environ, {'FTP_DIRECTORY': directory}):
-                with patch.object(deploy.ftplib, 'FTP_TLS') as client:
+                with patch.object(deploy.paramiko, 'SSHClient') as client:
                     with self.assertRaises(ValueError):
                         deploy.publish()
                     client.assert_not_called()
@@ -39,21 +39,24 @@ class DeploymentTests(unittest.TestCase):
                 Path('out/index.html').write_text('test')
                 Path('out/.htaccess').write_text('RewriteEngine On')
                 client = MagicMock()
-                ftp = client.return_value.__enter__.return_value
-                ftp.pwd.return_value = '/astra'
-                with patch.object(deploy.ftplib, 'FTP_TLS', client):
+                ssh = client.return_value.__enter__.return_value
+                ftp = ssh.open_sftp.return_value.__enter__.return_value
+                ftp.getcwd.return_value = '/astra'
+                with patch.object(deploy.paramiko, 'SSHClient', client):
                     deploy.publish()
-                ftp.prot_p.assert_called_once()
-                commands = [call.args[0] for call in ftp.storbinary.call_args_list]
-                self.assertEqual(commands, ['STOR .htaccess', 'STOR app.js', 'STOR index.html.uploading'])
-                ftp.rename.assert_called_once_with('index.html.uploading', 'index.html')
-                ftp.delete.assert_not_called()
+                ssh.load_host_keys.assert_called_once()
+                self.assertIsInstance(ssh.set_missing_host_key_policy.call_args.args[0], deploy.paramiko.RejectPolicy)
+                self.assertEqual(ssh.connect.call_args.kwargs['port'], 22)
+                commands = [call.args[1] for call in ftp.put.call_args_list]
+                self.assertEqual(commands, ['.htaccess', 'app.js', 'index.html.uploading'])
+                ftp.posix_rename.assert_called_once_with('index.html.uploading', 'index.html')
+                ftp.remove.assert_not_called()
                 ftp.reset_mock()
-                ftp.storbinary.side_effect = OSError('interrupted')
-                with patch.object(deploy.ftplib, 'FTP_TLS', client):
+                ftp.put.side_effect = OSError('interrupted')
+                with patch.object(deploy.paramiko, 'SSHClient', client):
                     with self.assertRaises(OSError):
                         deploy.publish()
-                ftp.rename.assert_not_called()
+                ftp.posix_rename.assert_not_called()
             finally:
                 os.chdir(previous)
 
