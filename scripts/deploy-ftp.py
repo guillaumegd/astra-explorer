@@ -28,12 +28,17 @@ def publish():
         raise ValueError('Static artifact must not contain symlinks.')
 
     with ftplib.FTP_TLS(context=ssl.create_default_context(), timeout=60) as ftp:
+        print('FTPS: connecting to server', flush=True)
         ftp.connect(os.environ['FTP_HOST'], 21)
+        print('FTPS: negotiating TLS and authenticating', flush=True)
         ftp.login(os.environ['FTP_USERNAME'], os.environ['FTP_PASSWORD'])
+        print('FTPS: protecting data connection', flush=True)
         ftp.prot_p()
         # Require an existing destination, created with the OVH multisite setup.
+        print('FTPS: opening configured destination', flush=True)
         ftp.cwd(directory)
         destination = ftp.pwd()
+        print('FTPS: uploading static files', flush=True)
         for path in files:
             relative = path.relative_to(root)
             if relative.as_posix() == 'index.html':
@@ -53,6 +58,7 @@ def publish():
         ftp.cwd(destination)
         with (root / 'index.html').open('rb') as source:
             ftp.storbinary('STOR index.html.uploading', source)
+        print('FTPS: publishing index.html', flush=True)
         ftp.rename('index.html.uploading', 'index.html')
     print(f'Published {len(files)} static files over FTPS.')
 
@@ -62,6 +68,9 @@ if __name__ == '__main__':
         publish()
     except ValueError as error:
         sys.exit(str(error))
-    except (OSError, ftplib.Error):
+    except (OSError, ftplib.Error) as error:
         # Do not echo connection details or credentials from server responses.
+        code = str(error)[:3]
+        detail = f'FTP response {code}' if code.isdigit() else type(error).__name__
+        print(f'FTPS failure category: {detail}', file=sys.stderr)
         sys.exit('FTPS deployment failed. Check OVH credentials, TLS, directory and write permissions. Previous assets were retained.')
