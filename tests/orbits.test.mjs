@@ -46,7 +46,6 @@ test('CPU tracking adds the same orbital chain after common galactic motion', ()
     0,
     2,
     3,
-    [],
     new THREE.Vector3(),
   );
   const expected = orbitalOffset(data, 0, 2, base.clone());
@@ -56,7 +55,6 @@ test('CPU tracking adds the same orbital chain after common galactic motion', ()
     0,
     2,
     3,
-    [],
     new THREE.Vector3(),
     undefined,
     data,

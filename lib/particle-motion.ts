@@ -1,5 +1,5 @@
-import * as THREE from 'three';
 import { orbitalOffset } from './orbits.ts';
+import type { Vector3 } from 'three';
 
 // CPU mirror of the vertex shader, used only for the focused body and its local neighbours.
 export function particlePosition(
@@ -8,8 +8,7 @@ export function particlePosition(
   id: number,
   rotation: number,
   time: number,
-  waves: readonly THREE.Vector4[],
-  out: THREE.Vector3,
+  out: Vector3,
   offsets?: Float32Array,
   orbits?: Float32Array,
 ) {
@@ -23,22 +22,6 @@ export function particlePosition(
     y,
     -Math.sin(angle) * x + Math.cos(angle) * z,
   );
-  for (const wave of waves) {
-    const age = time - wave.w;
-    if (age < 0 || age >= 5) continue;
-    const dx = out.x - wave.x,
-      dz = out.z - wave.y,
-      dist = Math.hypot(dx, dz),
-      front = dist - age * 5.5;
-    const displacement =
-      Math.sin(front * 2.4) *
-      Math.exp(-front * front * 0.32) *
-      Math.exp(-age * 0.65) *
-      wave.z;
-    out.y += displacement * 1.4;
-    out.x += (dx / Math.max(dist, 0.1)) * displacement * 0.6;
-    out.z += (dz / Math.max(dist, 0.1)) * displacement * 0.6;
-  }
   out.y += Math.sin(time * 0.25 + radius * 1.3 + seeds[id] * 12) * 0.035;
   if (orbits) orbitalOffset(orbits, id * 12, rotation, out);
   else if (offsets) {

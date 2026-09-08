@@ -9,7 +9,6 @@ import {
   Minimize2,
   Pause,
   Play,
-  Radio,
   SlidersHorizontal,
   Plus,
   Minus,
@@ -21,7 +20,6 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import {
   createAmbientSoundtrack,
   type AmbientSoundtrack,
@@ -33,7 +31,6 @@ import { createGalaxy, type GalaxyEngine, type SystemView } from '@/lib/galaxy';
 export default function Home() {
   const mount = useRef<HTMLDivElement>(null);
   const soundtrack = useRef<AmbientSoundtrack | null>(null);
-  const [wavesEnabled, setWavesEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(false);
   const [musicBusy, setMusicBusy] = useState(false);
   const [musicError, setMusicError] = useState('');
@@ -42,16 +39,15 @@ export default function Home() {
   const [density, setDensity] = useState(65000);
   const [speed, setSpeed] = useState(1);
   const [tilt, setTilt] = useState<number | null>(null);
-  const [gravity, setGravity] = useState(1.5);
   const [paused, setPaused] = useState(false);
   const [immersive, setImmersive] = useState(false);
+  const [idle, setIdle] = useState(false);
   const [panel, setPanel] = useState(true);
   const [palette, setPalette] = useState(0);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState('');
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
-  const [waves, setWaves] = useState(0);
   useEffect(() => {
     if (!mount.current) return;
     soundtrack.current = createAmbientSoundtrack(() => {
@@ -63,7 +59,6 @@ export default function Home() {
     try {
       engine.current = createGalaxy(
         mount.current,
-        () => setWaves((n) => n + 1),
         setError,
         setSelected,
         (value, kind) => soundtrack.current?.setProximity(value, kind),
@@ -74,7 +69,6 @@ export default function Home() {
       );
       queueMicrotask(() => {
         setReady(true);
-        setMusicEnabled(false);
         setMusicBusy(false);
         setVolume(35);
         setSelected(null);
@@ -87,6 +81,23 @@ export default function Home() {
         ),
       );
     }
+    // Ambient music defaults to on; browsers block audio until a user gesture,
+    // so this silently retries on the first interaction instead of erroring out.
+    const sound = soundtrack.current;
+    let musicStarted = false;
+    const tryStartMusic = () => {
+      if (musicStarted) return;
+      void sound.setEnabled(true).then((active) => {
+        if (soundtrack.current !== sound) return;
+        if (active) {
+          musicStarted = true;
+          setMusicEnabled(true);
+        }
+      });
+    };
+    tryStartMusic();
+    const gestureEvents = ['pointerdown', 'keydown', 'touchstart'] as const;
+    gestureEvents.forEach((type) => window.addEventListener(type, tryStartMusic));
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setImmersive(false);
     };
@@ -96,19 +107,37 @@ export default function Home() {
       soundtrack.current?.dispose();
       soundtrack.current = null;
       window.removeEventListener('keydown', key);
+      gestureEvents.forEach((type) =>
+        window.removeEventListener(type, tryStartMusic),
+      );
     };
   }, []);
   useEffect(() => {
-    engine.current?.configure({
-      density,
-      speed,
-      gravity,
-      tilt,
-      paused,
-      palette,
-      wavesEnabled,
-    });
-  }, [density, speed, gravity, tilt, paused, palette, wavesEnabled]);
+    engine.current?.configure({ density, speed, tilt, paused, palette });
+  }, [density, speed, tilt, paused, palette]);
+  // Fades the interface out after a stretch of inactivity for an uninterrupted,
+  // contemplative view; any activity brings it right back.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const wake = () => {
+      setIdle(false);
+      clearTimeout(timer);
+      timer = setTimeout(() => setIdle(true), 10000);
+    };
+    wake();
+    const events = [
+      'pointerdown',
+      'pointermove',
+      'keydown',
+      'wheel',
+      'touchstart',
+    ] as const;
+    events.forEach((type) => window.addEventListener(type, wake));
+    return () => {
+      clearTimeout(timer);
+      events.forEach((type) => window.removeEventListener(type, wake));
+    };
+  }, []);
   const toggleMusic = async () => {
     if (musicBusy || !soundtrack.current) return;
     setMusicBusy(true);
@@ -123,19 +152,18 @@ export default function Home() {
   const reset = () => {
     setDensity(65000);
     setSpeed(1);
-    setGravity(1.5);
     setPaused(false);
     setPalette(0);
     engine.current?.reset();
   };
   return (
     <main
-      className={`observatory ${immersive ? 'immersive' : ''} ${systemView ? 'system-view' : ''}`}
+      className={`observatory ${immersive || idle ? 'immersive' : ''} ${systemView ? 'system-view' : ''}`}
     >
       <div
         ref={mount}
         className="universe"
-        aria-label="Galaxie 3D interactive. Cliquez sur un astre pour le sélectionner, puis zoomez. Majuscule et clic créent une onde."
+        aria-label="Galaxie 3D interactive. Cliquez sur un astre pour le sélectionner, puis zoomez."
       />
       <div className="vignette" />
       <header className="topbar chrome">
@@ -166,7 +194,7 @@ export default function Home() {
         <p>
           Explorez le mouvement des étoiles.
           <br />
-          Une impulsion suffit à tout changer.
+          Un clic suffit à tout changer.
         </p>
         <div className="coordinates">
           RA 00h 42m 44s <span> / </span> DEC +41° 16′ 09″
@@ -346,36 +374,6 @@ export default function Home() {
             <span>Rapide</span>
           </div>
         </div>
-        <div className="setting-toggle">
-          <span id="waves-label">Ondes gravitationnelles</span>
-          <Switch
-            aria-labelledby="waves-label"
-            checked={wavesEnabled}
-            onCheckedChange={setWavesEnabled}
-          />
-        </div>
-        <div className="control">
-          <div className="control-label">
-            <span id="gravity-label">Puissance gravitationnelle</span>
-            <output>
-              {gravity.toFixed(1)}
-              <small> ×</small>
-            </output>
-          </div>
-          <Slider
-            aria-labelledby="gravity-label"
-            disabled={!wavesEnabled}
-            min={0.2}
-            max={4}
-            step={0.1}
-            value={[gravity]}
-            onValueChange={(v) => setGravity(Array.isArray(v) ? v[0] : v)}
-          />
-          <div className="scale">
-            <span>Subtile</span>
-            <span>Intense</span>
-          </div>
-        </div>
         <div className="palette-row">
           <span>Spectre lumineux</span>
           <div className="palettes">
@@ -391,15 +389,6 @@ export default function Home() {
             ))}
           </div>
         </div>
-        <Button
-          className="pulse-button"
-          disabled={!ready || !!error || !wavesEnabled}
-          onClick={() => engine.current?.pulse()}
-        >
-          <Radio size={17} />
-          Créer une onde
-          <ArrowUpRight size={16} />
-        </Button>
         <div className="panel-footer">
           <span>
             <i /> {paused ? 'Rotation suspendue' : 'Système en équilibre'}
@@ -426,11 +415,7 @@ export default function Home() {
       )}
       <div className="bottom-hint chrome">
         <span className="mouse-icon" />
-        <span>
-          {wavesEnabled
-            ? 'Clic : sélectionner · Maj + clic : onde'
-            : 'Clic : sélectionner · Ondes désactivées'}
-        </span>
+        <span>Clic : sélectionner</span>
         <span className="hint-divider" />
         <span className="secondary-hint">Molette ou pincement pour zoomer</span>
       </div>
@@ -440,9 +425,14 @@ export default function Home() {
             <b>{new Intl.NumberFormat('fr-FR').format(density)}</b> PARTICULES
           </span>
           <span className="telemetry-line" />
-          <span>
-            <b>{String(waves).padStart(2, '0')}</b> IMPULSIONS
-          </span>
+          <a
+            className="credit"
+            href="https://www.guillaumegirard.fr"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Guillaume Girard
+          </a>
         </div>
         <span className="footer-note">L’INFINI COMMENCE ICI</span>
       </footer>

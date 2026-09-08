@@ -20,6 +20,10 @@
 .DS_Store
 *.pem
 
+# raw screen recordings (source footage for README demo.gif)
+*.mov
+*.mp4
+
 # debug
 npm-debug.log*
 yarn-debug.log*

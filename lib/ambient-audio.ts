@@ -292,21 +292,6 @@ export function createAmbientSoundtrack(onFailure: () => void) {
     void context?.suspend().catch(() => {});
     onFailure();
   };
-  const visibility = () => {
-    if (!context || !enabled || disposed) return;
-    if (document.hidden) {
-      stopTimer();
-      void context.suspend().catch(fail);
-    } else {
-      void context
-        .resume()
-        .then(() => {
-          if (enabled && !disposed && !document.hidden) startTimer();
-        })
-        .catch(fail);
-    }
-  };
-  document.addEventListener('visibilitychange', visibility);
   return {
     async setEnabled(value: boolean) {
       if (disposed) return false;
@@ -333,10 +318,16 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         if (disposed || version !== request || !enabled) return false;
         graph!.setProximity(proximity, bodyKind);
         graph!.setVolume(volume);
-        if (document.hidden) await context.suspend();
-        else startTimer();
+        // Keeps playing when the tab is backgrounded, instead of suspending.
+        startTimer();
         return true;
-      } catch {
+      } catch (e) {
+        // Autoplay blocked pending a user gesture: stay silent, don't report a failure.
+        if (e instanceof DOMException && e.name === 'NotAllowedError') {
+          enabled = false;
+          stopTimer();
+          return false;
+        }
         fail();
         return false;
       }
@@ -358,7 +349,6 @@ export function createAmbientSoundtrack(onFailure: () => void) {
       request++;
       stopTimer();
       clearMute();
-      document.removeEventListener('visibilitychange', visibility);
       graph?.dispose();
       void context?.close().catch(() => {});
       graph = null;

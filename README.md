@@ -2,6 +2,10 @@
 
 Une galaxie 3D interactive en français : chaque particule représente un astre indépendant, sélectionnable et généré procéduralement à l’approche. Three.js assure le rendu, React l’interface, et TypeScript la structure du code.
 
+Démo en ligne : [astra-explorer.guillaumegirard.fr](https://astra-explorer.guillaumegirard.fr)
+
+![Démonstration d’ASTRA : vue de la galaxie, zoom sur une étoile puis sur un monde océanique](./demo.gif)
+
 ## Démarrer
 
 ```sh
@@ -31,12 +35,11 @@ permet une vérification locale. Voir [les étapes de déploiement](DEPLOYMENT.m
 - **Clic / toucher sur une particule** : sélectionner cet astre ; un repère et sa fiche indiquent son identifiant et son type.
 - **Double-clic**, **Entrée** sur le canvas ou **Explorer cet astre** : approcher sa surface.
 - **Molette, pincement, boutons +/−** : zoom continu sur l’objet sélectionné. Sans sélection, la molette choisit d’abord la particule sous le pointeur ; les boutons choisissent celle au centre de l’écran, ou le premier identifiant si aucun point n’est visé.
-- **Glisser dans la scène** : tourner autour de l’objet. La caméra suit son mouvement, même pendant une onde.
+- **Glisser dans la scène** : tourner autour de l’objet. La caméra suit son mouvement.
 - **Flèches gauche/droite** sur le canvas ou boutons précédent/suivant : parcourir les identifiants actifs. Cela permet également d’atteindre une particule masquée par une autre.
 - **Retour à la galaxie** ou **Début** : quitter le suivi et revenir à la vue d’ensemble.
-- **Maj + clic**, clic dans une zone vide ou bouton **Créer une onde** : perturbation gravitationnelle. Le bouton vise l’astre sélectionné ; **Espace** sur le canvas déclenche une onde au centre galactique.
-- Curseurs : densité (10 000 à 120 000 astres), rotation et amplitude des prochaines ondes. Une réduction de densité retire les identifiants dépassant la limite et quitte leur suivi si nécessaire.
-- Pause : suspend la rotation, mais laisse les ondes se dissiper. Mode immersif : masque l’interface principale ; Échap la restaure.
+- Curseurs : densité (10 000 à 120 000 astres) et vitesse de rotation. Une réduction de densité retire les identifiants dépassant la limite et quitte leur suivi si nécessaire.
+- Pause : suspend la rotation. Mode immersif : masque l’interface principale ; Échap la restaure. L’interface s’efface aussi d’elle-même après 10 secondes d’inactivité, pour une vue plus contemplative, et revient dès qu’une activité reprend.
 
 Sur mobile, les paramètres sont initialement repliés pour laisser la scène visible. Les points du halo distant appartiennent au même catalogue sélectionnable ; la poussière et le halo lumineux central sont des effets de lumière.
 
@@ -51,13 +54,13 @@ Un identifiant de particule produit une graine déterministe. Revenir sur `AST-0
 
 Les rayons sont tirés sur une échelle logarithmique propre à chaque famille, puis réduits : étoiles ÷40, planètes et petits corps ÷160 par rapport à la version précédente. La fiche indique le système et le rôle du corps ; il ne s’agit pas de kilomètres réels. Les mêmes identifiants reproduisent les mêmes propriétés dans cette version du générateur.
 
-Les détails utilisent du bruit 3D calculé dans un shader, sans texture téléchargée. Il s’agit d’un univers artistique : les distances sont choisies pour l’exploration, sans simulation gravitationnelle N-corps. Chaque groupe de huit identifiants forme un système : une étoile centrale, cinq planètes, un satellite lié à la cinquième planète et un astéroïde externe. Les rayons orbitaux vont de 0,025 à environ 0,72 unité ; la lune est à environ 0,0032 unité de sa planète. Les orbites sont calculées relativement à un parent, puis additionnées à celles de ses ancêtres. Le mouvement galactique et les ondes restent appliqués au centre commun du système. La fiche affiche le système parent. Les flèches permettent de parcourir ses membres puis le système suivant. Les halos des compagnons sont atténués pour éviter leur accumulation à distance.
+Les détails utilisent du bruit 3D calculé dans un shader, sans texture téléchargée. Il s’agit d’un univers artistique : les distances sont choisies pour l’exploration, sans simulation gravitationnelle N-corps. Chaque groupe de huit identifiants forme un système : une étoile centrale, cinq planètes, un satellite lié à la cinquième planète et un astéroïde externe. Les rayons orbitaux vont de 0,025 à environ 0,72 unité ; la lune est à environ 0,0032 unité de sa planète. Les orbites sont calculées relativement à un parent, puis additionnées à celles de ses ancêtres. Le mouvement galactique reste appliqué au centre commun du système. La fiche affiche le système parent. Les flèches permettent de parcourir ses membres puis le système suivant. Les halos des compagnons sont atténués pour éviter leur accumulation à distance.
 
-## Organisation du code — développeur junior
+## Organisation du code
 
 `app/page.tsx` contient l’interface et la fiche de sélection. Une référence React transmet les commandes au moteur sans rendre à nouveau toute l’interface à chaque image.
 
-`lib/galaxy.ts` crée les particules, anime la caméra et gère les événements. La sélection utilise une passe GPU ponctuelle : chaque particule écrit son identifiant dans une couleur invisible à l’utilisateur. Une zone de 9 × 9 pixels est lue autour du pointeur. Cette passe réutilise le shader d’animation, ce qui permet de sélectionner la position affichée, même pendant la rotation et les ondes. Les surfaces déjà détaillées se sélectionnent par intersection avec leur maillage.
+`lib/galaxy.ts` crée les particules, anime la caméra et gère les événements. La sélection utilise une passe GPU ponctuelle : chaque particule écrit son identifiant dans une couleur invisible à l’utilisateur. Une zone de 9 × 9 pixels est lue autour du pointeur. Cette passe réutilise le shader d’animation, ce qui permet de sélectionner la position affichée, même pendant la rotation. Les surfaces déjà détaillées se sélectionnent par intersection avec leur maillage.
 
 `lib/particle-motion.ts` reproduit le mouvement de l’objet suivi pour la caméra et sa surface. Les autres particules restent animées sur le GPU. La recherche des voisins visibles est répartie entre les images (2 048 identifiants par image), en tenant compte de leurs positions animées.
 
@@ -83,17 +86,17 @@ Les tests couvrent la stabilité et la variété des identités, la correspondan
 
 Le serveur reste destiné à l’usage local. Les fichiers de production sont créés dans `dist/` ; la configuration Sites est conservée pour une éventuelle publication ultérieure.
 
-## Ambiance musicale et interrupteur des ondes
+## Ambiance musicale
 
-L’interrupteur **Ondes gravitationnelles** coupe tous les déclencheurs (bouton, clavier, Maj + clic et zone vide), annule les ondes actives et grise la puissance. Il ne perturbe pas la sélection ni le zoom. La réinitialisation de la scène conserve ce choix.
+**L’ambiance sonore est activée par défaut** : une composition procédurale originale se lance dès l’arrivée sur la page — nappes d’orgue feutrées, progression lente, notes espacées et réverbération stéréo. Les navigateurs exigeant un geste utilisateur avant de jouer du son, ce premier lancement attend silencieusement la première interaction (clic, touche ou toucher) si l’autoplay est bloqué, puis démarre sans message d’erreur. Le bouton reste accessible en mode immersif pour couper ou réactiver le son ; un curseur règle le volume. Aucun fichier musical, service tiers ou téléchargement audio n’est nécessaire.
 
-**Activer l’ambiance** lance une composition procédurale originale : nappes d’orgue feutrées, progression lente, notes espacées et réverbération stéréo. Le bouton reste accessible en mode immersif ; un curseur règle le volume. Aucun fichier musical, service tiers ou téléchargement audio n’est nécessaire. Le son attend un clic explicite pour respecter les règles de lecture audio des navigateurs.
+La musique continue de jouer lorsque l’onglet passe en arrière-plan, pour rester audible pendant qu’on consulte un autre onglet.
 
 Le mix utilise le rapport entre la distance de caméra et le rayon de l’astre, sur une échelle logarithmique : une petite lune et une grande étoile ont donc la même ambiance à cadrage équivalent. La vue large favorise les nappes diffuses et la réverbération ; l’approche ouvre le filtre, rapproche les notes et réduit la réverbération. Les changements sont lissés, sans saut brutal de volume.
 
 - `lib/ambience-parameters.ts` : conversion du zoom en paramètres musicaux, testée indépendamment.
 - `lib/ambient-audio.ts` : synthèse Web Audio, deux nappes en fondu, motif, réverbération et compresseur. Les notes sont programmées sur l’horloge audio, indépendamment des images 3D.
-- Le graphe sonore est créé au premier clic. L’arrêt effectue un fondu puis suspend le contexte audio. L’onglet masqué suspend aussi la musique ; le démontage ferme le contexte et libère les nœuds.
+- Le graphe sonore est créé au premier lancement réussi. L’arrêt effectue un fondu puis suspend le contexte audio ; le démontage ferme le contexte et libère les nœuds.
 
 Le graphe accepte également `OfflineAudioContext` : le signal a été rendu hors ligne pour vérifier l’absence de valeurs invalides, de silence involontaire et de saturation, ainsi que la différence entre les deux mix.
 

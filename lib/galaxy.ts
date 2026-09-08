@@ -18,18 +18,15 @@ import { particlePosition } from './particle-motion';
 export type GalaxySettings = {
   density: number;
   speed: number;
-  gravity: number;
   tilt: number | null;
   paused: boolean;
   palette: number;
-  wavesEnabled: boolean;
 };
 export type SystemView = { root: BodyIdentity; members: BodyIdentity[] };
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
   frameSystem: (scope: 'stellar' | 'local') => void;
   configure: (settings: GalaxySettings) => void;
-  pulse: () => void;
   zoom: (factor: number) => void;
   approach: () => void;
   overview: () => void;
@@ -63,29 +60,13 @@ const vertexShader = `
   uniform float uTime;
   uniform float uRotation;
   uniform float uPixelRatio;
-  uniform float uGravity;
-  uniform vec4 uWaves[8];
   varying float vRadius;
   varying float vSeed;
-  varying float vWave;
   void main() {
     vec3 p = position;
     float radius = length(p.xz);
     float angle = uRotation * (0.35 + 0.65 / (radius * 0.15 + 1.0));
     p.xz = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * p.xz;
-    float disturbance = 0.0;
-    for(int i=0; i<8; i++) {
-      float age = uTime - uWaves[i].w;
-      if(age >= 0.0 && age < 5.0) {
-        vec2 delta = p.xz - uWaves[i].xy;
-        float dist = length(delta);
-        float front = dist - age * 5.5;
-        float wave = sin(front * 2.4) * exp(-front * front * 0.32) * exp(-age * 0.65) * uWaves[i].z;
-        p.y += wave * 1.4;
-        p.xz += delta / max(dist, 0.1) * wave * 0.6;
-        disturbance += abs(wave);
-      }
-    }
     p.y += sin(uTime * 0.25 + radius * 1.3 + aSeed * 12.0) * 0.035;
     vec3 orbitalDelta=orbitPosition(aOrbit0,uRotation)+orbitPosition(aOrbit1,uRotation)+orbitPosition(aOrbit2,uRotation);
     p += orbitalDelta;
@@ -108,7 +89,6 @@ const vertexShader = `
     for(int i=0;i<12;i++) { if(abs(uReplacements[i].x-aId)<0.1) vFade = 1.0-uReplacements[i].y; }
     vRadius = radius;
     vSeed = aSeed;
-    vWave = disturbance;
   }
 `;
 const fragmentShader = `
@@ -120,7 +100,6 @@ const fragmentShader = `
   uniform float uOpacity;
   varying float vRadius;
   varying float vSeed;
-  varying float vWave;
   void main() {
     float d = length(gl_PointCoord - 0.5) * 2.0;
     if (d > 1.0) discard;
@@ -129,7 +108,6 @@ const fragmentShader = `
     vec3 color = mix(uInner, uOuter, smoothstep(0.2, 8.5, vRadius));
     color = mix(color, vec3(0.76, 0.86, 1.0), vSeed * 0.38);
     float shimmer = 0.84 + 0.16 * sin(uTime * (0.5 + vSeed) + vSeed * 80.0);
-    color += vWave * vec3(0.24, 0.36, 0.5);
     gl_FragColor = vec4(color, glow * shimmer * uOpacity * vFade * (1.0-vSurface));
   }
 `;
@@ -153,7 +131,6 @@ const impostorFragment = `
 
 export function createGalaxy(
   host: HTMLDivElement,
-  onPulse: () => void,
   onError: (error: string) => void,
   onSelection: (body: BodyIdentity | null) => void,
   onProximity: (value: number, kind: BodyIdentity['kind'] | null) => void,
@@ -171,7 +148,7 @@ export function createGalaxy(
   renderer.domElement.setAttribute('role', 'button');
   renderer.domElement.setAttribute(
     'aria-label',
-    'Sélectionner un astre. Double-clic ou Entrée pour approcher. Plus et moins pour zoomer, flèches pour changer d’astre, Espace pour une onde.',
+    'Sélectionner un astre. Double-clic ou Entrée pour approcher. Plus et moins pour zoomer, flèches pour changer d’astre.',
   );
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 180);
@@ -248,10 +225,6 @@ export function createGalaxy(
   geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
   geometry.setDrawRange(0, 65000);
-  const waves = Array.from(
-    { length: 8 },
-    () => new THREE.Vector4(0, 0, 0, -100),
-  );
   const replacements = Array.from(
     { length: 12 },
     () => new THREE.Vector2(-1, 0),
@@ -270,8 +243,6 @@ export function createGalaxy(
     uTime: { value: 0 },
     uRotation: { value: 0 },
     uPixelRatio: { value: renderer.getPixelRatio() },
-    uGravity: { value: 1.5 },
-    uWaves: { value: waves },
     uInner: { value: new THREE.Color('#ffbd85') },
     uOuter: { value: new THREE.Color('#7d9eff') },
     uOpacity: { value: 0.86 },
@@ -371,11 +342,9 @@ export function createGalaxy(
   let settings: GalaxySettings = {
     density: 65000,
     speed: 1,
-    gravity: 1.5,
     tilt: null,
     paused: false,
     palette: 0,
-    wavesEnabled: true,
   };
   const bodyLOD = createBodyLOD(group);
   const debris = createLocalDebris(group);
@@ -521,7 +490,6 @@ export function createGalaxy(
       id,
       rotation,
       elapsed,
-      waves,
       localFocus,
       undefined,
       orbits,
@@ -646,14 +614,10 @@ export function createGalaxy(
   let elapsed = 0,
     rotation = 0,
     frame = 0,
-    previous = performance.now(),
-    waveIndex = 0;
+    previous = performance.now();
   let lost = false;
   const pointer = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
-  const hit = new THREE.Vector3();
-  const normal = new THREE.Vector3();
-  const plane = new THREE.Plane();
   const palettes = [
     ['#ffbd85', '#7d9eff'],
     ['#ffceaa', '#d379ef'],
@@ -706,19 +670,12 @@ export function createGalaxy(
       -((e.clientY / window.innerHeight) * 2 - 1),
     );
   };
-  const pulseAt = (point: THREE.Vector3) => {
-    if (!settings.wavesEnabled) return;
-    waves[waveIndex].set(point.x, point.z, settings.gravity, elapsed);
-    waveIndex = (waveIndex + 1) % waves.length;
-    onPulse();
-  };
   let lastTap = -1000,
     lastTapX = 0,
     lastTapY = 0;
   const click = (e: PointerEvent) => {
     // Keep the first selected ID while its camera starts moving during a double-click.
     if (
-      !e.shiftKey &&
       e.timeStamp - lastTap < 350 &&
       Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < 6
     )
@@ -726,29 +683,8 @@ export function createGalaxy(
     lastTap = e.timeStamp;
     lastTapX = e.clientX;
     lastTapY = e.clientY;
-    if (!e.shiftKey) {
-      const id = pickAt(e.clientX, e.clientY);
-      if (id !== null) {
-        select(id);
-        return;
-      }
-    }
-
-    const bounds = host.getBoundingClientRect();
-    const ndc = new THREE.Vector2(
-      ((e.clientX - bounds.left) / bounds.width) * 2 - 1,
-      (-(e.clientY - bounds.top) / bounds.height) * 2 + 1,
-    );
-    camera.updateMatrixWorld();
-    group.updateMatrixWorld();
-    raycaster.setFromCamera(ndc, camera);
-    normal.set(0, 1, 0).applyQuaternion(group.quaternion);
-    plane.setFromNormalAndCoplanarPoint(normal, group.position);
-    if (raycaster.ray.intersectPlane(plane, hit)) {
-      group.worldToLocal(hit);
-      if (hit.length() > 14) hit.multiplyScalar(14 / hit.length());
-      pulseAt(hit);
-    }
+    const id = pickAt(e.clientX, e.clientY);
+    if (id !== null) select(id);
   };
   const key = (e: KeyboardEvent) => {
     if (e.key === '+' || e.key === '=') {
@@ -776,13 +712,9 @@ export function createGalaxy(
       e.preventDefault();
       approach();
     }
-    if (e.key === ' ') {
-      e.preventDefault();
-      pulseAt(new THREE.Vector3());
-    }
   };
-  const doubleClick = (e: MouseEvent) => {
-    if (selected && !e.shiftKey) approach();
+  const doubleClick = () => {
+    if (selected) approach();
   };
   const contextLost = (e: Event) => {
     e.preventDefault();
@@ -792,7 +724,7 @@ export function createGalaxy(
       'La connexion à la carte graphique a été interrompue. Rechargez la page pour reprendre.',
     );
   };
-  // A tap triggers a wave only on release; a pinch must never trigger accidental waves.
+  // A tap selects only on release; a pinch must never trigger an accidental selection.
   const touches = new Map<number, THREE.Vector2>();
   let pinchDistance = 0;
   let gesture = false;
@@ -913,7 +845,6 @@ export function createGalaxy(
         selected.id,
         rotation,
         elapsed,
-        waves,
         localFocus,
         undefined,
         orbits,
@@ -1066,7 +997,6 @@ export function createGalaxy(
           id,
           rotation,
           elapsed,
-          waves,
           position,
           undefined,
           orbits,
@@ -1080,7 +1010,6 @@ export function createGalaxy(
           member.id,
           rotation,
           elapsed,
-          waves,
           position,
           undefined,
           orbits,
@@ -1119,7 +1048,6 @@ export function createGalaxy(
         id,
         rotation,
         elapsed,
-        waves,
         localPosition,
         undefined,
         orbits,
@@ -1175,7 +1103,6 @@ export function createGalaxy(
           Math.floor(id / 8) * 8,
           rotation,
           elapsed,
-          waves,
           stellarPosition,
           undefined,
           orbits,
@@ -1254,7 +1181,6 @@ export function createGalaxy(
     configure(next) {
       const densityChanged = settings.density !== next.density;
       settings = next;
-      if (!next.wavesEnabled) waves.forEach((w) => w.set(0, 0, 0, -100));
       if (selected && densityChanged) {
         if (selected.id >= next.density) overview();
         else if (framed) frameSystem('local');
@@ -1266,23 +1192,6 @@ export function createGalaxy(
       );
       targetInner.set(palettes[next.palette][0]);
       targetOuter.set(palettes[next.palette][1]);
-    },
-    pulse() {
-      pulseAt(
-        selected
-          ? particlePosition(
-              positions,
-              seeds,
-              selected.id,
-              rotation,
-              elapsed,
-              waves,
-              new THREE.Vector3(),
-              undefined,
-              orbits,
-            )
-          : new THREE.Vector3(),
-      );
     },
     zoom: changeZoom,
     approach,
@@ -1305,7 +1214,6 @@ export function createGalaxy(
       azimuth = 0;
       elevation = 0.62;
       rotation = 0;
-      waves.forEach((w) => (w.w = -100));
       pointer.set(0, 0);
     },
     dispose() {
