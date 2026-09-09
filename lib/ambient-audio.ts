@@ -1,5 +1,5 @@
 import type { BodyKind } from './stellar-lod';
-import { ambienceMix, soundProfiles } from './ambience-parameters';
+import { ambienceMix, soundProfiles } from './ambience-parameters.ts';
 
 // Original slow progression and motif; no recordings or external audio assets.
 const CHORDS = [
@@ -170,6 +170,8 @@ export function buildAmbientGraph(context: BaseAudioContext) {
       );
     },
     chord(index: number, at: number) {
+      // Leave time for the audio renderer even when a frame delayed the timer.
+      at = Math.max(at, context.currentTime + 0.08);
       chordIndex = index % CHORDS.length;
       const old = banks[bankIndex];
       bankIndex = 1 - bankIndex;
@@ -188,6 +190,7 @@ export function buildAmbientGraph(context: BaseAudioContext) {
     },
     note(index: number, at: number) {
       if (disposed || oscillators.size >= 36) return;
+      at = Math.max(at, context.currentTime + 0.08);
       const midi = CHORDS[chordIndex][MOTIF[index % MOTIF.length]] + 12;
       const pan = context.createStereoPanner();
       pan.pan.value = Math.sin(index * 1.7) * 0.4;
@@ -214,6 +217,7 @@ export function buildAmbientGraph(context: BaseAudioContext) {
       }
       oscillators.add(osc);
       osc.start(at);
+      envelope.gain.linearRampToValueAtTime(0, at + 4.95);
       osc.stop(at + 5);
       osc.onended = () => {
         oscillators.delete(osc);
@@ -271,19 +275,22 @@ export function createAmbientSoundtrack(onFailure: () => void) {
   const tick = () => {
     if (!context || !graph || context.state !== 'running' || !enabled) return;
     const now = context.currentTime;
-    if (now + 0.15 >= nextChord) {
-      graph.chord(chord++, Math.max(now, nextChord));
-      nextChord = now + graph.chordInterval();
+    const horizon = now + 0.3;
+    if (horizon >= nextChord) {
+      const at = Math.max(now + 0.08, nextChord);
+      graph.chord(chord++, at);
+      nextChord = at + graph.chordInterval();
     }
-    if (now + 0.15 >= nextNote) {
-      graph.note(note++, Math.max(now, nextNote));
-      nextNote = now + graph.interval();
+    if (horizon >= nextNote) {
+      const at = Math.max(now + 0.08, nextNote);
+      graph.note(note++, at);
+      nextNote = at + graph.interval();
     }
   };
   const startTimer = () => {
     stopTimer();
     tick();
-    timer = setInterval(tick, 150);
+    timer = setInterval(tick, 75);
   };
   const fail = () => {
     if (disposed) return;
@@ -309,7 +316,7 @@ export function createAmbientSoundtrack(onFailure: () => void) {
       try {
         // Called directly from the user's click, before any await, for browser autoplay policies.
         if (!context) {
-          context = new AudioContext({ latencyHint: 'playback' });
+          context = new AudioContext({ latencyHint: 0.2 });
           graph = buildAmbientGraph(context);
           nextChord = context.currentTime;
           nextNote = context.currentTime + 1;

@@ -78,6 +78,9 @@ export default function Home() {
   const mount = useRef<HTMLDivElement>(null);
   const soundtrack = useRef<AmbientSoundtrack | null>(null);
   const [musicEnabled, setMusicEnabled] = useState(false);
+  const [soundMuted, setSoundMuted] = useState(false);
+  const soundMutedRef = useRef(false);
+  const openingRevealed = useRef(false);
   const [musicBusy, setMusicBusy] = useState(false);
   const [musicError, setMusicError] = useState('');
   const [volume, setVolume] = useState(35);
@@ -115,13 +118,15 @@ export default function Home() {
   // yet: the opening primes it silently and raises it on the galaxy.
   const enableMusic = (atVolume: number) => {
     const sound = soundtrack.current;
-    if (!sound || musicStarted.current) return;
+    if (!sound || musicStarted.current || soundMutedRef.current) return;
     musicStarted.current = true;
     sound.setVolume(atVolume);
     void sound.setEnabled(true).then((active) => {
       if (soundtrack.current !== sound) return;
-      if (active) setMusicEnabled(true);
-      else musicStarted.current = false;
+      if (active && !soundMutedRef.current) setMusicEnabled(true);
+      else {
+        musicStarted.current = false;
+      }
     });
   };
   useEffect(() => {
@@ -219,13 +224,18 @@ export default function Home() {
     return () => document.removeEventListener('visibilitychange', visibility);
   }, [musicEnabled]);
   const toggleMusic = async () => {
-    if (musicBusy || !soundtrack.current) return;
-    setMusicBusy(true);
+    const muted = !soundMutedRef.current;
+    soundMutedRef.current = muted;
+    setSoundMuted(muted);
     setMusicError('');
     const sound = soundtrack.current;
-    const active = await sound.setEnabled(!musicEnabled);
-    if (soundtrack.current === sound) {
+    if (!sound) return;
+    setMusicBusy(true);
+    sound.setVolume(opening && !openingRevealed.current ? 0 : volume / 100);
+    const active = await sound.setEnabled(!muted);
+    if (soundtrack.current === sound && soundMutedRef.current === muted) {
       setMusicEnabled(active);
+      if (active) musicStarted.current = true;
       setMusicBusy(false);
     }
   };
@@ -240,6 +250,10 @@ export default function Home() {
     rememberOpening();
     setOpening(false);
     setIdle(false);
+    // The scene was inert throughout; without this, focus falls to <body>.
+    requestAnimationFrame(() =>
+      mount.current?.querySelector('canvas')?.focus(),
+    );
   };
   const replayOpening = () => {
     setPanel(false);
@@ -247,6 +261,7 @@ export default function Home() {
     setIdle(false);
     setOpeningRun((value) => value + 1);
     setOpening(true);
+    openingRevealed.current = false;
     // Back to silence, as on a first visit: the galaxy raises it again.
     soundtrack.current?.setVolume(0, 0.6);
     engine.current?.overview();
@@ -256,7 +271,7 @@ export default function Home() {
     <main
       className={`observatory ${immersive || idle ? 'immersive' : ''} ${systemView ? 'system-view' : ''} ${openingVisible ? 'is-opening' : ''}`}
     >
-      <div ref={mount} className="universe" aria-label={t.canvas.ariaLabel} />
+      <div ref={mount} className="universe" aria-label={t.canvas.ariaLabel} inert={openingVisible} />
       <div className="vignette" />
       <header inert={openingVisible} className="topbar chrome">
         {/* oxlint-disable-next-line nextjs/no-html-link-for-pages -- Shared with the standalone static build, without a Next router. */}
@@ -644,8 +659,15 @@ export default function Home() {
           key={openingRun}
           ready={ready}
           copy={t.opening}
+          muted={soundMuted}
+          muteLabel={t.sound.disableMusic}
+          unmuteLabel={t.sound.enableMusic}
+          onToggleMute={() => void toggleMusic()}
           onStart={() => enableMusic(0)}
-          onReveal={() => soundtrack.current?.setVolume(volume / 100, 1.5)}
+          onReveal={(seconds = 1.5) => {
+            openingRevealed.current = true;
+            soundtrack.current?.setVolume(volume / 100, seconds);
+          }}
           onProgress={(progress) =>
             engine.current?.setOpeningProgress(progress)
           }

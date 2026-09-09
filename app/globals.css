@@ -109,6 +109,34 @@
 .opening-author {
   white-space: nowrap;
 }
+.opening-mute {
+  position: absolute;
+  top: max(24px, env(safe-area-inset-top));
+  right: 24px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #aecaff24;
+  border-radius: 999px;
+  background: #04060b80;
+  color: #a9c8ec;
+  pointer-events: auto;
+  transition:
+    color 0.3s,
+    border-color 0.3s;
+}
+.opening-mute svg {
+  width: 16px;
+  height: 16px;
+}
+.opening-mute:hover,
+.opening-mute:focus-visible {
+  color: #f0f6ff;
+  border-color: #aecaff6b;
+}
 .opening-gate {
   position: absolute;
   inset: 0;

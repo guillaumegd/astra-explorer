@@ -12,21 +12,33 @@ export type OpeningAudio = {
   drone: (durationMs: number) => void;
   shimmer: (durationMs: number) => void;
   flight: (durationMs: number) => void;
+  setMuted: (muted: boolean) => void;
   setAwake: (awake: boolean) => void;
   dispose: () => void;
 };
 
-// Returns null when the browser has no Web Audio; the opening is silent but intact.
+// Returns null when the browser has no Web Audio, or when anything below
+// fails partway through — the visual opening must never depend on this
+// succeeding. Building the graph itself, not just opening the context, is
+// wrapped: a failure in createGain/createBuffer must not stop begin() from
+// starting the sequence.
 export function createOpeningAudio(): OpeningAudio | null {
   const Constructor =
     typeof window === 'undefined' ? undefined : window.AudioContext;
   if (!Constructor) return null;
-  let context: AudioContext;
+  let context: AudioContext | undefined;
   try {
     context = new Constructor();
+    return build(context);
   } catch {
+    void context?.close().catch(() => {
+      /* Best effort: nothing left to release if this also fails. */
+    });
     return null;
   }
+}
+
+function build(context: AudioContext): OpeningAudio {
   void context.resume().catch(() => {
     /* Blocked by the autoplay policy; the opening simply plays silently. */
   });
@@ -92,6 +104,13 @@ export function createOpeningAudio(): OpeningAudio | null {
   let disposed = false;
 
   return {
+    setMuted(muted) {
+      if (disposed) return;
+      const now = context.currentTime;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(muted ? 0 : 0.9, now + 0.025);
+    },
     tick(index) {
       if (disposed) return;
       const now = context.currentTime;
@@ -120,30 +139,37 @@ export function createOpeningAudio(): OpeningAudio | null {
       release(tone, [tone, air, airLevel, gain]);
     },
 
+    // Selected audition 3: the original two pure notes, without noise.
     breath(kind) {
       if (disposed) return;
       const now = context.currentTime;
-      const airy = kind === 'credit';
-      const source = context.createBufferSource();
-      source.buffer = noiseBuffer;
-      source.loop = true;
-      const band = context.createBiquadFilter();
-      band.type = 'bandpass';
-      // A wide band keeps enough of the noise to be heard at this level.
-      band.Q.value = 0.7;
-      band.frequency.setValueAtTime(airy ? 620 : 300, now);
-      band.frequency.exponentialRampToValueAtTime(airy ? 1900 : 950, now + 1.5);
-      const gain = context.createGain();
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(airy ? 0.15 : 0.17, now + 0.6);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.3);
-      source.connect(band);
-      band.connect(gain);
-      gain.connect(bus);
-      const end = now + 2.4;
-      source.start(now);
-      source.stop(end);
-      release(source, [source, band, gain]);
+      const credit = kind === 'credit';
+      const duration = credit ? 2.2 : 3.2;
+      const envelope = context.createGain();
+      envelope.gain.setValueAtTime(0, now);
+      envelope.gain.linearRampToValueAtTime(
+        credit ? 0.065 : 0.085,
+        now + duration * 0.42,
+      );
+      envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      envelope.connect(bus);
+      let remaining = 2;
+      for (const midi of credit ? [69, 76] : [45, 52]) {
+        const tone = context.createOscillator();
+        const level = context.createGain();
+        level.gain.value = 0.3;
+        tone.type = 'sine';
+        tone.frequency.value = frequency(midi);
+        tone.connect(level);
+        level.connect(envelope);
+        tone.start(now);
+        tone.stop(now + duration + 0.1);
+        tone.onended = () => {
+          tone.disconnect();
+          level.disconnect();
+          if (--remaining === 0) envelope.disconnect();
+        };
+      }
     },
 
     drone(durationMs) {

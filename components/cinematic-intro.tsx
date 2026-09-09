@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Orbit } from 'lucide-react';
+import { Orbit, Volume2, VolumeX } from 'lucide-react';
 import {
   OPENING_DURATION,
   openingCues,
@@ -13,8 +13,12 @@ import type { Dictionary } from '@/lib/i18n/types';
 type Props = {
   ready: boolean;
   copy: Dictionary['opening'];
+  muted: boolean;
+  muteLabel: string;
+  unmuteLabel: string;
+  onToggleMute: () => void;
   onStart: () => void;
-  onReveal: () => void;
+  onReveal: (seconds?: number) => void;
   onProgress: (progress: number | null) => void;
   onFinish: () => void;
 };
@@ -22,6 +26,10 @@ type Props = {
 export function CinematicIntro({
   ready,
   copy,
+  muted,
+  muteLabel,
+  unmuteLabel,
+  onToggleMute,
   onStart,
   onReveal,
   onProgress,
@@ -33,6 +41,7 @@ export function CinematicIntro({
   const current = useRef({
     ready,
     started,
+    muted,
     onStart,
     onReveal,
     onProgress,
@@ -42,6 +51,7 @@ export function CinematicIntro({
     current.current = {
       ready,
       started,
+      muted,
       onStart,
       onReveal,
       onProgress,
@@ -49,10 +59,15 @@ export function CinematicIntro({
     };
   });
 
+  useEffect(() => {
+    audio.current?.setMuted(muted);
+  }, [muted]);
+
   // The sound is built here rather than on mount: browsers only let an audio
   // context run when it is opened from a gesture, and this click is that gesture.
   const begin = () => {
     audio.current = createOpeningAudio();
+    audio.current?.setMuted(muted);
     onStart();
     setStarted(true);
   };
@@ -124,17 +139,26 @@ export function CinematicIntro({
         );
         host.style.setProperty('--opening-chrome', String(state.chrome));
         const sound = audio.current;
+        // Consume muted cues so restoring sound never replays missed effects.
         if (sound) {
           cues.letters.forEach((at, index) =>
-            cue(`letter-${index}`, at, () => sound.tick(index)),
+            cue(`letter-${index}`, at, () => {
+              if (!current.current.muted) sound.tick(index);
+            }),
           );
-          cue('invitation', cues.invitation, () => sound.breath('invitation'));
-          cue('credit', cues.credit, () => sound.breath('credit'));
-          cue('hold', cues.hold, () => sound.drone(cues.holdDuration));
+          cue('invitation', cues.invitation, () => {
+            if (!current.current.muted) sound.breath('invitation');
+          });
+          cue('credit', cues.credit, () => {
+            if (!current.current.muted) sound.breath('credit');
+          });
+          cue('hold', cues.hold, () => {
+            if (!current.current.muted) sound.drone(cues.holdDuration);
+          });
         }
-        // Outside the guard above: the music must rise even if the effects failed.
         cue('reveal', cues.reveal, () => {
-          current.current.onReveal();
+          current.current.onReveal(1.5);
+          if (current.current.muted) return;
           sound?.shimmer(cues.revealDuration);
           sound?.flight(cues.flightDuration);
         });
@@ -176,6 +200,20 @@ export function CinematicIntro({
           <span className="opening-author">Guillaume Girard</span>
         </p>
       </div>
+      {/* The one control reachable throughout: on the gate and through playback. */}
+      <button
+        type="button"
+        className="opening-mute"
+        aria-label={muted ? unmuteLabel : muteLabel}
+        aria-pressed={muted}
+        onClick={onToggleMute}
+      >
+        {muted ? (
+          <VolumeX aria-hidden="true" />
+        ) : (
+          <Volume2 aria-hidden="true" />
+        )}
+      </button>
       {/* Kept mounted once opened so it can fade rather than cut. */}
       <div
         className="opening-gate"
@@ -186,7 +224,7 @@ export function CinematicIntro({
           type="button"
           className="opening-start"
           disabled={!ready}
-          onClick={begin}
+          onClick={() => begin()}
         >
           <Orbit aria-hidden="true" />
           <span>{ready ? copy.start : copy.preparing}</span>

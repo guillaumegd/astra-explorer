@@ -92,7 +92,10 @@ export function hasSeenOpening() {
   try {
     if (typeof window === 'undefined') return false;
     const seenAt = Number(window.localStorage.getItem(OPENING_STORAGE_KEY));
-    return Number.isFinite(seenAt) && Date.now() - seenAt < OPENING_SEEN_TTL;
+    // A clock that has run backward must not read as "just seen": bound the
+    // age below, not just above.
+    const age = Date.now() - seenAt;
+    return Number.isFinite(seenAt) && age >= 0 && age < OPENING_SEEN_TTL;
   } catch {
     return false;
   }
