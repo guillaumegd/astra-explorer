@@ -1,6 +1,13 @@
 import type { Dictionary } from '../types';
 
 export const fr: Dictionary = {
+  opening: {
+    invitation: 'Le temps peut attendre.',
+    credit: 'une expérience proposée par',
+    replay: 'Revoir l’introduction',
+    start: 'Embarquer',
+    preparing: 'Préparation du ciel…',
+  },
   meta: {
     title: 'ASTRA — Un univers à portée de main',
     description:

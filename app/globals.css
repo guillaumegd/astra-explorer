@@ -27,3 +27,196 @@
 .surface-camera-controls{margin:10px 0;padding-top:8px;border-top:1px solid #ffffff15}.surface-camera-controls label{display:flex;justify-content:space-between;font-size:10px;color:#adc3db;margin-bottom:9px}.surface-camera-controls>div:last-child{display:flex;justify-content:space-between;margin-top:8px}.surface-camera-controls button{background:transparent;border:0;color:#b7cfe8;font-size:10px;padding:4px;cursor:pointer}.surface-camera-controls button[aria-pressed=true]{color:#fff;text-decoration:underline}
 
 .language-switcher{pointer-events:auto;display:flex;align-items:center;gap:6px;border:1px solid #ffffff1c;padding:7px 10px;border-radius:4px;background:transparent;color:#8190a3;font:9px monospace;letter-spacing:1.3px;cursor:pointer;transition:color .2s,border-color .2s}.language-switcher:hover{color:#c3d8ef;border-color:#ffffff33}.language-switcher:focus-visible{outline:2px solid #c3dcff;outline-offset:2px}.language-switcher[data-open]{color:#dae7fa;border-color:#aecaff4c}.language-switcher-icon{display:flex;color:inherit;transition:transform .2s}.language-switcher[data-open] .language-switcher-icon{transform:rotate(180deg)}.language-switcher-positioner{z-index:50;outline:none}.language-switcher-popup{min-width:136px;padding:5px;border:1px solid #aecaff24;border-radius:8px;background:#0c111eeb;backdrop-filter:blur(16px);box-shadow:0 14px 40px #0006;display:flex;flex-direction:column;gap:1px;outline:none;transition:opacity .15s,transform .15s}.language-switcher-popup[data-starting-style],.language-switcher-popup[data-ending-style]{opacity:0;transform:translateY(-4px)}.language-switcher-item{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:7px 10px;border-radius:5px;font:11px monospace;letter-spacing:.3px;color:#b9cce5;cursor:pointer;outline:none}.language-switcher-item[data-highlighted]{background:#a9c8ec1c;color:#e7efff}.language-switcher-item[data-selected]{color:#fff}.language-switcher-check{display:flex;color:#a9c8ec}
+
+/* A single time source in CinematicIntro controls this opening. */
+.cinematic-opening {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  --opening-invitation: 0;
+  --opening-credit: 0;
+  --opening-reveal: 0;
+  --opening-aperture: 0%;
+}
+.opening-veil {
+  position: absolute;
+  inset: 0;
+  background: #04060b;
+  opacity: calc(1 - var(--opening-reveal));
+}
+@supports (mask-image: radial-gradient(black, transparent)) {
+  .opening-veil {
+    opacity: 1;
+    mask-image: radial-gradient(
+      ellipse farthest-corner at 48% 52%,
+      transparent calc(var(--opening-aperture) - 45%),
+      #000 var(--opening-aperture)
+    );
+  }
+}
+.opening-copy {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100% - 40px);
+  text-align: center;
+  color: #f0eee9;
+}
+.opening-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.29em;
+  margin: 0;
+  font-size: clamp(44px, 6.2vw, 88px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+.opening-letter {
+  display: inline-block;
+  opacity: 0;
+  will-change: opacity, filter;
+}
+.opening-logo {
+  width: 0.72em;
+  height: 0.72em;
+  opacity: 0;
+  will-change: opacity, filter;
+}
+.opening-invitation {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(17px, 1.65vw, 23px);
+  font-weight: 400;
+  letter-spacing: 0.025em;
+  line-height: 1.5;
+  margin: 22px 0 0;
+  opacity: var(--opening-invitation);
+  text-shadow: 0 2px 18px #04060b80;
+}
+.opening-credit {
+  margin: 42px 0 0;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.065em;
+  line-height: 1.8;
+  color: #a3acba;
+  opacity: var(--opening-credit);
+  text-shadow: 0 2px 12px #04060b;
+}
+.opening-author {
+  white-space: nowrap;
+}
+.opening-gate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  background: #04060b;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.55s ease;
+}
+.opening-gate[data-open] {
+  pointer-events: auto;
+  opacity: 1;
+}
+.opening-start {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 27px;
+  border: 1px solid #aecaff2e;
+  border-radius: 999px;
+  background: transparent;
+  color: #d5e2f3;
+  font-size: 12px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  transition:
+    color 0.3s,
+    border-color 0.3s;
+  animation: opening-breathe 6.5s ease-in-out infinite;
+}
+.opening-start svg {
+  width: 21px;
+  height: 21px;
+  color: #a9c8ec;
+}
+.opening-start:hover:not(:disabled),
+.opening-start:focus-visible {
+  color: #f0f6ff;
+  border-color: #aecaff6b;
+}
+.opening-start:disabled {
+  color: #6d7c93;
+  border-color: #aecaff17;
+  cursor: default;
+}
+/* A slow, even breath — the pace of the sequence it opens. */
+@keyframes opening-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.022);
+  }
+}
+.is-opening .chrome,
+.is-opening .body-inspector,
+.is-opening .zoom-actions,
+.is-opening .sound-controls,
+.is-opening .view-actions,
+.is-opening .signature,
+.is-opening .observation-dock {
+  opacity: var(--opening-chrome, 0);
+  transition: none;
+  pointer-events: none;
+}
+.replay-opening {
+  pointer-events: auto;
+  display: flex;
+  min-height: 44px;
+  padding-left: 0;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #d4e4fa;
+}
+@media (max-width: 600px) {
+  .opening-copy {
+    top: 38%;
+  }
+  .opening-title {
+    gap: 0.24em;
+    font-size: 44px;
+  }
+  .opening-invitation {
+    margin-top: 19px;
+    font-size: 17px;
+  }
+  .opening-credit {
+    margin-top: 32px;
+    font-size: 11px;
+  }
+  .opening-author {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .opening-veil {
+    mask-image: none;
+    opacity: calc(1 - var(--opening-reveal));
+  }
+  .opening-letter,
+  .opening-logo {
+    filter: none !important;
+  }
+  .opening-start {
+    animation: none;
+  }
+}

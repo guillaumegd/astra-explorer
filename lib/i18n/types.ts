@@ -3,6 +3,13 @@ import type { BodyKind } from '../stellar-lod';
 export type Locale = 'fr' | 'en' | 'es' | 'pt-PT';
 
 export type Dictionary = {
+  opening: {
+    invitation: string;
+    credit: string;
+    replay: string;
+    start: string;
+    preparing: string;
+  };
   meta: { title: string; description: string };
   canvas: {
     ariaLabel: string;

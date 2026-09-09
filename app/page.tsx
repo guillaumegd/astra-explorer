@@ -20,6 +20,8 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CinematicIntro } from '@/components/cinematic-intro';
+import { hasSeenOpening, rememberOpening } from '@/lib/opening-sequence';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import {
   createAmbientSoundtrack,
@@ -89,6 +91,8 @@ export default function Home() {
   const [panel, setPanel] = useState(true);
   const [palette, setPalette] = useState(0);
   const [ready, setReady] = useState(false);
+  const [opening, setOpening] = useState(() => !hasSeenOpening());
+  const [openingRun, setOpeningRun] = useState(0);
   const [error, setError] = useState('');
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
@@ -101,6 +105,25 @@ export default function Home() {
   useEffect(() => {
     tRef.current = t;
   });
+  const musicStarted = useRef(false);
+  // Same reason as tRef above: the mount effect must not re-run to see these.
+  const musicRef = useRef({ opening, volume });
+  useEffect(() => {
+    musicRef.current = { opening, volume };
+  });
+  // Built from a user gesture, as browsers require, but not necessarily heard
+  // yet: the opening primes it silently and raises it on the galaxy.
+  const enableMusic = (atVolume: number) => {
+    const sound = soundtrack.current;
+    if (!sound || musicStarted.current) return;
+    musicStarted.current = true;
+    sound.setVolume(atVolume);
+    void sound.setEnabled(true).then((active) => {
+      if (soundtrack.current !== sound) return;
+      if (active) setMusicEnabled(true);
+      else musicStarted.current = false;
+    });
+  };
   useEffect(() => {
     if (!mount.current) return;
     soundtrack.current = createAmbientSoundtrack(() => {
@@ -119,9 +142,9 @@ export default function Home() {
           if (view && window.innerWidth < 600) setPanel(false);
         },
         setPointing,
+        () => setReady(true),
       );
       queueMicrotask(() => {
-        setReady(true);
         setMusicBusy(false);
         setVolume(35);
         setSelected(null);
@@ -130,23 +153,18 @@ export default function Home() {
     } catch {
       queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
     }
-    // Ambient music defaults to on; browsers block audio until a user gesture,
-    // so this silently retries on the first interaction instead of erroring out.
-    const sound = soundtrack.current;
-    let musicStarted = false;
-    const tryStartMusic = () => {
-      if (musicStarted) return;
-      void sound.setEnabled(true).then((active) => {
-        if (soundtrack.current !== sound) return;
-        if (active) {
-          musicStarted = true;
-          setMusicEnabled(true);
-        }
-      });
+    // Ambient music defaults to on. With the opening running it is primed from
+    // the gate click and raised only once the galaxy is out; without one there
+    // is no such moment, so the first gesture both unblocks and raises it.
+    const unblock = () => {
+      enableMusic(musicRef.current.volume / 100);
     };
-    tryStartMusic();
     const gestureEvents = ['pointerdown', 'keydown', 'touchstart'] as const;
-    gestureEvents.forEach((type) => window.addEventListener(type, tryStartMusic));
+    if (!musicRef.current.opening) {
+      unblock();
+      gestureEvents.forEach((type) => window.addEventListener(type, unblock));
+    }
+
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setImmersive(false);
     };
@@ -157,7 +175,7 @@ export default function Home() {
       soundtrack.current = null;
       window.removeEventListener('keydown', key);
       gestureEvents.forEach((type) =>
-        window.removeEventListener(type, tryStartMusic),
+        window.removeEventListener(type, unblock),
       );
     };
   }, []);
@@ -174,7 +192,7 @@ export default function Home() {
     const wake = () => {
       setIdle(false);
       clearTimeout(timer);
-      timer = setTimeout(() => setIdle(true), 10000);
+      timer = setTimeout(() => { if (!opening) setIdle(true); }, 10000);
     };
     wake();
     const events = [
@@ -189,7 +207,17 @@ export default function Home() {
       clearTimeout(timer);
       events.forEach((type) => window.removeEventListener(type, wake));
     };
-  }, []);
+  }, [opening]);
+  // A tab left for another goes quiet the same way the mute button does, and
+  // comes back the same way. A visitor who muted on purpose stays muted.
+  useEffect(() => {
+    if (!musicEnabled) return;
+    const visibility = () => {
+      void soundtrack.current?.setEnabled(!document.hidden);
+    };
+    document.addEventListener('visibilitychange', visibility);
+    return () => document.removeEventListener('visibilitychange', visibility);
+  }, [musicEnabled]);
   const toggleMusic = async () => {
     if (musicBusy || !soundtrack.current) return;
     setMusicBusy(true);
@@ -208,13 +236,29 @@ export default function Home() {
     setPalette(0);
     engine.current?.reset();
   };
+  const finishOpening = () => {
+    rememberOpening();
+    setOpening(false);
+    setIdle(false);
+  };
+  const replayOpening = () => {
+    setPanel(false);
+    setImmersive(false);
+    setIdle(false);
+    setOpeningRun((value) => value + 1);
+    setOpening(true);
+    // Back to silence, as on a first visit: the galaxy raises it again.
+    soundtrack.current?.setVolume(0, 0.6);
+    engine.current?.overview();
+  };
+  const openingVisible = opening && !error;
   return (
     <main
-      className={`observatory ${immersive || idle ? 'immersive' : ''} ${systemView ? 'system-view' : ''}`}
+      className={`observatory ${immersive || idle ? 'immersive' : ''} ${systemView ? 'system-view' : ''} ${openingVisible ? 'is-opening' : ''}`}
     >
       <div ref={mount} className="universe" aria-label={t.canvas.ariaLabel} />
       <div className="vignette" />
-      <header className="topbar chrome">
+      <header inert={openingVisible} className="topbar chrome">
         {/* oxlint-disable-next-line nextjs/no-html-link-for-pages -- Shared with the standalone static build, without a Next router. */}
         <a className="brand" href="./" aria-label={t.brand.home}>
           <Orbit size={27} />
@@ -235,7 +279,7 @@ export default function Home() {
           />
         </div>
       </header>
-      <section className="intro chrome">
+      <section inert={openingVisible} className="intro chrome">
         <div className="eyebrow">
           <span /> {t.intro.eyebrow}
         </div>
@@ -254,7 +298,7 @@ export default function Home() {
           {formatDeclination(pointing.dec)}
         </div>
       </section>
-      <section className="body-inspector" aria-label={t.inspector.ariaLabel}>
+      <section inert={openingVisible} className="body-inspector" aria-label={t.inspector.ariaLabel}>
         <div className="body-identity">
           <Crosshair size={16} />
           <div>
@@ -390,7 +434,7 @@ export default function Home() {
           </Button>
         )}
       </section>
-      <aside
+      <aside inert={openingVisible}
         className={`control-panel chrome ${panel ? '' : 'collapsed'}`}
         aria-label={t.panel.ariaLabel}
       >
@@ -480,6 +524,7 @@ export default function Home() {
       </aside>
       {!panel && (
         <Button
+          inert={openingVisible}
           className="reopen chrome"
           variant="outline"
           onClick={() => setPanel(true)}
@@ -487,13 +532,13 @@ export default function Home() {
           <SlidersHorizontal /> {t.reopen}
         </Button>
       )}
-      <div className="bottom-hint chrome">
+      <div inert={openingVisible} className="bottom-hint chrome">
         <span className="mouse-icon" />
         <span>{t.hints.select}</span>
         <span className="hint-divider" />
         <span className="secondary-hint">{t.hints.zoom}</span>
       </div>
-      <footer className="bottom-bar chrome">
+      <footer inert={openingVisible} className="bottom-bar chrome">
         <div className="telemetry">
           <span>
             <b>{formatNumber(density, locale)}</b> {t.telemetry.particles}
@@ -508,9 +553,10 @@ export default function Home() {
             Guillaume Girard
           </a>
         </div>
+        <Button className="replay-opening" variant="ghost" onClick={replayOpening}><Play />{t.opening.replay}</Button>
         <span className="footer-note">{t.telemetry.tagline}</span>
       </footer>
-      <section className="sound-controls" aria-label={t.sound.ariaLabel}>
+      <section inert={openingVisible} className="sound-controls" aria-label={t.sound.ariaLabel}>
         <Button
           variant="ghost"
           className="music-button"
@@ -549,7 +595,7 @@ export default function Home() {
         )}
         {musicError && <output className="music-error">{musicError}</output>}
       </section>
-      <div className="zoom-actions">
+      <div inert={openingVisible} className="zoom-actions">
         <Button
           variant="ghost"
           size="icon"
@@ -568,7 +614,7 @@ export default function Home() {
           <Plus />
         </Button>
       </div>
-      <div className="view-actions">
+      <div inert={openingVisible} className="view-actions">
         <Button
           variant="ghost"
           size="icon"
@@ -593,7 +639,20 @@ export default function Home() {
           {immersive ? <Minimize2 /> : <Maximize2 />}
         </Button>
       </div>
-      {(!ready || error) && (
+      {openingVisible && (
+        <CinematicIntro
+          key={openingRun}
+          ready={ready}
+          copy={t.opening}
+          onStart={() => enableMusic(0)}
+          onReveal={() => soundtrack.current?.setVolume(volume / 100, 1.5)}
+          onProgress={(progress) =>
+            engine.current?.setOpeningProgress(progress)
+          }
+          onFinish={finishOpening}
+        />
+      )}
+      {((!ready && !openingVisible) || error) && (
         <output className="loading">{error || t.loading}</output>
       )}
     </main>

@@ -154,8 +154,8 @@ export function buildAmbientGraph(context: BaseAudioContext) {
   const smooth = (param: AudioParam, value: number, seconds: number) =>
     param.setTargetAtTime(value, context.currentTime, seconds);
   return {
-    setVolume(volume: number) {
-      smooth(master.gain, Math.min(1, Math.max(0, volume)) * 0.7, 0.35);
+    setVolume(volume: number, seconds = 0.35) {
+      smooth(master.gain, Math.min(1, Math.max(0, volume)) * 0.7, seconds);
     },
     setProximity(value: number, kind: BodyKind | null = null) {
       proximity = value;
@@ -318,7 +318,6 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         if (disposed || version !== request || !enabled) return false;
         graph!.setProximity(proximity, bodyKind);
         graph!.setVolume(volume);
-        // Keeps playing when the tab is backgrounded, instead of suspending.
         startTimer();
         return true;
       } catch (e) {
@@ -332,9 +331,9 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         return false;
       }
     },
-    setVolume(value: number) {
+    setVolume(value: number, seconds?: number) {
       volume = Math.min(1, Math.max(0, value));
-      if (enabled) graph?.setVolume(volume);
+      if (enabled) graph?.setVolume(volume, seconds);
     },
     setProximity(value: number, kind: BodyKind | null = null) {
       value = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;

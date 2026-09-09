@@ -41,6 +41,7 @@ export type GalaxyEngine = {
   frameSystem: (scope: 'stellar' | 'local') => void;
   configure: (settings: GalaxySettings) => void;
   setMessages: (messages: GalaxyMessages) => void;
+  setOpeningProgress: (progress: number | null) => void;
   zoom: (factor: number) => void;
   approach: () => void;
   overview: () => void;
@@ -151,8 +152,11 @@ export function createGalaxy(
   onProximity: (value: number, kind: BodyIdentity['kind'] | null) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
   onPointing: (pointing: SkyPointing) => void = () => {},
+  onFirstFrame: () => void = () => {},
 ): GalaxyEngine {
   let messages = initialMessages;
+  let firstFrameRendered = false;
+  let openingProgress: number | null = null;
   const renderer = new THREE.WebGLRenderer({
     antialias: false,
     alpha: false,
@@ -999,6 +1003,13 @@ export function createGalaxy(
         (selected ? distance - selected.radius * 1.004 : distance) / 100,
       ),
     );
+    const openingFov =
+      openingProgress !== null && !selected && !reduced.matches
+        ? 45 + openingProgress * 3
+        : 48;
+    camera.fov +=
+      (openingFov - camera.fov) *
+      (reduced.matches ? 1 : 1 - Math.exp(-dt * 12));
     camera.updateProjectionMatrix();
     camera.lookAt(cameraTarget);
     camera.updateMatrixWorld();
@@ -1197,6 +1208,10 @@ export function createGalaxy(
       selected?.kind ?? null,
     );
     renderer.render(scene, camera);
+    if (!firstFrameRendered) {
+      firstFrameRendered = true;
+      onFirstFrame();
+    }
   };
   frame = requestAnimationFrame(animate);
   return {
@@ -1214,6 +1229,9 @@ export function createGalaxy(
       );
       targetInner.set(palettes[next.palette][0]);
       targetOuter.set(palettes[next.palette][1]);
+    },
+    setOpeningProgress(progress) {
+      openingProgress = progress;
     },
     setMessages(next) {
       messages = next;
