@@ -43,3 +43,6 @@ next-env.d.ts
 *.tsbuildinfo
 .dev.vars*
 __pycache__/
+
+# private local reference material (audits, proposals, and artifacts)
+/docs/local/
