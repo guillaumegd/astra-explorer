@@ -8,6 +8,36 @@ export const fr: Dictionary = {
     start: 'Embarquer',
     preparing: 'Préparation du ciel…',
   },
+  controls: {
+    satellites: 'Satellites',
+    members: 'Membres du système',
+    options: 'Options',
+    advanced: 'Avancé',
+    details: 'Détails',
+    viewDetails: 'Détails de la vue',
+    volume: 'Volume',
+    about: 'À propos',
+    help: 'Aide',
+    close: 'Fermer',
+    back: 'Retour aux options',
+    discover: 'Découvrir',
+    galaxy: 'Galaxie',
+    approach: 'Approcher',
+    approaching: 'Approche…',
+    around: 'Explorer autour',
+    camera: 'Angle de vue',
+    count: 'Nombre d’astres',
+    color: 'Couleur',
+    reset: 'Rétablir les réglages',
+    welcome: 'Choisissez une étoile pour l’explorer.',
+    densityNotice:
+      'L’astre suivi ne fait plus partie de cette population. Retour à la galaxie.',
+    aboutText:
+      'Un univers artistique et procédural, conçu pour la contemplation et la découverte.',
+    helpText:
+      'Cliquez ou touchez une étoile pour la sélectionner. Double-cliquez ou utilisez Approcher pour la rejoindre. Glissez pour tourner ; utilisez la molette, le pincement ou −/+ pour zoomer. Au clavier, placez le focus sur la scène : les flèches changent d’astre, Entrée rapproche, Début revient à la galaxie. Échap ferme les options ou quitte l’immersion.',
+    system: 'Système',
+  },
   meta: {
     title: 'ASTRA — Un univers à portée de main',
     description:

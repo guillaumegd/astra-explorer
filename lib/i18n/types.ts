@@ -3,13 +3,6 @@ import type { BodyKind } from '../stellar-lod';
 export type Locale = 'fr' | 'en' | 'es' | 'pt-PT';
 
 export type Dictionary = {
-  opening: {
-    invitation: string;
-    credit: string;
-    replay: string;
-    start: string;
-    preparing: string;
-  };
   meta: { title: string; description: string };
   canvas: {
     ariaLabel: string;
@@ -87,6 +80,40 @@ export type Dictionary = {
     exitImmersiveAria: string;
     enterImmersiveAria: string;
     immersiveTitle: string;
+  };
+  opening: {
+    invitation: string;
+    credit: string;
+    replay: string;
+    start: string;
+    preparing: string;
+  };
+  controls: {
+    satellites: string;
+    members: string;
+    options: string;
+    advanced: string;
+    details: string;
+    viewDetails: string;
+    volume: string;
+    about: string;
+    help: string;
+    close: string;
+    back: string;
+    discover: string;
+    galaxy: string;
+    approach: string;
+    approaching: string;
+    around: string;
+    camera: string;
+    count: string;
+    color: string;
+    reset: string;
+    welcome: string;
+    densityNotice: string;
+    aboutText: string;
+    helpText: string;
+    system: string;
   };
   loading: string;
   bodyKinds: Record<BodyKind, string>;

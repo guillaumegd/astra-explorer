@@ -41,7 +41,7 @@ permet une vérification locale. Voir [les étapes de déploiement](DEPLOYMENT.m
 - Curseurs : densité (10 000 à 120 000 astres) et vitesse de rotation. Une réduction de densité retire les identifiants dépassant la limite et quitte leur suivi si nécessaire.
 - Pause : suspend la rotation. Mode immersif : masque l’interface principale ; Échap la restaure. L’interface s’efface aussi d’elle-même après 10 secondes d’inactivité, pour une vue plus contemplative, et revient dès qu’une activité reprend.
 
-Sur mobile, les paramètres sont initialement repliés pour laisser la scène visible. Les points du halo distant appartiennent au même catalogue sélectionnable ; la poussière et le halo lumineux central sont des effets de lumière.
+Sur ordinateur et mobile, la barre basse regroupe découverte/retour, zoom, pause, son et le menu **⋯**. Le zoom, le son et la pause utilisent uniquement des icônes avec noms accessibles et infobulles. **⋯ → Avancé** contient le nombre d’astres, la vitesse et la couleur ; **⋯ → Volume** contient le niveau sonore. Langue, aide et crédits sont également dans ce menu. La sélection affiche un résumé compact : **Détails** ouvre les informations, **Explorer autour** regroupe la navigation et **Angle de vue** apparaît à proximité. Une seule surface est ouverte à la fois ; elle ne disparaît pas pendant la lecture. Rétablir les réglages conserve le cadrage (sauf si la nouvelle population retire l’astre suivi). Les points du halo distant appartiennent au même catalogue sélectionnable ; la poussière et le halo lumineux central sont des effets de lumière.
 
 ## Identités et génération procédurale
 

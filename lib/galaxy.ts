@@ -1,7 +1,11 @@
 import { asteroidRadius } from './asteroid-shape';
 import { sampleBodyTravel } from './body-travel';
 import { desiredSurfaceTilt, surfaceCameraPose } from './surface-camera';
-import { systemBounds, framingDistance } from './system-framing';
+import {
+  systemBounds,
+  framingDistance,
+  localSystemRoot,
+} from './system-framing';
 import * as THREE from 'three';
 import { compileOrbitChain, orbitalGLSL, orbitFor } from './orbits';
 import { createLocalDebris } from './local-debris';
@@ -35,12 +39,19 @@ export type GalaxyMessages = {
 export type SystemView = { root: BodyIdentity; members: BodyIdentity[] };
 // Where the camera currently sits relative to the galactic centre, expressed
 // the way a sky survey would: right ascension and declination, in radians.
+export type CameraView =
+  | 'overview'
+  | 'selected'
+  | 'approaching'
+  | 'close'
+  | 'system';
 export type SkyPointing = { ra: number; dec: number };
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
   frameSystem: (scope: 'stellar' | 'local') => void;
   configure: (settings: GalaxySettings) => void;
   setMessages: (messages: GalaxyMessages) => void;
+  setViewportInset: (pixels: number) => void;
   setOpeningProgress: (progress: number | null) => void;
   zoom: (factor: number) => void;
   approach: () => void;
@@ -153,6 +164,7 @@ export function createGalaxy(
   onSystemView: (view: SystemView | null) => void = () => {},
   onPointing: (pointing: SkyPointing) => void = () => {},
   onFirstFrame: () => void = () => {},
+  onCameraView: (view: CameraView) => void = () => {},
 ): GalaxyEngine {
   let messages = initialMessages;
   let firstFrameRendered = false;
@@ -563,13 +575,8 @@ export function createGalaxy(
       { length: Math.min(8, settings.density - start) },
       (_, i) => describeBody(start + i),
     );
-    let root = scope === 'stellar' ? start : body.id;
-    if (
-      scope === 'local' &&
-      !catalogue.some((b) => b.parentId === root) &&
-      body.parentId !== null
-    )
-      root = body.parentId;
+    const root =
+      scope === 'stellar' ? start : (localSystemRoot(body, catalogue) ?? start);
     const bounds = systemBounds(root, catalogue);
     select(root);
     const members = catalogue.filter((b) => bounds.members.includes(b.id));
@@ -619,6 +626,10 @@ export function createGalaxy(
   };
 
   let renderHeight = 1;
+  let reservedBottom = 0;
+  let currentReservedBottom = 0;
+  let insetWidth = 0;
+  let insetHeight = 0;
   const cameraTarget = new THREE.Vector3();
   const cameraDirection = new THREE.Vector3();
   let surfaceTilt = 0;
@@ -630,6 +641,7 @@ export function createGalaxy(
   let qualityCheck = 0;
   let lastFrame = performance.now();
   let lastPointingReport = 0;
+  let reportedCameraView: CameraView = 'overview';
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   let elapsed = 0,
     rotation = 0,
@@ -853,6 +865,38 @@ export function createGalaxy(
     uniforms.uInner.value.lerp(targetInner, damping);
     uniforms.uOuter.value.lerp(targetOuter, damping);
     group.updateMatrixWorld(true);
+    // Keep the subject framed in the visible space above a mobile sheet.
+    const insetDelta = reservedBottom - currentReservedBottom;
+    if (
+      Math.abs(insetDelta) > 0.1 ||
+      (reservedBottom === 0 && currentReservedBottom !== 0) ||
+      (currentReservedBottom > 0 &&
+        (insetWidth !== host.clientWidth || insetHeight !== host.clientHeight))
+    ) {
+      currentReservedBottom =
+        Math.abs(insetDelta) < 0.5
+          ? reservedBottom
+          : currentReservedBottom +
+            insetDelta * (reduced.matches ? 1 : 1 - Math.exp(-dt * 10));
+      const width = host.clientWidth;
+      const height = host.clientHeight;
+      insetWidth = width;
+      insetHeight = height;
+      if (currentReservedBottom > 0) {
+        camera.setViewOffset(
+          width,
+          Math.max(height * 0.35, height - currentReservedBottom),
+          0,
+          0,
+          width,
+          height,
+        );
+      } else {
+        camera.clearViewOffset();
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      }
+    }
     const baseDistance = mobile ? 40 : 29.4;
     if (!travel)
       distance += (targetDistance - distance) * (1 - Math.exp(-dt * 4));
@@ -1018,7 +1062,10 @@ export function createGalaxy(
       const r = camera.position.length();
       onPointing({
         ra: Math.atan2(camera.position.x, camera.position.z),
-        dec: r > 1e-6 ? Math.asin(THREE.MathUtils.clamp(camera.position.y / r, -1, 1)) : 0,
+        dec:
+          r > 1e-6
+            ? Math.asin(THREE.MathUtils.clamp(camera.position.y / r, -1, 1))
+            : 0,
       });
     }
     if (framed) {
@@ -1203,6 +1250,22 @@ export function createGalaxy(
       host.dataset.detailCount = String(bodyLOD.stats().visible);
       host.dataset.distance = distance.toFixed(4);
     }
+    // Report discrete UI changes only, including wheel and keyboard navigation.
+    const cameraView: CameraView = !selected
+      ? 'overview'
+      : framed
+        ? 'system'
+        : travel ||
+            (targetDistance / selected.radius <= 4.3 &&
+              distance / selected.radius > 4.6)
+          ? 'approaching'
+          : distance / selected.radius <= 6
+            ? 'close'
+            : 'selected';
+    if (cameraView !== reportedCameraView) {
+      reportedCameraView = cameraView;
+      onCameraView(cameraView);
+    }
     onProximity(
       zoomProximity(distance, selected?.radius ?? null),
       selected?.kind ?? null,
@@ -1232,6 +1295,9 @@ export function createGalaxy(
     },
     setOpeningProgress(progress) {
       openingProgress = progress;
+    },
+    setViewportInset(pixels) {
+      reservedBottom = Math.max(0, Math.min(pixels, host.clientHeight * 0.65));
     },
     setMessages(next) {
       messages = next;

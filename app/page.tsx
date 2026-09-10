@@ -9,7 +9,11 @@ import {
   Minimize2,
   Pause,
   Play,
-  SlidersHorizontal,
+  MoreHorizontal,
+  Info,
+  HelpCircle,
+  Satellite,
+  Check,
   Plus,
   Minus,
   ChevronLeft,
@@ -22,21 +26,23 @@ import {
 import { Button } from '@/components/ui/button';
 import { CinematicIntro } from '@/components/cinematic-intro';
 import { hasSeenOpening, rememberOpening } from '@/lib/opening-sequence';
-import { LanguageSwitcher } from '@/components/language-switcher';
+import { Dialog } from '@base-ui/react/dialog';
 import {
   createAmbientSoundtrack,
   type AmbientSoundtrack,
 } from '@/lib/ambient-audio';
 import { Slider } from '@/components/ui/slider';
-import type { BodyIdentity } from '@/lib/stellar-lod';
+import { describeBody, type BodyIdentity } from '@/lib/stellar-lod';
+import { localSystemRoot } from '@/lib/system-framing';
 import {
   createGalaxy,
   type GalaxyEngine,
+  type CameraView,
   type GalaxyMessages,
   type SkyPointing,
   type SystemView,
 } from '@/lib/galaxy';
-import { formatNumber } from '@/lib/i18n';
+import { formatNumber, locales, localeNames } from '@/lib/i18n';
 import { useLocale } from '@/lib/i18n/use-locale';
 import type { Dictionary } from '@/lib/i18n/types';
 
@@ -73,6 +79,35 @@ function formatDeclination(radians: number): string {
   return `${sign}${pad(d)}° ${pad(m)}′ ${pad(s)}″`;
 }
 
+type Panel =
+  | 'options'
+  | 'advanced'
+  | 'details'
+  | 'viewDetails'
+  | 'volume'
+  | 'language'
+  | 'help'
+  | 'about';
+
+function IconButton({
+  label,
+  children,
+  ...props
+}: React.ComponentProps<typeof Button> & { label: string }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      {...props}
+      aria-label={label}
+      data-tooltip={label}
+      className="icon-control"
+    >
+      {children}
+    </Button>
+  );
+}
+
 export default function Home() {
   const { locale, setLocale, t } = useLocale();
   const mount = useRef<HTMLDivElement>(null);
@@ -91,7 +126,18 @@ export default function Home() {
   const [paused, setPaused] = useState(false);
   const [immersive, setImmersive] = useState(false);
   const [idle, setIdle] = useState(false);
-  const [panel, setPanel] = useState(true);
+  const [panel, setPanel] = useState<Panel | null>(null);
+  const [cameraView, setCameraView] = useState<CameraView>('overview');
+  const [dockHeight, setDockHeight] = useState(56);
+  const detailsButton = useRef<HTMLButtonElement>(null);
+  const languageButton = useRef<HTMLButtonElement>(null);
+  const immersiveButton = useRef<HTMLButtonElement>(null);
+  const [notice, setNotice] = useState('');
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const panelHeading = useRef<HTMLHeadingElement>(null);
+  const panelSurface = useRef<HTMLDivElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const dock = useRef<HTMLDivElement>(null);
   const [palette, setPalette] = useState(0);
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(() => !hasSeenOpening());
@@ -115,7 +161,9 @@ export default function Home() {
     musicRef.current = { opening, volume };
   });
   // Built from a user gesture, as browsers require, but not necessarily heard
-  // yet: the opening primes it silently and raises it on the galaxy.
+  // yet: the opening primes it silently and raises it on the galaxy. A no-op
+  // once this has ever succeeded, so a later replay cannot force the engine
+  // back on after the visitor has explicitly muted it via the header.
   const enableMusic = (atVolume: number) => {
     const sound = soundtrack.current;
     if (!sound || musicStarted.current || soundMutedRef.current) return;
@@ -140,20 +188,21 @@ export default function Home() {
         mount.current,
         buildGalaxyMessages(tRef.current),
         setError,
-        setSelected,
+        (body) => {
+          setSelected(body);
+        },
         (value, kind) => soundtrack.current?.setProximity(value, kind),
         (view) => {
           setSystemView(view);
-          if (view && window.innerWidth < 600) setPanel(false);
         },
         setPointing,
         () => setReady(true),
+        setCameraView,
       );
       queueMicrotask(() => {
         setMusicBusy(false);
         setVolume(35);
         setSelected(null);
-        if (window.matchMedia('(max-width: 600px)').matches) setPanel(false);
       });
     } catch {
       queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
@@ -170,15 +219,11 @@ export default function Home() {
       gestureEvents.forEach((type) => window.addEventListener(type, unblock));
     }
 
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setImmersive(false);
-    };
-    window.addEventListener('keydown', key);
     return () => {
       engine.current?.dispose();
       soundtrack.current?.dispose();
       soundtrack.current = null;
-      window.removeEventListener('keydown', key);
+
       gestureEvents.forEach((type) =>
         window.removeEventListener(type, unblock),
       );
@@ -197,7 +242,12 @@ export default function Home() {
     const wake = () => {
       setIdle(false);
       clearTimeout(timer);
-      timer = setTimeout(() => { if (!opening) setIdle(true); }, 10000);
+      timer = setTimeout(() => {
+        const focusedControl =
+          dock.current?.contains(document.activeElement) &&
+          document.activeElement?.matches(':focus-visible');
+        if (!panel && !focusedControl && !opening) setIdle(true);
+      }, 10000);
     };
     wake();
     const events = [
@@ -212,7 +262,7 @@ export default function Home() {
       clearTimeout(timer);
       events.forEach((type) => window.removeEventListener(type, wake));
     };
-  }, [opening]);
+  }, [panel, opening]);
   // A tab left for another goes quiet the same way the mute button does, and
   // comes back the same way. A visitor who muted on purpose stays muted.
   useEffect(() => {
@@ -240,11 +290,71 @@ export default function Home() {
     }
   };
   const reset = () => {
-    setDensity(65000);
+    changeDensity(65000);
     setSpeed(1);
     setPaused(false);
     setPalette(0);
-    engine.current?.reset();
+    setTilt(null);
+  };
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !panel && !event.defaultPrevented)
+        setImmersive(false);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [panel]);
+  useEffect(() => {
+    if (panel) panelHeading.current?.focus();
+  }, [panel]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+  useEffect(() => {
+    if (!dock.current) return;
+    const observer = new ResizeObserver(() =>
+      setDockHeight(dock.current!.getBoundingClientRect().height),
+    );
+    observer.observe(dock.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const surface = panelSurface.current;
+    const resize = () => {
+      const top =
+        panel && surface
+          ? surface.getBoundingClientRect().top
+          : dock.current?.getBoundingClientRect().top;
+      engine.current?.setViewportInset(
+        window.innerWidth <= 600 && !immersive && top !== undefined
+          ? window.innerHeight - top + 12
+          : 0,
+      );
+    };
+    const observer = new ResizeObserver(resize);
+    if (surface) observer.observe(surface);
+    window.addEventListener('resize', resize);
+    resize();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', resize);
+    };
+  }, [panel, dockHeight, immersive]);
+  const openPanel = (next: Panel) => {
+    returnFocus.current =
+      next === 'details'
+        ? detailsButton.current
+        : next === 'language'
+          ? languageButton.current
+          : moreButton.current;
+    setIdle(false);
+    setPanel(panel === next ? null : next);
+  };
+  const changeDensity = (value: number) => {
+    if (selected && selected.id >= value) setNotice(t.controls.densityNotice);
+    setDensity(value);
   };
   const finishOpening = () => {
     rememberOpening();
@@ -256,7 +366,7 @@ export default function Home() {
     );
   };
   const replayOpening = () => {
-    setPanel(false);
+    setPanel(null);
     setImmersive(false);
     setIdle(false);
     setOpeningRun((value) => value + 1);
@@ -266,394 +376,563 @@ export default function Home() {
     soundtrack.current?.setVolume(0, 0.6);
     engine.current?.overview();
   };
+  const localRoot = useMemo(() => {
+    if (!selected) return null;
+    const start = selected.systemId * 8;
+    return localSystemRoot(
+      selected,
+      Array.from({ length: Math.min(8, density - start) }, (_, i) =>
+        describeBody(start + i),
+      ),
+    );
+  }, [selected, density]);
+  const hidden = immersive || (idle && !panel);
   const openingVisible = opening && !error;
+  const musicLabel = musicEnabled ? t.sound.disableMusic : t.sound.enableMusic;
+  const title =
+    panel === 'language' ? t.language.label : panel ? t.controls[panel] : '';
   return (
     <main
-      className={`observatory ${immersive || idle ? 'immersive' : ''} ${systemView ? 'system-view' : ''} ${openingVisible ? 'is-opening' : ''}`}
+      className={`observatory ${hidden ? 'is-quiet' : ''} ${openingVisible ? 'is-opening' : ''}`}
     >
-      <div ref={mount} className="universe" aria-label={t.canvas.ariaLabel} inert={openingVisible} />
+      <div
+        ref={mount}
+        className="universe"
+        aria-label={t.canvas.ariaLabel}
+        inert={openingVisible}
+      />
       <div className="vignette" />
-      <header inert={openingVisible} className="topbar chrome">
-        {/* oxlint-disable-next-line nextjs/no-html-link-for-pages -- Shared with the standalone static build, without a Next router. */}
-        <a className="brand" href="./" aria-label={t.brand.home}>
-          <Orbit size={27} />
-          <span>
-            ASTRA<span className="brand-dot">.</span>
-          </span>
-          <span className="brand-caption">{t.brand.caption}</span>
-        </a>
-        <div className="top-right">
-          <span className="live">
-            <i /> {t.brand.live}
-          </span>
-          <span className="edition">EXP. 001</span>
-          <LanguageSwitcher
-            locale={locale}
-            onChange={setLocale}
-            label={t.language.label}
-          />
-        </div>
+      <header className="signature" inert={hidden || openingVisible}>
+        <Orbit size={23} aria-hidden="true" />
+        <span>
+          ASTRA<span className="brand-dot">.</span>
+        </span>
       </header>
-      <section inert={openingVisible} className="intro chrome">
-        <div className="eyebrow">
-          <span /> {t.intro.eyebrow}
-        </div>
-        <h1>
-          {t.intro.titleLine1}
-          <br />
-          <em>{t.intro.titleLine2}</em>
-        </h1>
-        <p>
-          {t.intro.subtitleLine1}
-          <br />
-          {t.intro.subtitleLine2}
-        </p>
-        <div className="coordinates">
-          RA {formatRightAscension(pointing.ra)} <span> / </span> DEC{' '}
-          {formatDeclination(pointing.dec)}
-        </div>
-      </section>
-      <section inert={openingVisible} className="body-inspector" aria-label={t.inspector.ariaLabel}>
-        <div className="body-identity">
-          <Crosshair size={16} />
-          <div>
-            <span className="eyebrow">
-              {selected ? t.bodyKinds[selected.kind] : t.inspector.freeExploration}
-            </span>
-            <strong>
-              {selected ? selected.name : t.inspector.everyPointIsAWorld}
-            </strong>
-          </div>
-        </div>
-        <p>
-          {selected
-            ? `${selected.systemName} · ${
-                selected.parentId === null
-                  ? t.inspector.centralStar
-                  : selected.kind === 'rocky-moon'
-                    ? t.inspector.moonOf(
-                        'AST-' +
-                          String(selected.parentId + 1).padStart(6, '0'),
-                      )
-                    : t.inspector.orbitsTheStar
-              }`
-            : t.inspector.selectPrompt}
-        </p>
-        <div className="body-actions">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t.inspector.previousBody}
-            onClick={() => engine.current?.nextBody(-1)}
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            className="inspect-button"
-            onClick={() => engine.current?.approach()}
-          >
-            {selected ? t.inspector.exploreBody : t.inspector.discoverBody}
-            <ArrowUpRight size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t.inspector.nextBody}
-            onClick={() => engine.current?.nextBody(1)}
-          >
-            <ChevronRight />
-          </Button>
-        </div>
-        {selected && (
-          <div className="surface-camera-controls">
-            <label id="tilt-label">
-              {t.inspector.tilt}{' '}
-              <span>
-                {tilt === null
-                  ? t.inspector.tiltAuto
-                  : t.inspector.tiltMax(tilt)}
-              </span>
-            </label>
-            <Slider
-              aria-labelledby="tilt-label"
-              min={0}
-              max={60}
-              step={1}
-              value={[tilt ?? 60]}
-              onValueChange={(value) =>
-                setTilt(Array.isArray(value) ? value[0] : value)
-              }
-            />
-            <div>
-              <button onClick={() => setTilt(0)}>
-                {t.inspector.verticalView}
-              </button>
-              <button
-                aria-pressed={tilt === null}
-                onClick={() => setTilt(null)}
+      <div
+        ref={dock}
+        className="observation-dock"
+        inert={hidden || openingVisible}
+      >
+        <div className="context-line">
+          {selected && (
+            <div className="body-navigation">
+              <IconButton
+                label={t.inspector.previousBody}
+                onClick={() => engine.current?.nextBody(-1)}
               >
-                {t.inspector.automatic}
-              </button>
+                <ChevronLeft />
+              </IconButton>
+              <Button
+                ref={detailsButton}
+                variant="ghost"
+                className="context-details"
+                onClick={() => openPanel('details')}
+                aria-label={t.controls.details}
+                aria-haspopup="dialog"
+                aria-expanded={panel === 'details'}
+              >
+                <span>{t.bodyKinds[selected.kind]}</span>
+                <Info size={14} />
+              </Button>
+              <IconButton
+                label={t.inspector.nextBody}
+                onClick={() => engine.current?.nextBody(1)}
+              >
+                <ChevronRight />
+              </IconButton>
             </div>
-          </div>
-        )}
-        <div className="system-actions">
-          <Button
-            variant="ghost"
-            onClick={() => engine.current?.frameSystem('stellar')}
-          >
-            <Orbit size={13} />
-            {t.inspector.stellarSystem}
-          </Button>
-          {selected && selected.parentId !== null && (
+          )}
+          <div className="context-actions">
             <Button
               variant="ghost"
-              onClick={() => engine.current?.frameSystem('local')}
-            >
-              {t.inspector.planetAndMoons}
-            </Button>
-          )}
-        </div>
-        {systemView && (
-          <output className="system-caption">
-            {t.inspector.systemCaption(
-              systemView.root.name,
-              systemView.members.length,
-            )}
-          </output>
-        )}
-        {systemView && (
-          <details className="system-members">
-            <summary>
-              {t.inspector.viewMembers(systemView.members.length)}
-            </summary>
-            <div>
-              {systemView.members.map((body) => (
-                <button
-                  key={body.id}
-                  onClick={() => engine.current?.inspectBody(body.id)}
-                >
-                  {body.name} · {t.bodyKinds[body.kind]}
-                </button>
-              ))}
-            </div>
-          </details>
-        )}
-        {selected && (
-          <Button
-            variant="ghost"
-            className="overview-button"
-            onClick={() => engine.current?.overview()}
-          >
-            {t.inspector.backToGalaxy}
-          </Button>
-        )}
-      </section>
-      <aside inert={openingVisible}
-        className={`control-panel chrome ${panel ? '' : 'collapsed'}`}
-        aria-label={t.panel.ariaLabel}
-      >
-        <div className="panel-heading">
-          <div>
-            <span className="eyebrow">{t.panel.eyebrow}</span>
-            <h2>{t.panel.heading}</h2>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t.panel.hide}
-            onClick={() => setPanel(false)}
-          >
-            <X />
-          </Button>
-        </div>
-        <div className="control">
-          <div className="control-label">
-            <span id="density-label">{t.panel.density}</span>
-            <output>{formatNumber(density, locale)}</output>
-          </div>
-          <Slider
-            aria-labelledby="density-label"
-            min={10000}
-            max={120000}
-            step={1000}
-            value={[density]}
-            onValueChange={(v) => setDensity(Array.isArray(v) ? v[0] : v)}
-          />
-          <div className="scale">
-            <span>{t.panel.sparse}</span>
-            <span>{t.panel.dense}</span>
-          </div>
-        </div>
-        <div className="control">
-          <div className="control-label">
-            <span id="speed-label">{t.panel.speed}</span>
-            <output>
-              {speed.toFixed(1)}
-              <small> ×</small>
-            </output>
-          </div>
-          <Slider
-            aria-labelledby="speed-label"
-            min={0}
-            max={3}
-            step={0.1}
-            value={[speed]}
-            onValueChange={(v) => setSpeed(Array.isArray(v) ? v[0] : v)}
-          />
-          <div className="scale">
-            <span>{t.panel.still}</span>
-            <span>{t.panel.fast}</span>
-          </div>
-        </div>
-        <div className="palette-row">
-          <span>{t.panel.spectrum}</span>
-          <div className="palettes">
-            {t.panel.paletteNames.map((name, i) => (
-              <Button
-                key={name}
-                className={`swatch swatch-${i} ${palette === i ? 'selected' : ''}`}
-                aria-label={name}
-                title={name}
-                aria-pressed={palette === i}
-                onClick={() => setPalette(i)}
-              />
-            ))}
-          </div>
-        </div>
-        <div className="panel-footer">
-          <span>
-            <i />{' '}
-            {paused ? t.panel.rotationPaused : t.panel.systemBalanced}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={t.panel.resetAria}
-            title={t.panel.resetTitle}
-            onClick={reset}
-          >
-            <RotateCcw size={14} />
-          </Button>
-        </div>
-      </aside>
-      {!panel && (
-        <Button
-          inert={openingVisible}
-          className="reopen chrome"
-          variant="outline"
-          onClick={() => setPanel(true)}
-        >
-          <SlidersHorizontal /> {t.reopen}
-        </Button>
-      )}
-      <div inert={openingVisible} className="bottom-hint chrome">
-        <span className="mouse-icon" />
-        <span>{t.hints.select}</span>
-        <span className="hint-divider" />
-        <span className="secondary-hint">{t.hints.zoom}</span>
-      </div>
-      <footer inert={openingVisible} className="bottom-bar chrome">
-        <div className="telemetry">
-          <span>
-            <b>{formatNumber(density, locale)}</b> {t.telemetry.particles}
-          </span>
-          <span className="telemetry-line" />
-          <a
-            className="credit"
-            href="https://www.guillaumegirard.fr"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Guillaume Girard
-          </a>
-        </div>
-        <Button className="replay-opening" variant="ghost" onClick={replayOpening}><Play />{t.opening.replay}</Button>
-        <span className="footer-note">{t.telemetry.tagline}</span>
-      </footer>
-      <section inert={openingVisible} className="sound-controls" aria-label={t.sound.ariaLabel}>
-        <Button
-          variant="ghost"
-          className="music-button"
-          aria-label={musicEnabled ? t.sound.disableMusic : t.sound.enableMusic}
-          aria-pressed={musicEnabled}
-          disabled={musicBusy}
-          onClick={() => void toggleMusic()}
-        >
-          {musicEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          <span>
-            {musicBusy
-              ? t.sound.opening
-              : musicEnabled
-                ? t.sound.active
-                : t.sound.activate}
-          </span>
-        </Button>
-        {musicEnabled && (
-          <div className="music-volume">
-            <span id="music-volume-label" className="sr-only">
-              {t.sound.volumeLabel}
-            </span>
-            <Slider
-              aria-labelledby="music-volume-label"
-              min={0}
-              max={100}
-              step={1}
-              value={[volume]}
-              onValueChange={(v) => {
-                const value = Array.isArray(v) ? v[0] : v;
-                setVolume(value);
-                soundtrack.current?.setVolume(value / 100);
+              className="destination-control"
+              onClick={() => {
+                if (selected) {
+                  setPanel(null);
+                  engine.current?.overview();
+                } else engine.current?.approach();
               }}
-            />
+              aria-label={
+                selected ? t.inspector.backToGalaxy : t.inspector.discoverBody
+              }
+            >
+              {selected ? <ChevronLeft /> : <Orbit />}
+              <span>{selected ? t.controls.galaxy : t.controls.discover}</span>
+            </Button>
+            {selected && (
+              <>
+                <Button
+                  variant="ghost"
+                  className="scale-control"
+                  aria-label={t.inspector.stellarSystem}
+                  title={t.inspector.stellarSystem}
+                  aria-pressed={systemView?.root.id === selected.systemId * 8}
+                  onClick={() => engine.current?.frameSystem('stellar')}
+                >
+                  <Orbit />
+                  <span>{t.controls.system}</span>
+                </Button>
+                {localRoot !== null && (
+                  <Button
+                    variant="ghost"
+                    className="scale-control"
+                    aria-label={t.inspector.planetAndMoons}
+                    title={t.inspector.planetAndMoons}
+                    aria-pressed={systemView?.root.id === localRoot}
+                    onClick={() => engine.current?.frameSystem('local')}
+                  >
+                    <Satellite />
+                    <span>{t.controls.satellites}</span>
+                  </Button>
+                )}
+                {(cameraView === 'selected' ||
+                  cameraView === 'approaching') && (
+                  <Button
+                    variant="ghost"
+                    className="approach-control"
+                    disabled={cameraView === 'approaching'}
+                    onClick={() => engine.current?.approach()}
+                  >
+                    {cameraView === 'approaching'
+                      ? t.controls.approaching
+                      : t.controls.approach}
+                    <ArrowUpRight size={14} />
+                  </Button>
+                )}
+              </>
+            )}
           </div>
-        )}
-        {musicError && <output className="music-error">{musicError}</output>}
-      </section>
-      <div inert={openingVisible} className="zoom-actions">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t.zoom.out}
-          onClick={() => engine.current?.zoom(1 / 1.5)}
-        >
-          <Minus />
-        </Button>
-        <span>{t.zoom.label}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t.zoom.in}
-          onClick={() => engine.current?.zoom(1.5)}
-        >
-          <Plus />
-        </Button>
+        </div>
+        <fieldset className="command-bar" aria-label={t.brand.caption}>
+          <IconButton
+            label={t.zoom.out}
+            onClick={() => engine.current?.zoom(1 / 1.5)}
+          >
+            <Minus />
+          </IconButton>
+          <IconButton
+            label={t.zoom.in}
+            onClick={() => engine.current?.zoom(1.5)}
+          >
+            <Plus />
+          </IconButton>
+          <span className="command-divider" />
+          <IconButton
+            label={
+              paused ? t.view.resumeRotationAria : t.view.pauseRotationAria
+            }
+            aria-pressed={paused}
+            onClick={() => setPaused((v) => !v)}
+          >
+            {paused ? <Play /> : <Pause />}
+          </IconButton>
+          <IconButton
+            label={musicLabel}
+            aria-pressed={musicEnabled}
+            disabled={musicBusy}
+            onClick={() => void toggleMusic()}
+          >
+            {musicEnabled ? <Volume2 /> : <VolumeX />}
+          </IconButton>
+          <IconButton
+            ref={immersiveButton}
+            label={t.view.enterImmersiveAria}
+            aria-pressed={immersive}
+            onClick={() => {
+              setPanel(null);
+              setImmersive(true);
+            }}
+          >
+            <Maximize2 />
+          </IconButton>
+          <IconButton
+            ref={languageButton}
+            label={t.language.label}
+            aria-haspopup="dialog"
+            aria-expanded={panel === 'language'}
+            onClick={() => openPanel('language')}
+          >
+            <span className="language-code">
+              {locale.slice(0, 2).toUpperCase()}
+            </span>
+          </IconButton>
+          <IconButton
+            ref={moreButton}
+            label={t.controls.options}
+            aria-haspopup="dialog"
+            aria-expanded={
+              panel !== null && panel !== 'details' && panel !== 'language'
+            }
+            onClick={() => openPanel('options')}
+          >
+            <MoreHorizontal />
+          </IconButton>
+        </fieldset>
       </div>
-      <div inert={openingVisible} className="view-actions">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={
-            paused ? t.view.resumeRotationAria : t.view.pauseRotationAria
-          }
-          title={paused ? t.view.resumeTitle : t.view.pauseTitle}
-          onClick={() => setPaused((v) => !v)}
-        >
-          {paused ? <Play /> : <Pause />}
-        </Button>
-        <span />
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={
-            immersive ? t.view.exitImmersiveAria : t.view.enterImmersiveAria
-          }
-          title={t.view.immersiveTitle}
-          onClick={() => setImmersive((v) => !v)}
-        >
-          {immersive ? <Minimize2 /> : <Maximize2 />}
-        </Button>
-      </div>
+      {hidden && !openingVisible && (
+        <div className="quiet-controls">
+          <IconButton
+            label={musicLabel}
+            aria-pressed={musicEnabled}
+            disabled={musicBusy}
+            onClick={() => void toggleMusic()}
+          >
+            {musicEnabled ? <Volume2 /> : <VolumeX />}
+          </IconButton>
+          <IconButton
+            label={t.view.exitImmersiveAria}
+            onClick={() => {
+              setImmersive(false);
+              setIdle(false);
+              requestAnimationFrame(() => immersiveButton.current?.focus());
+            }}
+          >
+            <Minimize2 />
+          </IconButton>
+        </div>
+      )}
+      <Dialog.Root
+        open={panel !== null}
+        modal={false}
+        disablePointerDismissal
+        onOpenChange={(open) => {
+          if (!open) setPanel(null);
+        }}
+      >
+        <Dialog.Portal>
+          <div
+            className="panel-dismiss"
+            aria-hidden="true"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setPanel(null);
+            }}
+          />
+          <Dialog.Popup
+            ref={panelSurface}
+            className="options-surface"
+            style={
+              { '--dock-height': `${dockHeight}px` } as React.CSSProperties
+            }
+            initialFocus={panelHeading}
+            finalFocus={() =>
+              returnFocus.current?.isConnected
+                ? returnFocus.current
+                : moreButton.current
+            }
+          >
+            <div className="surface-heading">
+              {panel !== 'options' &&
+                panel !== 'details' &&
+                panel !== 'language' && (
+                  <IconButton
+                    label={t.controls.back}
+                    onClick={() => setPanel('options')}
+                  >
+                    <ChevronLeft />
+                  </IconButton>
+                )}
+              <Dialog.Title ref={panelHeading} tabIndex={-1}>
+                {title}
+              </Dialog.Title>
+              <Dialog.Close
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="icon-control"
+                    aria-label={t.controls.close}
+                    data-tooltip={t.controls.close}
+                  />
+                }
+              >
+                <X />
+              </Dialog.Close>
+            </div>
+            <div className="surface-content" key={panel}>
+              {panel === 'options' && (
+                <div className="option-list">
+                  <Button variant="ghost" onClick={() => setPanel('volume')}>
+                    <Volume2 />
+                    <span>{t.controls.volume}</span>
+                    <ChevronRight />
+                  </Button>
+                  <Button variant="ghost" onClick={() => setPanel('advanced')}>
+                    <MoreHorizontal />
+                    <span>{t.controls.advanced}</span>
+                    <ChevronRight />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setPanel('viewDetails')}
+                  >
+                    <Crosshair />
+                    <span>{t.controls.viewDetails}</span>
+                    <ChevronRight />
+                  </Button>
+                  <div className="option-separator" />
+                  <Button variant="ghost" onClick={() => setPanel('help')}>
+                    <HelpCircle />
+                    <span>{t.controls.help}</span>
+                    <ChevronRight />
+                  </Button>
+                  <Button variant="ghost" onClick={() => setPanel('about')}>
+                    <Info />
+                    <span>{t.controls.about}</span>
+                    <ChevronRight />
+                  </Button>
+                </div>
+              )}
+              {panel === 'advanced' && (
+                <>
+                  <div className="control">
+                    <div className="control-label">
+                      <span id="density-label">{t.controls.count}</span>
+                      <output>{formatNumber(density, locale)}</output>
+                    </div>
+                    <Slider
+                      aria-labelledby="density-label"
+                      min={10000}
+                      max={120000}
+                      step={1000}
+                      value={[density]}
+                      onValueChange={(v) =>
+                        changeDensity(Array.isArray(v) ? v[0] : v)
+                      }
+                    />
+                    <div className="scale">
+                      <span>{t.panel.sparse}</span>
+                      <span>{t.panel.dense}</span>
+                    </div>
+                  </div>
+                  <div className="control">
+                    <div className="control-label">
+                      <span id="speed-label">{t.panel.speed}</span>
+                      <output>
+                        {speed.toFixed(1)}
+                        <small> ×</small>
+                      </output>
+                    </div>
+                    <Slider
+                      aria-labelledby="speed-label"
+                      min={0}
+                      max={3}
+                      step={0.1}
+                      value={[speed]}
+                      onValueChange={(v) =>
+                        setSpeed(Array.isArray(v) ? v[0] : v)
+                      }
+                    />
+                    <div className="scale">
+                      <span>{t.panel.still}</span>
+                      <span>{t.panel.fast}</span>
+                    </div>
+                  </div>
+                  <div className="palette-row">
+                    <span>{t.controls.color}</span>
+                    <div className="palettes">
+                      {t.panel.paletteNames.map((name, i) => (
+                        <Button
+                          key={name}
+                          className={`swatch swatch-${i} ${palette === i ? 'selected' : ''}`}
+                          aria-label={name}
+                          title={name}
+                          aria-pressed={palette === i}
+                          onClick={() => setPalette(i)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    className="reset-control"
+                    onClick={reset}
+                  >
+                    <RotateCcw />
+                    {t.controls.reset}
+                  </Button>
+                </>
+              )}
+              {panel === 'volume' && (
+                <div className="control">
+                  <div className="control-label">
+                    <label id="volume-label">{t.sound.volumeLabel}</label>
+                    <output>{volume}%</output>
+                  </div>
+                  <Slider
+                    aria-labelledby="volume-label"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={[volume]}
+                    onValueChange={(v) => {
+                      const value = Array.isArray(v) ? v[0] : v;
+                      setVolume(value);
+                      soundtrack.current?.setVolume(value / 100);
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    className="sound-toggle"
+                    onClick={() => void toggleMusic()}
+                    disabled={musicBusy}
+                  >
+                    {musicEnabled ? <Volume2 /> : <VolumeX />}
+                    {musicLabel}
+                  </Button>
+                </div>
+              )}
+              {panel === 'language' && (
+                <div className="option-list">
+                  {locales.map((code) => (
+                    <Button
+                      variant="ghost"
+                      key={code}
+                      lang={code}
+                      aria-pressed={locale === code}
+                      onClick={() => {
+                        setLocale(code);
+                        setPanel(null);
+                      }}
+                    >
+                      <span>{localeNames[code]}</span>
+                      {locale === code && <Check />}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              {panel === 'help' && (
+                <p className="reading-copy">{t.controls.helpText}</p>
+              )}
+              {panel === 'about' && (
+                <div className="reading-copy">
+                  <p>{t.controls.aboutText}</p>
+                  <Button
+                    variant="ghost"
+                    className="replay-opening"
+                    onClick={replayOpening}
+                  >
+                    <Play />
+                    {t.opening.replay}
+                  </Button>
+                  <a
+                    href="https://www.guillaumegirard.fr"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Guillaume Girard <ArrowUpRight size={14} />
+                  </a>
+                </div>
+              )}
+              {panel === 'viewDetails' && (
+                <dl className="view-data">
+                  <div>
+                    <dt>RA</dt>
+                    <dd>{formatRightAscension(pointing.ra)}</dd>
+                  </div>
+                  <div>
+                    <dt>DEC</dt>
+                    <dd>{formatDeclination(pointing.dec)}</dd>
+                  </div>
+                  {selected && (
+                    <div>
+                      <dt>{t.controls.system}</dt>
+                      <dd>{selected.systemName}</dd>
+                    </div>
+                  )}
+                </dl>
+              )}
+              {panel === 'details' && selected && (
+                <>
+                  <div className="body-identity">
+                    <span>{t.bodyKinds[selected.kind]}</span>
+                    <strong>{selected.name}</strong>
+                    <p>
+                      {selected.systemName} ·{' '}
+                      {selected.parentId === null
+                        ? t.inspector.centralStar
+                        : selected.kind === 'rocky-moon'
+                          ? t.inspector.moonOf(
+                              'AST-' +
+                                String(selected.parentId + 1).padStart(6, '0'),
+                            )
+                          : t.inspector.orbitsTheStar}
+                    </p>
+                  </div>
+                  {systemView && (
+                    <details className="detail-section">
+                      <summary>{t.controls.members}</summary>
+                      <div className="option-list">
+                        {systemView &&
+                          systemView.members.map((body) => (
+                            <Button
+                              variant="ghost"
+                              key={body.id}
+                              onClick={() =>
+                                engine.current?.inspectBody(body.id)
+                              }
+                            >
+                              <span>
+                                {t.bodyKinds[body.kind]} · {body.name}
+                              </span>
+                              <ArrowUpRight />
+                            </Button>
+                          ))}
+                      </div>
+                    </details>
+                  )}
+                  {cameraView === 'close' && (
+                    <details className="detail-section">
+                      <summary>{t.controls.camera}</summary>
+                      <div className="control camera-control">
+                        <div className="control-label">
+                          <label id="tilt-label">{t.inspector.tilt}</label>
+                          <output>
+                            {tilt === null
+                              ? t.inspector.tiltAuto
+                              : t.inspector.tiltMax(tilt)}
+                          </output>
+                        </div>
+                        <Slider
+                          aria-labelledby="tilt-label"
+                          min={0}
+                          max={60}
+                          step={1}
+                          value={[tilt ?? 60]}
+                          onValueChange={(v) =>
+                            setTilt(Array.isArray(v) ? v[0] : v)
+                          }
+                        />
+                        <div className="camera-presets">
+                          <Button
+                            variant="ghost"
+                            aria-pressed={tilt === 0}
+                            onClick={() => setTilt(0)}
+                          >
+                            {t.inspector.verticalView}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            aria-pressed={tilt === null}
+                            onClick={() => setTilt(null)}
+                          >
+                            {t.inspector.automatic}
+                          </Button>
+                        </div>
+                      </div>
+                    </details>
+                  )}
+                </>
+              )}
+            </div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
+      {(musicError || notice) && (
+        <output className="status-notice">{musicError || notice}</output>
+      )}
       {openingVisible && (
         <CinematicIntro
           key={openingRun}

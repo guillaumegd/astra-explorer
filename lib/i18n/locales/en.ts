@@ -8,6 +8,36 @@ export const en: Dictionary = {
     start: 'Embark',
     preparing: 'Preparing the sky…',
   },
+  controls: {
+    satellites: 'Moons',
+    members: 'System members',
+    options: 'Options',
+    advanced: 'Advanced',
+    details: 'Details',
+    viewDetails: 'View details',
+    volume: 'Volume',
+    about: 'About',
+    help: 'Help',
+    close: 'Close',
+    back: 'Back to options',
+    discover: 'Discover',
+    galaxy: 'Galaxy',
+    approach: 'Approach',
+    approaching: 'Approaching…',
+    around: 'Explore nearby',
+    camera: 'Camera angle',
+    count: 'Number of bodies',
+    color: 'Color',
+    reset: 'Restore settings',
+    welcome: 'Choose a star to explore.',
+    densityNotice:
+      'The tracked body is no longer in this population. Returning to the galaxy.',
+    aboutText:
+      'An artistic, procedural universe made for contemplation and discovery.',
+    helpText:
+      'Click or tap a star to select it. Double-click or choose Approach to get closer. Drag to orbit; scroll, pinch or use −/+ to zoom. With keyboard focus on the scene, arrow keys change bodies, Enter approaches and Home returns to the galaxy. Escape closes options or exits immersive mode.',
+    system: 'System',
+  },
   meta: {
     title: 'ASTRA — A universe within reach',
     description:
