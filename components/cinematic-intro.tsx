@@ -118,14 +118,14 @@ export function CinematicIntro({
           logo.style.opacity = String(opacity);
           logo.style.filter = motion.matches
             ? 'none'
-            : `blur(${(1 - opacity) * 3}px)`;
+            : `blur(${(1 - opacity) * 2.5}px)`;
         }
         letters.forEach((letter, index) => {
           const opacity = state.letters[index + 1];
           letter.style.opacity = String(opacity);
           letter.style.filter = motion.matches
             ? 'none'
-            : `blur(${(1 - opacity) * 3}px)`;
+            : `blur(${(1 - opacity) * 2.5}px)`;
         });
         element.style.setProperty(
           '--opening-invitation',

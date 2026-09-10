@@ -7,7 +7,7 @@ export const OPENING_STORAGE_KEY = 'astra-opening-seen-v1';
 export const TITLE_PARTS = 6; // the logo, then the five letters of ASTRA
 const LETTER_START = 300;
 const LETTER_STAGGER = 220;
-const LETTER_RAMP = 1200;
+const LETTER_RAMP = 1000;
 const REDUCED_LETTERS = [300, 1700] as const;
 const INVITATION_IN = [2700, 3450] as const;
 const CREDIT_IN = [3550, 4200] as const;
@@ -63,10 +63,8 @@ export function openingCues(reducedMotion = false) {
   const at = (value: number) => value * PACE;
   const aperture = onset(REVEAL, APERTURE_ONSET);
   return {
-    // The title is the exception to ONSET. Its letters overlap — each ramp is
-    // more than five staggers long — so any offset large enough to matter puts
-    // the sound on a later letter than the one it belongs to. They fire on their
-    // own start; the cascade is read as a rhythm, not as six separate fades.
+    // Anchor each note to its own fade start: a visibility offset approaches
+    // the next letter's beat because these slow fades overlap.
     // Reduced motion brings the whole title in at once, so it earns one cue, not six.
     letters: reducedMotion
       ? [at(onset(REDUCED_LETTERS, ONSET))]

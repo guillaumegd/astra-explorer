@@ -117,8 +117,8 @@ function build(context: AudioContext): OpeningAudio {
       const midi = TITLE_MOTIF[Math.min(index, TITLE_MOTIF.length - 1)];
       const gain = context.createGain();
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.12, now + 0.014);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.7);
+      gain.gain.linearRampToValueAtTime(0.125, now + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
       gain.connect(bus);
       const tone = context.createOscillator();
       tone.type = 'sine';
@@ -131,7 +131,7 @@ function build(context: AudioContext): OpeningAudio {
       airLevel.gain.value = 0.22;
       air.connect(airLevel);
       airLevel.connect(gain);
-      const end = now + 1.8;
+      const end = now + 1.6;
       tone.start(now);
       tone.stop(end);
       air.start(now);
