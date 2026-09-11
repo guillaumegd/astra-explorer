@@ -32,7 +32,8 @@ import {
   type AmbientSoundtrack,
 } from '@/lib/ambient-audio';
 import { Slider } from '@/components/ui/slider';
-import { describeBody, type BodyIdentity } from '@/lib/stellar-lod';
+import { type BodyIdentity } from '@/lib/stellar-lod';
+import { catalogue } from '@/lib/catalogue/runtime';
 import { localSystemRoot } from '@/lib/system-framing';
 import {
   createGalaxy,
@@ -80,6 +81,7 @@ function formatDeclination(radians: number): string {
 }
 
 type Panel =
+  | 'phenomena'
   | 'options'
   | 'advanced'
   | 'details'
@@ -353,7 +355,11 @@ export default function Home() {
     setPanel(panel === next ? null : next);
   };
   const changeDensity = (value: number) => {
-    if (selected && selected.id >= value) setNotice(t.controls.densityNotice);
+    if (
+      selected &&
+      selected.id >= (engine.current?.catalogue.activeCount(value) ?? value)
+    )
+      setNotice(t.controls.densityNotice);
     setDensity(value);
   };
   const finishOpening = () => {
@@ -378,14 +384,9 @@ export default function Home() {
   };
   const localRoot = useMemo(() => {
     if (!selected) return null;
-    const start = selected.systemId * 8;
-    return localSystemRoot(
-      selected,
-      Array.from({ length: Math.min(8, density - start) }, (_, i) =>
-        describeBody(start + i),
-      ),
-    );
-  }, [selected, density]);
+    const members = catalogue.getSystemMembers(selected.systemId);
+    return localSystemRoot(selected, members);
+  }, [selected]);
   const hidden = immersive || (idle && !panel);
   const openingVisible = opening && !error;
   const musicLabel = musicEnabled ? t.sound.disableMusic : t.sound.enableMusic;
@@ -466,7 +467,7 @@ export default function Home() {
                   className="scale-control"
                   aria-label={t.inspector.stellarSystem}
                   title={t.inspector.stellarSystem}
-                  aria-pressed={systemView?.root.id === selected.systemId * 8}
+                  aria-pressed={systemView?.root.id === selected.rootId}
                   onClick={() => engine.current?.frameSystem('stellar')}
                 >
                   <Orbit />
@@ -653,6 +654,11 @@ export default function Home() {
             <div className="surface-content" key={panel}>
               {panel === 'options' && (
                 <div className="option-list">
+                  <Button variant="ghost" onClick={() => setPanel('phenomena')}>
+                    <Orbit />
+                    <span>{t.controls.phenomena}</span>
+                    <ChevronRight />
+                  </Button>
                   <Button variant="ghost" onClick={() => setPanel('volume')}>
                     <Volume2 />
                     <span>{t.controls.volume}</span>
@@ -684,12 +690,42 @@ export default function Home() {
                   </Button>
                 </div>
               )}
+              {panel === 'phenomena' && (
+                <div className="option-list">
+                  <p>
+                    {t.bodyKinds['black-hole']} ·{' '}
+                    {catalogue.getPhenomena(density).length}
+                  </p>
+                  {catalogue.getPhenomena(density).map((body) => (
+                    <Button
+                      key={body.bodyId}
+                      variant="ghost"
+                      aria-label={t.system.exploreBodyAria(
+                        body.name,
+                        t.bodyKinds[body.kind],
+                      )}
+                      onClick={() => {
+                        engine.current?.inspectBody(body.id);
+                        setPanel(null);
+                      }}
+                    >
+                      <span>{body.name}</span>
+                      <ArrowUpRight />
+                    </Button>
+                  ))}
+                  {catalogue.getPhenomena(density).length === 0 && (
+                    <p>{t.phenomena.empty}</p>
+                  )}
+                </div>
+              )}
               {panel === 'advanced' && (
                 <>
                   <div className="control">
                     <div className="control-label">
                       <span id="density-label">{t.controls.count}</span>
-                      <output>{formatNumber(density, locale)}</output>
+                      <output>
+                        {formatNumber(catalogue.activeCount(density), locale)}
+                      </output>
                     </div>
                     <Slider
                       aria-labelledby="density-label"
@@ -852,15 +888,26 @@ export default function Home() {
                     <p>
                       {selected.systemName} ·{' '}
                       {selected.parentId === null
-                        ? t.inspector.centralStar
+                        ? selected.phenomenon
+                          ? t.phenomena.central
+                          : t.inspector.centralStar
                         : selected.kind === 'rocky-moon'
                           ? t.inspector.moonOf(
-                              'AST-' +
-                                String(selected.parentId + 1).padStart(6, '0'),
+                              catalogue.getBody(selected.parentId).name,
                             )
-                          : t.inspector.orbitsTheStar}
+                          : catalogue.getBody(selected.rootId).phenomenon
+                            ? t.phenomena.orbit
+                            : t.inspector.orbitsTheStar}
                     </p>
                   </div>
+                  {selected.phenomenon && (
+                    <p className="reading-copy">{t.phenomena.description}</p>
+                  )}
+                  <Button variant="ghost" onClick={() => setPanel('phenomena')}>
+                    <Orbit />
+                    {t.controls.phenomena}
+                    <ChevronRight />
+                  </Button>
                   {systemView && (
                     <details className="detail-section">
                       <summary>{t.controls.members}</summary>
@@ -883,47 +930,48 @@ export default function Home() {
                       </div>
                     </details>
                   )}
-                  {cameraView === 'close' && (
-                    <details className="detail-section">
-                      <summary>{t.controls.camera}</summary>
-                      <div className="control camera-control">
-                        <div className="control-label">
-                          <label id="tilt-label">{t.inspector.tilt}</label>
-                          <output>
-                            {tilt === null
-                              ? t.inspector.tiltAuto
-                              : t.inspector.tiltMax(tilt)}
-                          </output>
+                  {cameraView === 'close' &&
+                    selected.capabilities.renderClass === 'ordinary' && (
+                      <details className="detail-section">
+                        <summary>{t.controls.camera}</summary>
+                        <div className="control camera-control">
+                          <div className="control-label">
+                            <label id="tilt-label">{t.inspector.tilt}</label>
+                            <output>
+                              {tilt === null
+                                ? t.inspector.tiltAuto
+                                : t.inspector.tiltMax(tilt)}
+                            </output>
+                          </div>
+                          <Slider
+                            aria-labelledby="tilt-label"
+                            min={0}
+                            max={60}
+                            step={1}
+                            value={[tilt ?? 60]}
+                            onValueChange={(v) =>
+                              setTilt(Array.isArray(v) ? v[0] : v)
+                            }
+                          />
+                          <div className="camera-presets">
+                            <Button
+                              variant="ghost"
+                              aria-pressed={tilt === 0}
+                              onClick={() => setTilt(0)}
+                            >
+                              {t.inspector.verticalView}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              aria-pressed={tilt === null}
+                              onClick={() => setTilt(null)}
+                            >
+                              {t.inspector.automatic}
+                            </Button>
+                          </div>
                         </div>
-                        <Slider
-                          aria-labelledby="tilt-label"
-                          min={0}
-                          max={60}
-                          step={1}
-                          value={[tilt ?? 60]}
-                          onValueChange={(v) =>
-                            setTilt(Array.isArray(v) ? v[0] : v)
-                          }
-                        />
-                        <div className="camera-presets">
-                          <Button
-                            variant="ghost"
-                            aria-pressed={tilt === 0}
-                            onClick={() => setTilt(0)}
-                          >
-                            {t.inspector.verticalView}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            aria-pressed={tilt === null}
-                            onClick={() => setTilt(null)}
-                          >
-                            {t.inspector.automatic}
-                          </Button>
-                        </div>
-                      </div>
-                    </details>
-                  )}
+                      </details>
+                    )}
                 </>
               )}
             </div>

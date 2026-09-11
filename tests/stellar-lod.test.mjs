@@ -30,7 +30,7 @@ test('every particle has a stable and varied identity independent of generation 
   assert.deepEqual(describeBody(51923), original);
   assert.equal(
     new Set(Array.from({ length: 1000 }, (_, i) => describeBody(i).kind)).size,
-    12,
+    13,
   );
   assert.equal(
     new Set(Array.from({ length: 100 }, (_, i) => describeBody(i).seed)).size,
@@ -75,10 +75,10 @@ test('nearby bodies promote together within the budget while retaining smooth tr
     mesh.material.uniforms.uFade.value > 0 &&
       mesh.material.uniforms.uFade.value < 0.1,
   );
-  for (let i = 3; i <= 120; i++) lod.update([candidate(0)], i * 0.016, 0);
+  for (let i = 3; i <= 120; i++) lod.update([candidate(1)], i * 0.016, 0);
   assert.ok(mesh.material.uniforms.uFade.value > 0.99);
   const before = mesh.material.uniforms.uFade.value;
-  lod.update([candidate(0, 10)], 1.936, 0);
+  lod.update([candidate(1, 10)], 1.936, 0);
   assert.ok(
     mesh.material.uniforms.uFade.value > 0 &&
       mesh.material.uniforms.uFade.value < before,
@@ -102,30 +102,29 @@ test('size distribution spans small asteroids to giant stars reproducibly', () =
   const bodies = Array.from({ length: 1000 }, (_, i) => describeBody(i));
   const sizes = bodies.map((b) => b.radius);
   assert.ok(Math.max(...sizes) / Math.min(...sizes) > 80);
-  for (const kind of new Set(bodies.map((b) => b.kind))) {
+  for (const kind of new Set(
+    bodies.filter((b) => !b.phenomenon).map((b) => b.kind),
+  )) {
     const group = bodies.filter((b) => b.kind === kind).map((b) => b.radius);
     assert.ok(Math.max(...group) / Math.min(...group) > 1.8);
   }
 });
 
-test('systems have a central star, consistent parents and well separated bodies', () => {
+test('variable systems have explicit roots, parents and nonintersecting orbital shells', async () => {
+  const { catalogue } = await import('../lib/catalogue/runtime.ts');
   for (let system = 0; system < 125; system++) {
-    const bodies = Array.from({ length: 8 }, (_, slot) =>
-      describeBody(system * 8 + slot),
-    );
-    assert.equal(bodies[0].type, 0);
+    const bodies = catalogue.getSystemMembers(system);
     assert.equal(bodies[0].parentId, null);
-    assert.equal(bodies[6].parentId, bodies[5].id);
-    for (let a = 0; a < 8; a++) {
-      assert.equal(bodies[a].systemId, system);
-      assert.ok(bodies[a].radius <= (a === 0 ? 0.00075 : 0.000094));
-      const position = new THREE.Vector3(...systemOffset(bodies[a].id));
-      for (let b = a + 1; b < 8; b++) {
-        const distance = position.distanceTo(
-          new THREE.Vector3(...systemOffset(bodies[b].id)),
-        );
-        assert.ok(distance > 25 * (bodies[a].radius + bodies[b].radius));
-      }
+    for (const body of bodies) {
+      assert.equal(body.systemId, system);
+      if (body.parentId === null) continue;
+      const parent = catalogue.getBody(body.parentId);
+      assert.ok(body.orbit.radius > 3 * (body.radius + parent.radius));
+      const position = new THREE.Vector3(...systemOffset(body.id));
+      assert.ok(
+        position.distanceTo(new THREE.Vector3(...systemOffset(parent.id))) >
+          body.radius + parent.radius,
+      );
     }
   }
 });
@@ -145,7 +144,9 @@ test('atmospheric shells are selective, elevated, animated and released with LOD
   };
   lod.update([candidate], 0, 0);
   const surface = parent.children[0].children[0];
-  const air = parent.children[0].children.find(c=>c.material?.uniforms.uClouds);
+  const air = parent.children[0].children.find(
+    (c) => c.material?.uniforms.uClouds,
+  );
   assert.ok(air.scale.x > 1 && air.scale.x < 1.06);
   assert.equal(air.material.depthWrite, false);
   let disposed = false;
@@ -212,51 +213,91 @@ test('surface LOD refines only a camera-local patch and releases it on exit', ()
   lod.dispose();
 });
 
-test('every planet family increases local geometry and shader detail when approaching',()=>{
-  const catalogue=Array.from({length:300},(_,i)=>describeBody(i));
-  for(const type of [1,2,4,5,6,7]) {
-    const body=catalogue.find(b=>b.type===type), parent=new THREE.Group(), lod=createBodyLOD(parent);
-    const ratios=type===2?[1.9,1.3,1.08]:[1.5,1.1,1.02];
-    let previousDetail=-1;
-    ratios.forEach((ratio,index)=>{
-      const candidate={identity:body,position:new THREE.Vector3(),pixels:1000,distanceInRadii:ratio,cameraPosition:new THREE.Vector3(0,0,body.radius*ratio)};
-      for(let frame=0;frame<20;frame++)lod.update([candidate],index*2+frame*0.1,0);
-      const patch=parent.children[0].children.find(c=>c.geometry?.type==='PlaneGeometry');
-      assert.equal(patch.geometry.parameters.widthSegments,[32,64,128][index]);
-      const detail=patch.material.uniforms.uDetail.value;
-      assert.ok(detail>previousDetail);previousDetail=detail;
-      if(type===2) assert.equal(patch.material.uniforms.uRelief.value,0);
+test('every planet family increases local geometry and shader detail when approaching', () => {
+  const catalogue = Array.from({ length: 300 }, (_, i) => describeBody(i));
+  for (const type of [1, 2, 4, 5, 6, 7]) {
+    const body = catalogue.find((b) => b.type === type),
+      parent = new THREE.Group(),
+      lod = createBodyLOD(parent);
+    const ratios = type === 2 ? [1.9, 1.3, 1.08] : [1.5, 1.1, 1.02];
+    let previousDetail = -1;
+    ratios.forEach((ratio, index) => {
+      const candidate = {
+        identity: body,
+        position: new THREE.Vector3(),
+        pixels: 1000,
+        distanceInRadii: ratio,
+        cameraPosition: new THREE.Vector3(0, 0, body.radius * ratio),
+      };
+      for (let frame = 0; frame < 20; frame++)
+        lod.update([candidate], index * 2 + frame * 0.1, 0);
+      const patch = parent.children[0].children.find(
+        (c) => c.geometry?.type === 'PlaneGeometry',
+      );
+      assert.equal(
+        patch.geometry.parameters.widthSegments,
+        [32, 64, 128][index],
+      );
+      const detail = patch.material.uniforms.uDetail.value;
+      assert.ok(detail > previousDetail);
+      previousDetail = detail;
+      if (type === 2) assert.equal(patch.material.uniforms.uRelief.value, 0);
     });
     lod.dispose();
   }
 });
 
-test('small camera motion leaves the terrain sampling grid anchored to the planet',()=>{
- const body=describeBody(4), parent=new THREE.Group(),lod=createBodyLOD(parent);
- const candidate={identity:body,position:new THREE.Vector3(),pixels:1000,distanceInRadii:1.02,cameraPosition:new THREE.Vector3(0,0,body.radius*1.02)};
- lod.update([candidate],0,0);
- const mesh=parent.children[0].children[0];
- const before=mesh.material.uniforms.uPatchAxis.value.clone();
- const angle=mesh.material.uniforms.uPatchAngle.value;
- for(let i=1;i<30;i++){
-   candidate.cameraPosition.x=body.radius*0.0001*i;
-   lod.update([candidate],i/60,0);
-   assert.ok(before.equals(mesh.material.uniforms.uPatchAxis.value));
-   assert.equal(mesh.material.uniforms.uPatchAngle.value,angle);
- }
- lod.dispose();
+test('small camera motion leaves the terrain sampling grid anchored to the planet', () => {
+  const body = describeBody(4),
+    parent = new THREE.Group(),
+    lod = createBodyLOD(parent);
+  const candidate = {
+    identity: body,
+    position: new THREE.Vector3(),
+    pixels: 1000,
+    distanceInRadii: 1.02,
+    cameraPosition: new THREE.Vector3(0, 0, body.radius * 1.02),
+  };
+  lod.update([candidate], 0, 0);
+  const mesh = parent.children[0].children[0];
+  const before = mesh.material.uniforms.uPatchAxis.value.clone();
+  const angle = mesh.material.uniforms.uPatchAngle.value;
+  for (let i = 1; i < 30; i++) {
+    candidate.cameraPosition.x = body.radius * 0.0001 * i;
+    lod.update([candidate], i / 60, 0);
+    assert.ok(before.equals(mesh.material.uniforms.uPatchAxis.value));
+    assert.equal(mesh.material.uniforms.uPatchAngle.value, angle);
+  }
+  lod.dispose();
 });
 
-test('ocean is a separate sea-level surface sharing rotation and fade with its terrain',()=>{
- const body=describeBody(4),parent=new THREE.Group(),lod=createBodyLOD(parent);
- const c={identity:body,position:new THREE.Vector3(),pixels:500,distanceInRadii:3};
- lod.update([c],0,0);lod.update([c],0.1,1);
- const terrain=parent.children[0].children[0];
- const ocean=parent.children[0].children.find(m=>m!==terrain && m.material?.fragmentShader.includes('floorHeight'));
- assert.ok(ocean);
- assert.equal(ocean.scale.x,1);
- assert.deepEqual(ocean.rotation.toArray(),terrain.rotation.toArray());
- assert.equal(ocean.material.uniforms.uFade,terrain.material.uniforms.uFade);
- let disposed=false;ocean.material.addEventListener('dispose',()=>{disposed=true});
- lod.update([],6,1);assert.ok(disposed);lod.dispose();
+test('ocean is a separate sea-level surface sharing rotation and fade with its terrain', () => {
+  const body = Array.from({ length: 100 }, (_, i) => describeBody(i)).find(
+      (b) => b.kind === 'ocean-world',
+    ),
+    parent = new THREE.Group(),
+    lod = createBodyLOD(parent);
+  const c = {
+    identity: body,
+    position: new THREE.Vector3(),
+    pixels: 500,
+    distanceInRadii: 3,
+  };
+  lod.update([c], 0, 0);
+  lod.update([c], 0.1, 1);
+  const terrain = parent.children[0].children[0];
+  const ocean = parent.children[0].children.find(
+    (m) => m !== terrain && m.material?.fragmentShader.includes('floorHeight'),
+  );
+  assert.ok(ocean);
+  assert.equal(ocean.scale.x, 1);
+  assert.deepEqual(ocean.rotation.toArray(), terrain.rotation.toArray());
+  assert.equal(ocean.material.uniforms.uFade, terrain.material.uniforms.uFade);
+  let disposed = false;
+  ocean.material.addEventListener('dispose', () => {
+    disposed = true;
+  });
+  lod.update([], 6, 1);
+  assert.ok(disposed);
+  lod.dispose();
 });

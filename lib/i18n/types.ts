@@ -89,6 +89,7 @@ export type Dictionary = {
     preparing: string;
   };
   controls: {
+    phenomena: string;
     satellites: string;
     members: string;
     options: string;
@@ -117,6 +118,12 @@ export type Dictionary = {
   };
   loading: string;
   bodyKinds: Record<BodyKind, string>;
+  phenomena: {
+    description: string;
+    central: string;
+    orbit: string;
+    empty: string;
+  };
   system: { exploreBodyAria: (name: string, kind: string) => string };
   language: { label: string };
 };

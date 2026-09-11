@@ -9,6 +9,7 @@ export const en: Dictionary = {
     preparing: 'Preparing the sky…',
   },
   controls: {
+    phenomena: 'Rare phenomena',
     satellites: 'Moons',
     members: 'System members',
     options: 'Options',
@@ -140,6 +141,7 @@ export const en: Dictionary = {
   },
   loading: 'Lighting the stars…',
   bodyKinds: {
+    'black-hole': 'Black hole',
     'red-dwarf': 'Red dwarf',
     'giant-star': 'Giant star',
     'blue-star': 'Blue star',
@@ -152,6 +154,13 @@ export const en: Dictionary = {
     'gas-giant': 'Gas giant',
     'rocky-moon': 'Rocky moon',
     asteroid: 'Asteroid',
+  },
+  phenomena: {
+    description:
+      'A deep shadow surrounded by a luminous disk of matter. Artistic dimensions and colors; exterior observation only.',
+    central: 'Central compact object',
+    orbit: 'Orbits the black hole',
+    empty: 'No phenomena in the active catalogue.',
   },
   system: {
     exploreBodyAria: (name, kind) => `Explore ${name}, ${kind}`,

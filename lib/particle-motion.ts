@@ -1,4 +1,4 @@
-import { orbitalOffset } from './orbits.ts';
+import { orbitalOffset, ORBIT_STRIDE } from './orbits.ts';
 import type { Vector3 } from 'three';
 
 // CPU mirror of the vertex shader, used only for the focused body and its local neighbours.
@@ -23,7 +23,7 @@ export function particlePosition(
     -Math.sin(angle) * x + Math.cos(angle) * z,
   );
   out.y += Math.sin(time * 0.25 + radius * 1.3 + seeds[id] * 12) * 0.035;
-  if (orbits) orbitalOffset(orbits, id * 12, rotation, out);
+  if (orbits) orbitalOffset(orbits, id * ORBIT_STRIDE, rotation, out);
   else if (offsets) {
     out.x += offsets[id * 3];
     out.y += offsets[id * 3 + 1];

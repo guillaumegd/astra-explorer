@@ -9,6 +9,7 @@ export const ptPT: Dictionary = {
     preparing: 'A preparar o céu…',
   },
   controls: {
+    phenomena: 'Fenómenos raros',
     satellites: 'Satélites',
     members: 'Membros do sistema',
     options: 'Opções',
@@ -141,6 +142,7 @@ export const ptPT: Dictionary = {
   },
   loading: 'A acender as estrelas…',
   bodyKinds: {
+    'black-hole': 'Buraco negro',
     'red-dwarf': 'Anã vermelha',
     'giant-star': 'Estrela gigante',
     'blue-star': 'Estrela azul',
@@ -153,6 +155,13 @@ export const ptPT: Dictionary = {
     'gas-giant': 'Gigante gasoso',
     'rocky-moon': 'Satélite rochoso',
     asteroid: 'Asteroide',
+  },
+  phenomena: {
+    description:
+      'Uma sombra profunda rodeada por um disco luminoso de matéria. Dimensões e cores artísticas; apenas observação exterior.',
+    central: 'Objeto compacto central',
+    orbit: 'Orbita em torno do buraco negro',
+    empty: 'Não há fenómenos no catálogo ativo.',
   },
   system: {
     exploreBodyAria: (name, kind) => `Explorar ${name}, ${kind}`,

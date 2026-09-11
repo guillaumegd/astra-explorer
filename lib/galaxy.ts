@@ -1,3 +1,6 @@
+import { createLensing } from './phenomena/lensing';
+import { createPhenomenaManager } from './phenomena/manager';
+import { catalogue } from './catalogue/runtime';
 import { asteroidRadius } from './asteroid-shape';
 import { sampleBodyTravel } from './body-travel';
 import { desiredSurfaceTilt, surfaceCameraPose } from './surface-camera';
@@ -7,7 +10,13 @@ import {
   localSystemRoot,
 } from './system-framing';
 import * as THREE from 'three';
-import { compileOrbitChain, orbitalGLSL, orbitFor } from './orbits';
+import {
+  compileOrbitChain,
+  orbitalGLSL,
+  orbitFor,
+  ORBIT_STRIDE,
+  ORBIT_DEPTH,
+} from './orbits';
 import { createLocalDebris } from './local-debris';
 import { zoomProximity } from './ambience-parameters';
 import {
@@ -48,6 +57,7 @@ export type CameraView =
 export type SkyPointing = { ra: number; dec: number };
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
+  catalogue: typeof catalogue;
   frameSystem: (scope: 'stellar' | 'local') => void;
   configure: (settings: GalaxySettings) => void;
   setMessages: (messages: GalaxyMessages) => void;
@@ -69,6 +79,9 @@ const vertexShader = `
   attribute float aSize;
   attribute float aSeed;
   attribute float aId;
+  attribute float aSystemRoot;
+  attribute float aPhenomenon;
+  varying float vPhenomenon;
   attribute float aBodyRadius;
   attribute float aBodyType;
   attribute vec3 aBodyColor;
@@ -102,7 +115,7 @@ const vertexShader = `
     float physicalRadius = aBodyRadius * uProjectionScale / max(-mv.z, 0.0000001);
     // Keep the parent system readable in close-up without moving its bodies.
     // The selected body retains its physical size and its normal mesh transition.
-    float companion=(abs(floor(aId/8.)*8.-uContextRoot)<.1 && abs(aId-uContextSelected)>.1 && aBodyRadius>0.)?uContextStrength:0.;
+    float companion=(abs(aSystemRoot-uContextRoot)<.1 && abs(aId-uContextSelected)>.1 && aBodyRadius>0.)?uContextStrength:0.;
     physicalRadius=max(physicalRadius,companion*(aBodyType<.5?6.:1.8));
     vSurface = max(smoothstep(2.0, 10.0, physicalRadius),companion);
     float glowSize = clamp(aSize * uPixelRatio * (95.0 / -mv.z), 0.65, aBodyRadius > 0.0 ? (aBodyType < 0.5 ? 16.0 : 3.0) * uPixelRatio : 40.0);
@@ -110,6 +123,7 @@ const vertexShader = `
     gl_PointSize = clamp(max(glowSize*(1.0-vSurface),diameter),0.65,uMaxPointSize);
     vDiscScale=min(1.0,diameter/gl_PointSize);
     vBodyType=aBodyType;vBodyColor=aBodyColor;
+    vPhenomenon=aPhenomenon;
     vId = aId;
     vFade = 1.0;
     for(int i=0;i<12;i++) { if(abs(uReplacements[i].x-aId)<0.1) vFade = 1.0-uReplacements[i].y; }
@@ -140,11 +154,15 @@ const fragmentShader = `
 
 // A sphere impostor costs a single GPU point, not a mesh or a procedural noise stack.
 const impostorFragment = `
- varying float vSurface,vFade,vBodyType,vSeed,vDiscScale;
+ varying float vSurface,vFade,vBodyType,vSeed,vDiscScale,vPhenomenon;
  varying vec3 vBodyColor,vLightDirection;
  void main(){
    if(vSurface<0.001 || vFade<0.001) discard;
    vec2 p=(gl_PointCoord-0.5)*2.0/max(vDiscScale,0.001); float r=dot(p,p); if(r>1.0)discard;
+   if(vPhenomenon>.5){
+     float ring=smoothstep(.05,.12,r)*(1.-smoothstep(.5,1.,r));
+     gl_FragColor=vec4(vBodyColor*ring*.8,vSurface*vFade);return;
+   }
    vec3 n=vec3(p.x,-p.y,sqrt(1.0-r));
    float light=max(dot(n,normalize(vLightDirection)),0.0);
    float bands=0.82+0.18*sin(n.y*20.0+vSeed*15.0);
@@ -185,49 +203,27 @@ export function createGalaxy(
   const group = new THREE.Group();
   group.rotation.z = -0.18;
   scene.add(group);
-  const max = 120000;
+  const max = catalogue.activeCount(120000);
   let seed = 91724;
   const random = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 4294967296;
   };
-  const gaussian = () =>
-    Math.sqrt(-2 * Math.log(Math.max(random(), 0.0001))) *
-    Math.cos(random() * Math.PI * 2);
   const positions = new Float32Array(max * 3);
   const sizes = new Float32Array(max);
   const seeds = new Float32Array(max);
-  for (let i = 0; i < max; i++) {
-    const core = random() < 0.23;
-    const r = core
-      ? Math.pow(random(), 1.4) * 2.9
-      : 0.65 + Math.pow(random(), 0.72) * 12;
-    const branch = (Math.floor(random() * 4) * Math.PI) / 2;
-    const angle =
-      branch + r * 0.38 + gaussian() * (core ? 2 : 0.15 + r * 0.006);
-    const spread = core ? 0.18 : 0.12 + r * 0.025;
-    positions[i * 3] = Math.cos(angle) * r + gaussian() * spread;
-    positions[i * 3 + 1] = gaussian() * (core ? 0.36 : 0.1 + r * 0.017);
-    positions[i * 3 + 2] = Math.sin(angle) * r + gaussian() * spread;
-    // Distant halo bodies belong to the same selectable catalogue as the spiral.
-    if (i % 45 === 0) {
-      const a = random() * Math.PI * 2,
-        r = 18 + random() * 35;
-      positions[i * 3] = Math.cos(a) * r;
-      positions[i * 3 + 1] = (random() - 0.5) * 30;
-      positions[i * 3 + 2] = Math.sin(a) * r;
-    }
-    sizes[i] = (0.22 + Math.pow(random(), 5) * 1.15) * (core ? 1.12 : 1);
-    seeds[i] = random();
-  }
-  const orbits = new Float32Array(max * 12);
+  const orbits = new Float32Array(max * ORBIT_STRIDE);
+  const roots = new Float32Array(max);
   for (let id = 0; id < max; id++) {
-    const anchor = id - (id % 8);
-    positions.copyWithin(id * 3, anchor * 3, anchor * 3 + 3);
-    seeds[id] = seeds[anchor];
-    orbits.set(compileOrbitChain(id, describeBody), id * 12);
-    // Unresolved companions must not stack eight bright halos over one star.
-    if (id % 8 !== 0) sizes[id] *= 0.12;
+    const body = catalogue.getBody(id);
+    const system = catalogue.getSystem(body.systemId);
+    positions.set(system.anchor, id * 3);
+    seeds[id] = system.motionSeed;
+    roots[id] = system.rootId;
+    sizes[id] =
+      (0.22 + (body.seed % 1) ** 5 * 1.15) *
+      (body.role === 'central' ? 1 : 0.12);
+    orbits.set(compileOrbitChain(id, describeBody), id * ORBIT_STRIDE);
   }
   const bodyRadii = new Float32Array(max),
     bodyTypes = new Float32Array(max),
@@ -235,14 +231,14 @@ export function createGalaxy(
   const scratchColor = new THREE.Color();
   for (let id = 0; id < max; id++) {
     const body = describeBody(id);
-    bodyRadii[id] = body.radius;
+    bodyRadii[id] = body.phenomenon?.envelope ?? body.radius;
     bodyTypes[id] = body.type;
     scratchColor.set(body.color).toArray(bodyColors, id * 3);
   }
   const ids = Float32Array.from({ length: max }, (_, i) => i);
   const geometry = new THREE.BufferGeometry();
-  const orbitalBuffer = new THREE.InterleavedBuffer(orbits, 12);
-  for (let level = 0; level < 3; level++)
+  const orbitalBuffer = new THREE.InterleavedBuffer(orbits, ORBIT_STRIDE);
+  for (let level = 0; level < ORBIT_DEPTH; level++)
     geometry.setAttribute(
       `aOrbit${level}`,
       new THREE.InterleavedBufferAttribute(orbitalBuffer, 4, level * 4),
@@ -250,11 +246,21 @@ export function createGalaxy(
   geometry.setAttribute('aBodyRadius', new THREE.BufferAttribute(bodyRadii, 1));
   geometry.setAttribute('aBodyType', new THREE.BufferAttribute(bodyTypes, 1));
   geometry.setAttribute('aBodyColor', new THREE.BufferAttribute(bodyColors, 3));
+  geometry.setAttribute(
+    'aPhenomenon',
+    new THREE.BufferAttribute(
+      Float32Array.from({ length: max }, (_, id) =>
+        catalogue.getBody(id).phenomenon ? 1 : 0,
+      ),
+      1,
+    ),
+  );
+  geometry.setAttribute('aSystemRoot', new THREE.BufferAttribute(roots, 1));
   geometry.setAttribute('aId', new THREE.BufferAttribute(ids, 1));
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
   geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
-  geometry.setDrawRange(0, 65000);
+  geometry.setDrawRange(0, catalogue.activeCount(65000));
   const replacements = Array.from(
     { length: 12 },
     () => new THREE.Vector2(-1, 0),
@@ -301,7 +307,7 @@ export function createGalaxy(
   // A second, sparse particle layer provides soft nebular light without a costly fullscreen bloom pass.
   const dustGeometry = new THREE.BufferGeometry();
   const dustCount = 5500;
-  for (let level = 0; level < 3; level++)
+  for (let level = 0; level < ORBIT_DEPTH; level++)
     dustGeometry.setAttribute(
       `aOrbit${level}`,
       new THREE.BufferAttribute(new Float32Array(dustCount * 4), 4),
@@ -370,13 +376,76 @@ export function createGalaxy(
   halo.scale.set(9, 6, 1);
   group.add(halo);
   let settings: GalaxySettings = {
-    density: 65000,
+    density: catalogue.activeCount(65000),
     speed: 1,
     tilt: null,
     paused: false,
     palette: 0,
   };
-  const bodyLOD = createBodyLOD(group);
+  const bodyLOD = createBodyLOD(group, 8);
+  const phenomena = createPhenomenaManager(group);
+  const lensing = createLensing();
+  // The all-sky catalogue uses the same geometry, motion, colours and active range.
+  // Local detailed bodies are composited using depth, never baked into infinity.
+  const skyScene = new THREE.Scene(),
+    skyGroup = new THREE.Group();
+  skyScene.add(skyGroup);
+  for (const object of [
+    stars,
+    impostors,
+    ...group.children.filter(
+      (o) => o instanceof THREE.Points && o !== stars && o !== impostors,
+    ),
+    halo,
+  ]) {
+    const copy = object.clone();
+    copy.frustumCulled = false;
+    skyGroup.add(copy);
+  }
+  const captureSky = (cube: THREE.CubeCamera) => {
+    skyGroup.matrixAutoUpdate = false;
+    skyGroup.matrix.copy(group.matrixWorld);
+    const projection = uniforms.uProjectionScale.value,
+      ratio = uniforms.uPixelRatio.value;
+    const strength = uniforms.uContextStrength.value;
+    uniforms.uProjectionScale.value = 256;
+    uniforms.uPixelRatio.value = cube.renderTarget.width / 512;
+    uniforms.uContextStrength.value = 0;
+    try {
+      cube.update(renderer, skyScene);
+    } finally {
+      uniforms.uProjectionScale.value = projection;
+      uniforms.uPixelRatio.value = ratio;
+      uniforms.uContextStrength.value = strength;
+    }
+  };
+  const pointDepthMaterial = new THREE.ShaderMaterial({
+    vertexShader,
+    uniforms,
+    fragmentShader: `varying float vSurface,vFade,vDiscScale,vPhenomenon;
+      void main(){if(vPhenomenon>.5 || vSurface<.5 || vFade<.5 ||
+        length((gl_PointCoord-.5)*2.)>vDiscScale*.98)discard;gl_FragColor=vec4(0.);}`,
+    colorWrite: false,
+    depthWrite: true,
+    depthTest: true,
+  });
+  const pointDepthScene = new THREE.Scene(),
+    pointDepthGroup = new THREE.Group();
+  const pointDepth = new THREE.Points(geometry, pointDepthMaterial);
+  pointDepth.frustumCulled = false;
+  pointDepthGroup.add(pointDepth);
+  pointDepthScene.add(pointDepthGroup);
+  pointDepthGroup.matrixAutoUpdate = false;
+  const renderPointDepth = () => {
+    pointDepthGroup.matrix.copy(group.matrixWorld);
+    const autoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    try {
+      renderer.render(pointDepthScene, camera);
+    } finally {
+      renderer.autoClear = autoClear;
+    }
+  };
   const debris = createLocalDebris(group);
   let scanCursor = 0;
   const detailShortlist = new Map<number, { pixels: number; seen: number }>();
@@ -404,7 +473,7 @@ export function createGalaxy(
   const pickMaterial = new THREE.ShaderMaterial({
     vertexShader: vertexShader.replace(
       'vId = aId;',
-      'gl_PointSize = max(gl_PointSize, 7.0 * uPixelRatio); vId = aId;',
+      'gl_PointSize = max(gl_PointSize, (aPhenomenon>.5 ? 12.0 : 7.0) * uPixelRatio); vId = aId;',
     ),
     fragmentShader: `
     varying float vId;
@@ -412,6 +481,21 @@ export function createGalaxy(
     gl_FragColor=vec4(mod(id,256.0),mod(floor(id/256.0),256.0),floor(id/65536.0),255.0)/255.0;}
   `,
     uniforms,
+    depthTest: true,
+    depthWrite: true,
+    blending: THREE.NoBlending,
+  });
+  // Match visible sky sprite footprints; the ordinary 7px selection enlargement
+  // would select invisible neighbours in highly magnified secondary images.
+  const opticalPickMaterial = new THREE.ShaderMaterial({
+    vertexShader,
+    uniforms,
+    fragmentShader: `varying float vId,vFade,vSurface,vDiscScale;
+      void main(){float d=length(gl_PointCoord-.5)*2.;
+        if(vFade<.01 || d>1.)discard;
+        float alpha=vSurface>.5 ? (d<vDiscScale?1.:0.) : exp(-d*d*5.)*.42+exp(-d*d*35.)*.58;
+        if(alpha*vFade<.08)discard;
+        float id=vId+1.;gl_FragColor=vec4(mod(id,256.),mod(floor(id/256.),256.),floor(id/65536.),255.)/255.;}`,
     depthTest: true,
     depthWrite: true,
     blending: THREE.NoBlending,
@@ -434,10 +518,68 @@ export function createGalaxy(
       ),
       camera,
     );
-    const meshId = bodyLOD.pick(raycaster);
-    if (meshId !== null) return meshId;
-    const width = Math.floor(bounds.width),
-      height = Math.floor(bounds.height);
+    const ordinaryHit = bodyLOD.pickHit(raycaster);
+    const optical = lensing.trace(raycaster.ray);
+    if (optical && ordinaryHit && ordinaryHit.distance < optical.distance)
+      return ordinaryHit.object.userData.bodyId;
+    if (optical) {
+      // Point impostors also write foreground depth. Mirror their physical cores
+      // here before selecting a captured ray (meshes were handled above).
+      let foregroundId: number | null = null,
+        foregroundDistance = optical.distance;
+      const point = new THREE.Vector3();
+      for (let id = 0; id < settings.density; id++) {
+        if (id === optical.body.id || catalogue.getBody(id).phenomenon)
+          continue;
+        particlePosition(
+          positions,
+          seeds,
+          id,
+          uniforms.uRotation.value,
+          uniforms.uTime.value,
+          point,
+          undefined,
+          orbits,
+        );
+        point.applyMatrix4(group.matrixWorld);
+        const along = point
+          .clone()
+          .sub(raycaster.ray.origin)
+          .dot(raycaster.ray.direction);
+        if (along <= 0 || along >= foregroundDistance) continue;
+        if (raycaster.ray.distanceSqToPoint(point) < bodyRadii[id] ** 2) {
+          foregroundId = id;
+          foregroundDistance = along;
+        }
+      }
+      if (foregroundId !== null) return foregroundId;
+      if (optical.disk || optical.captured) return optical.body.id;
+    }
+    const specialHit = optical ? null : phenomena.pick(raycaster);
+    const hit =
+      ordinaryHit && specialHit
+        ? ordinaryHit.distance < specialHit.distance
+          ? ordinaryHit
+          : specialHit
+        : (ordinaryHit ?? specialHit);
+    if (!optical && hit) return hit.object.userData.bodyId;
+    // Escaping rays pick the same directional catalogue used by the cube, including
+    // images whose source lies outside the user's camera frustum.
+    const pickCamera = optical
+      ? new THREE.PerspectiveCamera(
+          90,
+          1,
+          optical.body.phenomenon!.diskOuter * 4,
+          180,
+        )
+      : camera;
+    if (optical) {
+      pickCamera.position.copy(optical.origin);
+      pickCamera.lookAt(optical.origin.clone().add(optical.direction));
+      pickCamera.updateMatrixWorld();
+    }
+    const width = optical ? lensing.skyResolution() : Math.floor(bounds.width),
+      height = optical ? lensing.skyResolution() : Math.floor(bounds.height);
     if (!pickTarget)
       pickTarget = new THREE.WebGLRenderTarget(width, height, {
         depthBuffer: true,
@@ -445,15 +587,40 @@ export function createGalaxy(
     else if (pickTarget.width !== width || pickTarget.height !== height)
       pickTarget.setSize(width, height);
     pickGroup.matrix.copy(group.matrixWorld);
-    const sx = THREE.MathUtils.clamp(Math.floor(x) - 4, 0, width - 9),
-      sy = THREE.MathUtils.clamp(height - Math.floor(y) - 4, 0, height - 9);
+    const sx = THREE.MathUtils.clamp(
+        Math.floor(optical ? width / 2 : x) - 4,
+        0,
+        width - 9,
+      ),
+      sy = THREE.MathUtils.clamp(
+        height - Math.floor(optical ? height / 2 : y) - 4,
+        0,
+        height - 9,
+      );
     const clear = renderer.getClearColor(new THREE.Color());
     pickTarget.scissor.set(sx, sy, 9, 9);
     pickTarget.scissorTest = true;
     renderer.setRenderTarget(pickTarget);
     renderer.setClearColor(0);
     renderer.clear();
-    renderer.render(pickScene, camera);
+    const projection = uniforms.uProjectionScale.value,
+      ratio = uniforms.uPixelRatio.value;
+    const strength = uniforms.uContextStrength.value;
+    if (optical) {
+      uniforms.uProjectionScale.value = 256;
+      uniforms.uPixelRatio.value = width / 512;
+      uniforms.uContextStrength.value = 0;
+    }
+    const savedPickMaterial = pickPoints.material;
+    if (optical) pickPoints.material = opticalPickMaterial;
+    try {
+      renderer.render(pickScene, pickCamera);
+    } finally {
+      pickPoints.material = savedPickMaterial;
+    }
+    uniforms.uProjectionScale.value = projection;
+    uniforms.uPixelRatio.value = ratio;
+    uniforms.uContextStrength.value = strength;
     renderer.readRenderTargetPixels(pickTarget, sx, sy, 9, 9, pickPixels);
     renderer.setRenderTarget(null);
     renderer.setClearColor(clear);
@@ -466,7 +633,12 @@ export function createGalaxy(
         pickPixels[i * 4 + 2] * 65536 -
         1;
       const d = ((i % 9) - 4) ** 2 + (Math.floor(i / 9) - 4) ** 2;
-      if (value >= 0 && value < settings.density && d < score) {
+      if (
+        value >= 0 &&
+        value < settings.density &&
+        d < score &&
+        (!optical || d <= 4)
+      ) {
         best = value;
         score = d;
       }
@@ -502,6 +674,34 @@ export function createGalaxy(
     startUp: THREE.Vector3;
     startTarget: THREE.Vector3;
   } | null = null;
+  const startTravel = (
+    origin: THREE.Vector3,
+    previous: BodyIdentity | null,
+  ) => {
+    if (!selected) return;
+    targetDistance = selected.phenomenon
+      ? framingDistance(selected.phenomenon.envelope, camera.aspect)
+      : selected.radius * 4.2;
+    travel = {
+      time: 0,
+      origin,
+      startDistance: distance,
+      cruiseDistance: Math.max(
+        distance,
+        origin.distanceTo(worldFocus) * 1.5,
+        (previous?.radius ?? 0) * 8,
+        selected.radius * 8,
+      ),
+      startPosition: camera.position.clone(),
+      startUp: camera.up.clone(),
+      startTarget: camera.position
+        .clone()
+        .addScaledVector(
+          camera.getWorldDirection(new THREE.Vector3()),
+          Math.max(selected.radius, distance),
+        ),
+    };
+  };
   const select = (id: number) => {
     const previous = selected;
     const switching = previous !== null && previous.id !== id;
@@ -514,6 +714,10 @@ export function createGalaxy(
     clearFrame();
     surfaceAnchor = null;
     selected = describeBody(id);
+    if (selected.phenomenon) {
+      elevation = (25 * Math.PI) / 180;
+      azimuth = 0.6;
+    }
     particlePosition(
       positions,
       seeds,
@@ -531,28 +735,7 @@ export function createGalaxy(
       targetDistance,
       selected.radius * minimumOrbitRatio(selected),
     );
-    if (switching) {
-      targetDistance = selected.radius * 4.2;
-      travel = {
-        time: 0,
-        origin,
-        startDistance: distance,
-        cruiseDistance: Math.max(
-          distance,
-          origin.distanceTo(worldFocus) * 1.5,
-          previous.radius * 8,
-          selected.radius * 8,
-        ),
-        startPosition: camera.position.clone(),
-        startUp: camera.up.clone(),
-        startTarget: camera.position
-          .clone()
-          .addScaledVector(
-            camera.getWorldDirection(new THREE.Vector3()),
-            Math.max(selected.radius, distance),
-          ),
-      };
-    }
+    if (switching) startTravel(origin, previous);
     onSelection(selected);
   };
   const overview = () => {
@@ -565,21 +748,30 @@ export function createGalaxy(
   const approach = () => {
     clearFrame();
     if (!selected) select(0);
-    targetDistance = selected!.radius * 4.2;
+    targetDistance = selected!.phenomenon
+      ? framingDistance(selected!.phenomenon.envelope, camera.aspect)
+      : selected!.radius * 4.2;
+    if (!travel && distance > targetDistance * 1.1)
+      startTravel(focus.clone(), selected);
+    if (selected!.phenomenon) {
+      elevation = (25 * Math.PI) / 180;
+      azimuth = 0.6;
+    }
   };
 
   const frameSystem = (scope: 'stellar' | 'local') => {
     const body = selected ?? describeBody(0);
-    const start = body.systemId * 8;
-    const catalogue = Array.from(
-      { length: Math.min(8, settings.density - start) },
-      (_, i) => describeBody(start + i),
-    );
+    const start = body.rootId;
+    const membersInSystem = catalogue.getSystemMembers(body.systemId);
     const root =
-      scope === 'stellar' ? start : (localSystemRoot(body, catalogue) ?? start);
-    const bounds = systemBounds(root, catalogue);
+      scope === 'stellar'
+        ? start
+        : (localSystemRoot(body, membersInSystem) ?? start);
+    const bounds = systemBounds(root, membersInSystem);
     select(root);
-    const members = catalogue.filter((b) => bounds.members.includes(b.id));
+    const members = membersInSystem.filter((b) =>
+      bounds.members.includes(b.id),
+    );
     framed = { radius: bounds.radius, members };
     targetDistance = framingDistance(bounds.radius, camera.aspect);
     onSystemView({ root: describeBody(root), members });
@@ -643,6 +835,7 @@ export function createGalaxy(
   let lastPointingReport = 0;
   let reportedCameraView: CameraView = 'overview';
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let wallTime = 0;
   let elapsed = 0,
     rotation = 0,
     frame = 0,
@@ -660,12 +853,22 @@ export function createGalaxy(
   let mobile = false;
   const resize = () => {
     const { width, height } = host.getBoundingClientRect();
+    if (width <= 0 || height <= 0) return;
+    const previousAspect = camera.aspect;
     mobile = width < 600;
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderHeight = height;
     if (framed) targetDistance = framingDistance(framed.radius, camera.aspect);
+    else if (selected?.phenomenon) {
+      const scale =
+        framingDistance(1, camera.aspect) / framingDistance(1, previousAspect);
+      targetDistance = Math.max(
+        selected.phenomenon.exclusion,
+        targetDistance * scale,
+      );
+    }
   };
   const changeZoom = (factor: number) => {
     if (factor > 1 && !selected) {
@@ -754,6 +957,13 @@ export function createGalaxy(
     cancelAnimationFrame(frame);
     onError(messages.contextLost);
   };
+  const contextRestored = () => {
+    lensing.invalidate();
+    lost = false;
+    onError('');
+    previous = lastFrame = performance.now();
+    frame = requestAnimationFrame(animate);
+  };
   // A tap selects only on release; a pinch must never trigger an accidental selection.
   const touches = new Map<number, THREE.Vector2>();
   let pinchDistance = 0;
@@ -825,6 +1035,7 @@ export function createGalaxy(
   renderer.domElement.addEventListener('pointercancel', up);
   renderer.domElement.addEventListener('keydown', key);
   renderer.domElement.addEventListener('webglcontextlost', contextLost);
+  renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
   const animate = (now: number) => {
     if (lost) return;
     frame = requestAnimationFrame(animate);
@@ -849,8 +1060,11 @@ export function createGalaxy(
       slowFrames = 0;
       qualityCheck = 0;
     }
-    elapsed += dt;
-    activityTime += dt * (reduced.matches ? 0.12 : 1);
+    wallTime += dt;
+    if (!settings.paused) {
+      elapsed += dt * settings.speed;
+      activityTime += dt * settings.speed * (reduced.matches ? 0.12 : 1);
+    }
     if (!settings.paused)
       rotation += dt * settings.speed * (reduced.matches ? 0.012 : 0.065);
     uniforms.uTime.value = elapsed;
@@ -913,7 +1127,7 @@ export function createGalaxy(
       );
       worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
       if (travel) {
-        travel.time += dt;
+        travel.time += reduced.matches ? dt * (5 / 0.35) : dt;
         const flight = sampleBodyTravel(
           travel.time / 5,
           travel.startDistance,
@@ -935,14 +1149,18 @@ export function createGalaxy(
       Math.cos(azimuth) * Math.cos(elevation),
     );
     const ratio = selected ? distance / selected.radius : 100;
-    uniforms.uContextRoot.value = selected ? selected.systemId * 8 : -8;
+    uniforms.uContextRoot.value = selected ? selected.rootId : -1;
     uniforms.uContextSelected.value = selected?.id ?? -1;
     uniforms.uContextStrength.value = selected
       ? framed
         ? 1
         : 1 - THREE.MathUtils.smoothstep(ratio, 20, 160)
       : 0;
-    const terrainView = !!selected && !framed && !travel;
+    const terrainView =
+      !!selected &&
+      selected.capabilities.renderClass === 'ordinary' &&
+      !framed &&
+      !travel;
     const desired =
       terrainView && selected
         ? desiredSurfaceTilt(ratio, settings.tilt, minimumOrbitRatio(selected))
@@ -1154,7 +1372,10 @@ export function createGalaxy(
         const id = scanCursor % settings.density;
         scanCursor = (scanCursor + 1) % settings.density;
         const m = measure(id);
-        if (m.visible && m.pixels >= 18)
+        if (
+          m.visible &&
+          m.pixels >= (catalogue.getBody(id).phenomenon ? 6 : 18)
+        )
           detailShortlist.set(id, { pixels: m.pixels, seen: elapsed });
         else detailShortlist.delete(id);
       }
@@ -1167,20 +1388,22 @@ export function createGalaxy(
       .slice(0, 32)
       .map(([id]) => id);
     if (selected) {
-      const start = selected.systemId * 8;
-      for (let id = start; id < Math.min(start + 8, settings.density); id++)
+      for (const { id } of catalogue.getSystemMembers(selected.systemId))
         if (!shortlist.includes(id)) shortlist.push(id);
       if (!shortlist.includes(selected.id)) shortlist.unshift(selected.id);
     }
     for (const id of shortlist) {
       const m = measure(id);
-      if ((m.visible || id === selected?.id) && m.pixels >= 18) {
+      if (
+        (m.visible || id === selected?.id) &&
+        m.pixels >= (catalogue.getBody(id).phenomenon ? 6 : 18)
+      ) {
         candidatePosition.copy(localPosition);
         const stellarPosition = new THREE.Vector3();
         particlePosition(
           positions,
           seeds,
-          Math.floor(id / 8) * 8,
+          catalogue.getBody(id).rootId,
           rotation,
           elapsed,
           stellarPosition,
@@ -1196,7 +1419,7 @@ export function createGalaxy(
           pixels: m.pixels,
           distanceInRadii: m.d / bodyRadii[id],
           cameraPosition:
-            id === selected?.id || id % 8 === 0
+            id === selected?.id || catalogue.getBody(id).capabilities.emitsLight
               ? camera.position.clone()
               : undefined,
         });
@@ -1223,11 +1446,23 @@ export function createGalaxy(
       rotation,
     );
     const fades = bodyLOD.update(
-      visibleCandidates,
-      elapsed,
+      visibleCandidates
+        .slice(0, 8)
+        .filter((c) => c.identity.capabilities.renderClass === 'ordinary'),
+      wallTime,
       rotation,
       activityTime,
     );
+    const specialFades = phenomena.update(
+      visibleCandidates.slice(0, 8),
+      wallTime,
+      reduced.matches ? 0 : activityTime,
+    );
+    fades.push(...specialFades);
+    host.dataset.phenomena = String(phenomena.stats().cached);
+    host.dataset.catalogueVersion = 'v2';
+    host.dataset.activeBodies = String(settings.density);
+    host.dataset.selectedBody = selected?.bodyId ?? '';
     host.dataset.surfaceLevel = String(bodyLOD.stats().surfaceLevel);
     host.dataset.surfacePatches = String(bodyLOD.stats().patches);
     host.dataset.altitudeRatio = selected
@@ -1238,7 +1473,10 @@ export function createGalaxy(
       v.set(f?.id ?? -1, f?.fade ?? 0);
     });
     marker.style.display =
-      selected && distance > selected.radius * 20 ? 'block' : 'none';
+      selected &&
+      distance > (selected.phenomenon?.envelope ?? selected.radius) * 20
+        ? 'block'
+        : 'none';
     if (selected) {
       projected.copy(worldFocus).project(camera);
       marker.style.left = `${(projected.x * 0.5 + 0.5) * host.clientWidth}px`;
@@ -1251,15 +1489,17 @@ export function createGalaxy(
       host.dataset.distance = distance.toFixed(4);
     }
     // Report discrete UI changes only, including wheel and keyboard navigation.
+    const viewRadius = selected?.phenomenon
+      ? framingDistance(selected.phenomenon.envelope, camera.aspect) / 4.2
+      : (selected?.radius ?? 1);
     const cameraView: CameraView = !selected
       ? 'overview'
       : framed
         ? 'system'
         : travel ||
-            (targetDistance / selected.radius <= 4.3 &&
-              distance / selected.radius > 4.6)
+            (targetDistance / viewRadius <= 4.3 && distance / viewRadius > 4.6)
           ? 'approaching'
-          : distance / selected.radius <= 6
+          : distance / viewRadius <= 6
             ? 'close'
             : 'selected';
     if (cameraView !== reportedCameraView) {
@@ -1267,10 +1507,31 @@ export function createGalaxy(
       onCameraView(cameraView);
     }
     onProximity(
-      zoomProximity(distance, selected?.radius ?? null),
+      zoomProximity(
+        distance,
+        selected?.phenomenon?.diskOuter ?? selected?.radius ?? null,
+      ),
       selected?.kind ?? null,
     );
-    renderer.render(scene, camera);
+    lensing.render(
+      renderer,
+      scene,
+      camera,
+      phenomena.lensSubject(),
+      wallTime,
+      reduced.matches ? 0 : activityTime,
+      captureSky,
+      renderPointDepth,
+      activityTime,
+    );
+    if (process.env.NODE_ENV !== 'production') {
+      host.dataset.lenses = String(lensing.stats().active);
+      host.dataset.lensTargets = String(lensing.stats().targets);
+      host.dataset.skyCaptureMs = lensing.captureStats().costMs.toFixed(2);
+      host.dataset.skyCaptureTiming = lensing.captureStats().source;
+      host.dataset.skyResolution = String(lensing.skyResolution());
+      host.dataset.skyCaptures = String(lensing.captureStats().captures);
+    }
     if (!firstFrameRendered) {
       firstFrameRendered = true;
       onFirstFrame();
@@ -1278,14 +1539,16 @@ export function createGalaxy(
   };
   frame = requestAnimationFrame(animate);
   return {
+    catalogue,
     configure(next) {
       const densityChanged = settings.density !== next.density;
-      settings = next;
+      settings = { ...next, density: catalogue.activeCount(next.density) };
       if (selected && densityChanged) {
-        if (selected.id >= next.density) overview();
+        if (selected.id >= settings.density) overview();
         else if (framed) frameSystem('local');
       }
-      geometry.setDrawRange(0, next.density);
+      geometry.setDrawRange(0, settings.density);
+      lensing.invalidate();
       dustGeometry.setDrawRange(
         0,
         Math.round(dustCount * Math.min(1, next.density / 65000)),
@@ -1349,13 +1612,21 @@ export function createGalaxy(
       renderer.domElement.removeEventListener('pointercancel', up);
       clearFrame();
       bodyLOD.dispose();
+      phenomena.dispose();
+      lensing.dispose();
+      pointDepthMaterial.dispose();
       debris.dispose();
       marker.remove();
       pickMaterial.dispose();
+      opticalPickMaterial.dispose();
       pickTarget?.dispose();
       renderer.domElement.removeEventListener('dblclick', doubleClick);
       renderer.domElement.removeEventListener('keydown', key);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
+      renderer.domElement.removeEventListener(
+        'webglcontextrestored',
+        contextRestored,
+      );
       geometry.dispose();
       material.dispose();
       impostorMaterial.dispose();

@@ -166,7 +166,7 @@ export function buildAmbientGraph(context: BaseAudioContext) {
       smooth(melody.gain, mix.melody, 1.5);
       smooth(wet.gain, mix.wet, 1.5);
       atmospheres.forEach((layer) =>
-        smooth(layer.output.gain, layer.kind === kind ? mix.local : 0, 1.2),
+        smooth(layer.output.gain, layer.kind === kind ? mix.local : 0, 2),
       );
     },
     chord(index: number, at: number) {

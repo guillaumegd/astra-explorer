@@ -104,6 +104,7 @@ test('every body family reaches the requested tilt at its safe zoom limit', asyn
   const kinds = new Set();
   for (let id = 0; id < 200; id++) {
     const body = describeBody(id);
+    if (body.capabilities.renderClass !== 'ordinary') continue;
     kinds.add(body.kind);
     const limit = minimumOrbitRatio(body);
     assert.equal(desiredSurfaceTilt(limit, null, limit), 60, body.kind);

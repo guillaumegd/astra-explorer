@@ -3,6 +3,7 @@ export type OrbitalBody = {
   parentId: number | null;
   radius: number;
   seed: number;
+  orbit?: Orbit | null;
 };
 export type Orbit = {
   parentId: number;
@@ -12,21 +13,12 @@ export type Orbit = {
   inclination: number;
 };
 export const ORBIT_DEPTH = 3;
+export const ORBIT_STRIDE = ORBIT_DEPTH * 4;
 
 export function orbitFor(body: OrbitalBody, parent: OrbitalBody): Orbit {
-  const isMoon = parent.parentId !== null;
-  const slot = Math.max(1, body.id % 8);
-  return {
-    parentId: parent.id,
-    radius: isMoon
-      ? Math.max(parent.radius * 45, 0.0032)
-      : 0.025 * 1.75 ** ((body.id % 8) - 1),
-    phase:
-      ((Math.floor(body.id / 8) * 0.61803398875) % 1) * Math.PI * 2 +
-      (body.id % 8) * 2.39996323,
-    speed: isMoon ? 0.7 + (body.seed % 1) * 0.4 : 0.16 / slot ** 1.5,
-    inclination: isMoon ? 0.25 : 0.12 + (body.seed % 1) * 0.08,
-  };
+  if (body.parentId !== parent.id) throw new Error('Invalid orbital parent');
+  if (!body.orbit) throw new Error('Missing explicit orbital elements');
+  return body.orbit;
 }
 
 // Resolve the hierarchy once. The GPU then sums up to three parent-relative orbits.
@@ -34,7 +26,7 @@ export function compileOrbitChain(
   id: number,
   lookup: (id: number) => OrbitalBody,
 ): Float32Array {
-  const data = new Float32Array(ORBIT_DEPTH * 4),
+  const data = new Float32Array(ORBIT_STRIDE),
     seen = new Set<number>();
   let body = lookup(id),
     depth = 0;

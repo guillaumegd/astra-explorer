@@ -9,6 +9,7 @@ export const es: Dictionary = {
     preparing: 'Preparando el cielo…',
   },
   controls: {
+    phenomena: 'Fenómenos raros',
     satellites: 'Satélites',
     members: 'Miembros del sistema',
     options: 'Opciones',
@@ -141,6 +142,7 @@ export const es: Dictionary = {
   },
   loading: 'Encendiendo las estrellas…',
   bodyKinds: {
+    'black-hole': 'Agujero negro',
     'red-dwarf': 'Enana roja',
     'giant-star': 'Estrella gigante',
     'blue-star': 'Estrella azul',
@@ -153,6 +155,13 @@ export const es: Dictionary = {
     'gas-giant': 'Gigante gaseoso',
     'rocky-moon': 'Satélite rocoso',
     asteroid: 'Asteroide',
+  },
+  phenomena: {
+    description:
+      'Una sombra profunda rodeada por un disco de materia luminoso. Dimensiones y colores artísticos; observación exterior únicamente.',
+    central: 'Objeto compacto central',
+    orbit: 'Orbita alrededor del agujero negro',
+    empty: 'No hay fenómenos en el catálogo activo.',
   },
   system: {
     exploreBodyAria: (name, kind) => `Explorar ${name}, ${kind}`,

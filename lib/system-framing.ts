@@ -4,10 +4,14 @@ import { orbitFor, type OrbitalBody } from './orbits.ts';
 export function systemBounds(rootId: number, catalogue: OrbitalBody[]) {
   const byId = new Map(catalogue.map((body) => [body.id, body]));
   const members: number[] = [];
-  let radius = byId.get(rootId)?.radius ?? 0;
+  const visualRadius = (
+    body: OrbitalBody & { phenomenon?: { envelope: number } },
+  ) => body.phenomenon?.envelope ?? body.radius;
+  const root = byId.get(rootId);
+  let radius = root ? visualRadius(root) : 0;
   for (const body of catalogue) {
     let node = body,
-      extent = body.radius;
+      extent = visualRadius(body);
     const seen = new Set<number>();
     while (node.id !== rootId && node.parentId !== null && !seen.has(node.id)) {
       seen.add(node.id);

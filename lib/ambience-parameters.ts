@@ -43,6 +43,15 @@ export const soundProfiles: Record<
     sparkle: number;
   }
 > = {
+  'black-hole': {
+    band: 100,
+    q: 1.5,
+    breath: 0.025,
+    noise: 0.08,
+    drone: 27.5,
+    tone: 0.025,
+    sparkle: 0.002,
+  },
   'red-dwarf': {
     band: 220,
     q: 0.7,

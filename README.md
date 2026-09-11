@@ -45,7 +45,7 @@ Sur ordinateur et mobile, la barre basse regroupe découverte/retour, zoom, paus
 
 ## Identités et génération procédurale
 
-Un identifiant de particule produit une graine déterministe. Revenir sur `AST-000006`, modifier la densité ou libérer son maillage ne change pas sa nature ni sa surface. Les douze familles sont :
+Un identifiant de particule produit une graine déterministe. Revenir sur `AST-V2-00001-001`, modifier la densité ou libérer son maillage ne change pas sa nature ni sa surface. Le catalogue V2 utilise des identifiants persistants `v2:system:…:body:…`, distincts des indices GPU. Il constitue un nouvel univers : les anciens numéros AST ne désignent plus les mêmes objets. Les préférences de langue et d’introduction sont conservées ; aucune sélection n’était persistée par le moteur V1. Les familles ordinaires sont :
 
 - **Naines rouges, étoiles géantes, étoiles bleues et naines blanches** : plasma animé, couleurs et plages de taille distinctes.
 - **Planètes telluriques, mondes océaniques, déserts, mondes volcaniques et planètes glacées** : continents, nuages, dunes, fissures de lave ou fractures de glace selon leur nature.
@@ -54,9 +54,11 @@ Un identifiant de particule produit une graine déterministe. Revenir sur `AST-0
 
 Les rayons sont tirés sur une échelle logarithmique propre à chaque famille, puis réduits : étoiles ÷40, planètes et petits corps ÷160 par rapport à la version précédente. La fiche indique le système et le rôle du corps ; il ne s’agit pas de kilomètres réels. Les mêmes identifiants reproduisent les mêmes propriétés dans cette version du générateur.
 
-Les détails utilisent du bruit 3D calculé dans un shader, sans texture téléchargée. Il s’agit d’un univers artistique : les distances sont choisies pour l’exploration, sans simulation gravitationnelle N-corps. Chaque groupe de huit identifiants forme un système : une étoile centrale, cinq planètes, un satellite lié à la cinquième planète et un astéroïde externe. Les rayons orbitaux vont de 0,025 à environ 0,72 unité ; la lune est à environ 0,0032 unité de sa planète. Les orbites sont calculées relativement à un parent, puis additionnées à celles de ses ancêtres. Le mouvement galactique reste appliqué au centre commun du système. La fiche affiche le système parent. Les flèches permettent de parcourir ses membres puis le système suivant. Les halos des compagnons sont atténués pour éviter leur accumulation à distance.
+Les détails utilisent du bruit 3D calculé dans un shader, sans texture téléchargée. Il s’agit d’un univers artistique : les distances sont choisies pour l’exploration, sans simulation gravitationnelle N-corps. Chaque système possède une population variable : une source centrale, zéro à dix planètes avec leurs éventuelles lunes, et zéro à trois astéroïdes. Les orbites sont explicites et espacées géométriquement ; les lunes restent dans une enveloppe bornée autour de leur planète. La densité active le plus grand préfixe de systèmes complets respectant le budget demandé ; le compteur affiche le nombre effectif. Les orbites sont calculées relativement à un parent, puis additionnées à celles de ses ancêtres. Le mouvement galactique reste appliqué au centre commun du système. La fiche affiche le système parent. Les flèches permettent de parcourir ses membres puis le système suivant. Les halos des compagnons sont atténués pour éviter leur accumulation à distance.
 
 ## Organisation du code
+
+Les fonctionnalités disponibles sont décrites dans le [guide des phénomènes spatiaux](docs/PHENOMENES-SPATIAUX.md). Les équations, le pipeline et les limites du rendu sont détaillés dans [l’optique des trous noirs](docs/LOT-3-LENTILLE.md).
 
 `app/page.tsx` contient l’interface et la fiche de sélection. Une référence React transmet les commandes au moteur sans rendre à nouveau toute l’interface à chaque image.
 
@@ -64,7 +66,7 @@ Les détails utilisent du bruit 3D calculé dans un shader, sans texture téléc
 
 `lib/particle-motion.ts` reproduit le mouvement de l’objet suivi pour la caméra et sa surface. Les autres particules restent animées sur le GPU. La recherche des voisins visibles est répartie entre les images (2 048 identifiants par image), en tenant compte de leurs positions animées.
 
-`lib/stellar-lod.ts` génère les identités et gère les représentations détaillées. Il n’existe plus de sphère centrale spéciale : le même système peut représenter chaque identifiant du catalogue.
+`lib/catalogue/` génère les identités, populations et orbites ; sa même instance est utilisée par React et le moteur. `lib/stellar-lod.ts` gère les représentations ordinaires détaillées. Il n’existe plus de sphère centrale spéciale : le même système peut représenter chaque identifiant du catalogue.
 
 `app/globals.css` définit le thème et les dispositions ordinateur/mobile. Les boutons et curseurs utilisent les composants de `components/ui`.
 
@@ -76,7 +78,7 @@ Les détails utilisent du bruit 3D calculé dans un shader, sans texture téléc
 2. Le maillage détaillé de chaque astre visible peut commencer à apparaître au-delà de **18 pixels CSS de rayon** et à moins de **48 rayons de distance**. L’opacité progresse jusqu’à 100 pixels et 12 rayons. Le ratio de pixels de l’écran ne change pas ces seuils. Un lissage temporel (constante de 0,28 seconde) absorbe même un zoom brutal ; le retour au point s’estompe avec une constante de 0,18 seconde.
 3. Gros plan : sphères de 20, 48 ou 96 segments et davantage d’octaves de bruit. Des seuils avec hystérésis limitent les changements incessants de niveau ; les octaves du bruit sont interpolées pour éviter un changement soudain de texture.
 
-Le zoom déplace la caméra dans toute la scène : les voisins grandissent aussi. Leur représentation GPU apparaît immédiatement, tandis qu’un balayage progressif identifie les surfaces à détailler. Jusqu’à **8 maillages actifs** sont autorisés, avec un cache limité à **12 corps** pour conserver les fondus sortants. La sélection est prioritaire, puis viennent les plus grands corps à l’écran, sous un budget de pixels. Les astres au-delà du budget conservent leur volume simplifié ; ils ne disparaissent pas. Les géométries sont partagées et les ressources inutilisées sont libérées après quatre secondes.
+Le zoom déplace la caméra dans toute la scène : les voisins grandissent aussi. Leur représentation GPU apparaît immédiatement, tandis qu’un balayage progressif identifie les surfaces à détailler. Jusqu’à **8 maillages actifs** sont autorisés, avec un cache total limité à **12 corps** (huit entrées ordinaires et quatre phénomènes) pour conserver les fondus sortants. La sélection est prioritaire, puis viennent les plus grands corps à l’écran, sous un budget de pixels. Les astres au-delà du budget conservent leur volume simplifié ; ils ne disparaissent pas. Les géométries sont partagées et les ressources inutilisées sont libérées après quatre secondes.
 
 Le ratio de pixels est plafonné à 1,75 et descend jusqu’à 0,8 en cas de ralentissement prolongé. Le rendu est plafonné à 45 images/s (cadence effective dépendante de l’écran), suspendu dans un onglet masqué, et les ressources sont détruites au démontage. Ces limites réduisent la charge ; elles ne mesurent pas la température de l’appareil.
 
@@ -160,3 +162,14 @@ Sur les corps solides, l’inclinaison automatique augmente progressivement à l
 `lib/surface-camera.ts` construit la caméra autour d’un pivot au-dessus de l’enveloppe maximale du relief, avec une marge de sécurité. Les vues de système et les géantes gazeuses conservent leur cadrage orbital. Les tests couvrent le passage progressif, le mode vertical et la marge de caméra jusqu’à 60°, y compris aux pôles.
 
 Le changement d’astre déclenche un trajet de 5 secondes : recul (25 %), centrage sur la destination à distance constante (20 %), puis rapprochement en suivant son orbite (55 %). Le centrage est terminé avant le zoom pour que la distance réelle à la planète corresponde au zoom calculé. La distance de recul dépend de la séparation des astres. `lib/body-travel.ts` utilise une interpolation logarithmique des distances et une courbe douce aux extrémités. La destination suit son orbite pendant le voyage ; une nouvelle sélection repart de la position courante, et la vue galaxie interrompt le trajet.
+
+
+### Premiers phénomènes : trous noirs
+
+**Options → Phénomènes rares** et la fiche d’un astre donnent accès aux trous noirs du catalogue actif. Le premier système en contient toujours un, hors du halo central. Le tirage artistique naturel est de 0,3 % des systèmes ; les architectures binaires et pulsars sont réservées et utilisent encore un substitut ordinaire. Les comètes et régions ne sont pas activées.
+
+Chaque trou noir possède une ombre opaque, un disque procédural d’épaisseur finie orienté dans le monde, une palette déterministe et parfois des jets. La matière utilise une advection bornée avec fondus pour éviter l’accumulation d’anneaux après une longue observation. L’asymétrie lumineuse dépend de la caméra et les hautes lumières sont compressées. La sélection de l’ombre ou du disque mène à la même destination. La distance minimale reste extérieure au disque ; aucune commande de surface n’est proposée. Le cadrage d’arrivée tient compte de l’enveloppe et du format de l’écran. Le son utilise un registre grave dans le graphe audio existant.
+
+La pause et la vitesse contrôlent les animations avec les orbites ; les fondus, la caméra et la libération du cache restent actifs pendant la pause. Le mouvement réduit fige l’animation des phénomènes et raccourcit les changements de destination. Les ressources des phénomènes sont créées à l’approche et libérées après quatre secondes hors détail.
+
+Le lot 3 calcule les trajectoires lumineuses de Schwarzschild : capture produisant l’ombre, déformation du ciel réel et images courbées du disque, avec décalage gravitationnel et Doppler. La composition utilise la profondeur de scène et le picking suit la direction d’échappement des rayons. Une seule lentille détaillée utilise deux cibles supplémentaires. Le ciel se rafraîchit à chaque image du moteur ; les requêtes GPU ajustent sa résolution entre 512 et 256 selon le coût mesuré. Le filtrage explicite supprime le cercle crénelé extérieur, et les bords transparents du disque laissent sélectionner les étoiles visibles derrière. La recette et les limites du modèle sont détaillées dans [LOT-3-LENTILLE.md](docs/LOT-3-LENTILLE.md). La fluidité n’est pas certifiée sur téléphone physique.
