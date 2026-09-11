@@ -48,6 +48,13 @@ export type BodyIdentity = {
     envelope: number;
     exclusion: number;
   };
+  /** Present on both components of a binary; the barycentre is never a body. */
+  binary?: {
+    companionId: number;
+    mass: number;
+    separation: number;
+    component: 0 | 1;
+  };
   phenomenon?: {
     shadowRadius: number;
     diskInner: number;
@@ -76,6 +83,13 @@ export type SystemDefinition = {
   bodies: BodyIdentity[];
   nodes: OrbitNode[];
   reservedBodyIds: string[];
+  binary?: {
+    separation: number;
+    speed: number;
+    phase: number;
+    inclination: number;
+    masses: [number, number];
+  };
   anchor: [number, number, number];
   motionSeed: number;
   envelope: number;

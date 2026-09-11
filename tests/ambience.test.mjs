@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { zoomProximity, ambienceMix } from '../lib/ambience-parameters.ts';
+import {
+  BINARY_COLOUR_DEPTH,
+  ambienceMix,
+  binaryColour,
+  zoomProximity,
+} from '../lib/ambience-parameters.ts';
 
 test('zoom mix follows relative body scale and stays bounded', () => {
   assert.equal(zoomProximity(30, null), 0);
@@ -29,4 +34,32 @@ test('close-ups replace the score with atmosphere', () => {
   assert.deepEqual(ambienceMix(-100), far);
   assert.deepEqual(ambienceMix(100), close);
   assert.deepEqual(ambienceMix(NaN), far);
+});
+
+test('binary colouring stays light, continuous and silent from the galaxy view', () => {
+  // Nothing at all until the local layer is actually audible.
+  for (const angle of [0, 1.2, -4, Math.PI]) {
+    const quiet = binaryColour(angle, 0);
+    assert.equal(quiet.gain, 1);
+    assert.equal(quiet.pan, 0);
+  }
+  let previous = null;
+  for (let angle = -20; angle <= 20; angle += 0.01) {
+    const { gain, pan } = binaryColour(angle, 1);
+    assert.ok(gain <= 1 && gain >= 1 - BINARY_COLOUR_DEPTH);
+    assert.ok(Math.abs(pan) <= 0.22);
+    if (previous)
+      assert.ok(
+        Math.abs(gain - previous.gain) < 0.01 &&
+          Math.abs(pan - previous.pan) < 0.01,
+      );
+    previous = { gain, pan };
+  }
+  // A frozen clock or a broken reading must never produce a silent layer.
+  for (const bad of [NaN, Infinity, -Infinity])
+    for (const local of [NaN, Infinity, bad]) {
+      const { gain, pan } = binaryColour(bad, local);
+      assert.ok(Number.isFinite(gain) && Number.isFinite(pan));
+      assert.ok(gain <= 1 && gain >= 1 - BINARY_COLOUR_DEPTH);
+    }
 });

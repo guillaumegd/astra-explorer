@@ -1,5 +1,9 @@
 import type { BodyKind } from './stellar-lod';
-import { ambienceMix, soundProfiles } from './ambience-parameters.ts';
+import {
+  ambienceMix,
+  binaryColour,
+  soundProfiles,
+} from './ambience-parameters.ts';
 
 // Original slow progression and motif; no recordings or external audio assets.
 const CHORDS = [
@@ -94,7 +98,9 @@ export function buildAmbientGraph(context: BaseAudioContext) {
     const pulseGain = track(context.createGain());
     pulseGain.gain.value = 1;
     output.connect(pulseGain);
-    pulseGain.connect(highpass);
+    const colourPan = track(context.createStereoPanner());
+    pulseGain.connect(colourPan);
+    colourPan.connect(highpass);
     const send = track(context.createGain());
     send.gain.value = 0.25;
     pulseGain.connect(send);
@@ -122,7 +128,7 @@ export function buildAmbientGraph(context: BaseAudioContext) {
     tone.connect(output);
     lfo.start();
     drone.start();
-    return { kind, output, lfo, drone, profile, pulseGain };
+    return { kind, output, lfo, drone, profile, pulseGain, colourPan };
   });
 
   const harmonics = context.createPeriodicWave(
@@ -171,6 +177,17 @@ export function buildAmbientGraph(context: BaseAudioContext) {
       lastPulse = bounded;
       if (pulsarLayer)
         smooth(pulsarLayer.pulseGain.gain, 0.88 + 0.12 * bounded, 0.08);
+    },
+    setBinaryColour(angle: number | null) {
+      const close = bodyKind === null ? 0 : ambienceMix(proximity).local;
+      const colour = binaryColour(angle ?? 0, angle === null ? 0 : close);
+      atmospheres.forEach((layer) => {
+        const active = layer.kind === bodyKind;
+        smooth(layer.colourPan.pan, active ? colour.pan : 0, 2);
+        // The pulsar layer's gain belongs to setPulse; never contend for it.
+        if (layer !== pulsarLayer)
+          smooth(layer.pulseGain.gain, active ? colour.gain : 1, 2);
+      });
     },
     setProximity(value: number, kind: BodyKind | null = null) {
       proximity = value;
@@ -363,9 +380,12 @@ export function createAmbientSoundtrack(onFailure: () => void) {
       value: number,
       kind: BodyKind | null = null,
       modulation = 0.5,
+      binaryAngle: number | null = null,
     ) {
       pulse = modulation;
       if (enabled) graph?.setPulse(pulse);
+      // The angle moves continuously, so colour it before the early return.
+      if (enabled) graph?.setBinaryColour(binaryAngle);
       value = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
       if (Math.abs(value - proximity) < 0.01 && kind === bodyKind) return;
       proximity = value;

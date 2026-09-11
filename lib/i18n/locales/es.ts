@@ -167,6 +167,15 @@ export const es: Dictionary = {
     orbit: 'Orbita alrededor del agujero negro',
     empty: 'No hay fenómenos en el catálogo activo.',
   },
+  binary: {
+    label: 'Estrella doble',
+    component: (letter) => `Componente ${letter}`,
+    companion: 'Ver la compañera',
+    circumbinaryOrbit: 'Orbita alrededor de las dos estrellas',
+    barycentre: 'Centrado en el baricentro, una referencia invisible',
+    description:
+      'Dos estrellas giran alrededor de un baricentro invisible, en fases opuestas. Masas, separación y período artísticos; los planetas orbitan el par completo.',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explorar ${name}, ${kind}`,
   },

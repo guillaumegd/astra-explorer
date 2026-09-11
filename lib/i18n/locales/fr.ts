@@ -166,6 +166,15 @@ export const fr: Dictionary = {
     orbit: 'Orbite autour du trou noir',
     empty: 'Aucun phénomène dans le catalogue actif.',
   },
+  binary: {
+    label: 'Étoile double',
+    component: (letter) => `Composante ${letter}`,
+    companion: 'Voir la compagne',
+    circumbinaryOrbit: 'Orbite autour des deux étoiles',
+    barycentre: 'Centré sur le barycentre, un repère invisible',
+    description:
+      'Deux étoiles tournent autour d’un barycentre invisible, en phases opposées. Masses, séparation et période artistiques ; les planètes tournent autour de la paire entière.',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explorer ${name}, ${kind}`,
   },

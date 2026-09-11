@@ -3,6 +3,22 @@ export const CATALOGUE_VERSION = 'v2';
 export const ARCHITECTURE_WEIGHTS = [94, 5, 0.7, 0.3] as const;
 export const JET_PROBABILITY = 0.15;
 export const COMET_PROBABILITY = 0.02;
+// Separation is drawn in combined stellar radii, then clipped to a third of the
+// first planetary orbit: the circumbinary rule holds without moving any orbit.
+export const BINARY_SEPARATION_SPAN = [7, 18] as const;
+export const BINARY_SEPARATION_LIMIT = 1 / 3;
+/** Artistic masses. The primary is 1 by convention; only the ratio is rendered. */
+export const BINARY_MASS_SPAN = [0.4, 1] as const;
+export const BINARY_SPEED_SPAN = [0.9, 1.5] as const;
+export const BINARY_INCLINATION_SPAN = [0.05, 0.22] as const;
+export const BINARY_CONTRAST_PROBABILITY = 0.75;
+/** Artistic luminosity per stellar family, used to weight the two local lights. */
+export const STELLAR_LUMINOSITY = {
+  'red-dwarf': 0.35,
+  'giant-star': 1,
+  'blue-star': 1.6,
+  'white-dwarf': 0.5,
+} as const;
 export const CATALOGUE_SEED = 91724;
 export const MAX_BODIES = 120000;
 export const PLANET_WEIGHTS = [5, 8, 12, 16, 18, 16, 11, 7, 4, 2, 1] as const;

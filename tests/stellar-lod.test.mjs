@@ -117,7 +117,29 @@ test('variable systems have explicit roots, parents and nonintersecting orbital 
     assert.equal(bodies[0].parentId, null);
     for (const body of bodies) {
       assert.equal(body.systemId, system);
-      if (body.parentId === null) continue;
+      if (body.parentId === null) {
+        if (!body.orbit) continue;
+        const pair = bodies.filter((b) => b.role === 'central');
+        assert.equal(pair.length, 2);
+        const here = new THREE.Vector3(...systemOffset(body.id));
+        if (body.role === 'central') {
+          // The two components must never touch.
+          const other = pair.find((b) => b.id !== body.id);
+          assert.ok(
+            here.distanceTo(new THREE.Vector3(...systemOffset(other.id))) >
+              body.radius + other.radius,
+          );
+          continue;
+        }
+        // A circumbinary body still has to clear the pair it turns around.
+        assert.ok(body.orbit.radius > 3 * (body.radius + pair[0].radius));
+        for (const star of pair)
+          assert.ok(
+            here.distanceTo(new THREE.Vector3(...systemOffset(star.id))) >
+              body.radius + star.radius,
+          );
+        continue;
+      }
       const parent = catalogue.getBody(body.parentId);
       assert.ok(body.orbit.radius > 3 * (body.radius + parent.radius));
       const position = new THREE.Vector3(...systemOffset(body.id));

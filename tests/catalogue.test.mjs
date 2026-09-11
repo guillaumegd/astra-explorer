@@ -143,7 +143,16 @@ test('100000 generated systems obey the population bounds and invisible-node gra
     }
     if (system.architecture === 'binary') {
       assert.equal(nodes.get(system.orbitalRootId).bodyId, null);
-      assert.ok(system.reservedBodyIds.length >= 1);
+      // The reservation is consumed: the companion now carries that identifier.
+      const components = system.bodies.filter((b) => b.role === 'central');
+      assert.equal(components.length, 2);
+      assert.equal(components[1].bodyId, `${system.id}:body:001`);
+      assert.ok(system.reservedBodyIds.every((r) => !r.endsWith(':body:001')));
+      for (const planet of ps)
+        assert.equal(
+          nodes.get(`${planet.bodyId}:orbit`).parentId,
+          `${system.id}:barycentre`,
+        );
     }
   }
   for (const [actual, weights, n] of [

@@ -167,6 +167,15 @@ export const ptPT: Dictionary = {
     orbit: 'Orbita em torno do buraco negro',
     empty: 'Não há fenómenos no catálogo ativo.',
   },
+  binary: {
+    label: 'Estrela dupla',
+    component: (letter) => `Componente ${letter}`,
+    companion: 'Ver a companheira',
+    circumbinaryOrbit: 'Orbita as duas estrelas',
+    barycentre: 'Centrado no baricentro, uma referência invisível',
+    description:
+      'Duas estrelas giram em torno de um baricentro invisível, em fases opostas. Massas, separação e período artísticos; os planetas orbitam o par inteiro.',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explorar ${name}, ${kind}`,
   },

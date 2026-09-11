@@ -166,6 +166,15 @@ export const en: Dictionary = {
     orbit: 'Orbits the black hole',
     empty: 'No phenomena in the active catalogue.',
   },
+  binary: {
+    label: 'Double star',
+    component: (letter) => `Component ${letter}`,
+    companion: 'View the companion',
+    circumbinaryOrbit: 'Orbits both stars',
+    barycentre: 'Centred on the barycentre, an invisible marker',
+    description:
+      'Two stars turn around an invisible barycentre, in opposite phases. Artistic masses, separation and period; planets orbit the pair as a whole.',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explore ${name}, ${kind}`,
   },

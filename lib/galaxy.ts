@@ -28,6 +28,12 @@ import {
   type BodyKind,
 } from './stellar-lod';
 import { particlePosition } from './particle-motion';
+import {
+  createLocalLights,
+  mixLocalLights,
+  type LocalLight,
+} from './body-lighting';
+import { STELLAR_LUMINOSITY } from './catalogue/config';
 
 export type GalaxySettings = {
   density: number;
@@ -45,7 +51,11 @@ export type GalaxyMessages = {
   bodyKindLabel: (kind: BodyKind) => string;
   exploreBodyAria: (name: string, kindLabel: string) => string;
 };
-export type SystemView = { root: BodyIdentity; members: BodyIdentity[] };
+export type SystemView = {
+  root: BodyIdentity;
+  members: BodyIdentity[];
+  barycentric: boolean;
+};
 // Where the camera currently sits relative to the galactic centre, expressed
 // the way a sky survey would: right ascension and declination, in radians.
 export type CameraView =
@@ -188,6 +198,7 @@ export function createGalaxy(
     value: number,
     kind: BodyIdentity['kind'] | null,
     pulse: number,
+    binaryAngle: number | null,
   ) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
   onPointing: (pointing: SkyPointing) => void = () => {},
@@ -670,10 +681,14 @@ export function createGalaxy(
     }
     return best >= 0 ? best : null;
   };
-  let framed: { radius: number; members: BodyIdentity[] } | null = null;
+  let framed: {
+    radius: number;
+    members: BodyIdentity[];
+    focus: number | null;
+  } | null = null;
   const orbitGuides = new THREE.Group();
   group.add(orbitGuides);
-  const guideParents: number[] = [];
+  const guideParents: (number | null)[] = [];
   const systemMarkers: HTMLButtonElement[] = [];
   const clearFrame = () => {
     framed = null;
@@ -731,6 +746,24 @@ export function createGalaxy(
         ),
     };
   };
+  /**
+   * Every member shares the system anchor, so the base position with no orbital
+   * offset is exactly the invisible barycentre.
+   */
+  const barycentre = (systemId: number, out: THREE.Vector3) =>
+    particlePosition(
+      positions,
+      seeds,
+      catalogue.getSystem(systemId).rootId,
+      rotation,
+      elapsed,
+      out,
+    );
+  const commitFocus = () => {
+    group.updateMatrixWorld();
+    worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
+    focusOffset.copy(focus).sub(worldFocus);
+  };
   const select = (id: number) => {
     const previous = selected;
     const switching = previous !== null && previous.id !== id;
@@ -757,9 +790,7 @@ export function createGalaxy(
       undefined,
       orbits,
     );
-    group.updateMatrixWorld();
-    worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
-    focusOffset.copy(focus).sub(worldFocus);
+    commitFocus();
     targetDistance = Math.max(
       targetDistance,
       selected.radius * minimumOrbitRatio(selected),
@@ -796,18 +827,28 @@ export function createGalaxy(
     const body = selected ?? describeBody(0);
     const start = body.rootId;
     const membersInSystem = catalogue.getSystemMembers(body.systemId);
-    const root =
-      scope === 'stellar'
+    // A binary turns around a barycentre that is no body: frame that instead.
+    const barycentric =
+      scope === 'stellar' &&
+      catalogue.getSystem(body.systemId).architecture === 'binary';
+    const root = barycentric
+      ? null
+      : scope === 'stellar'
         ? start
         : (localSystemRoot(body, membersInSystem) ?? start);
     const bounds = systemBounds(root, membersInSystem);
-    select(root);
+    // Selecting a component keeps following that component.
+    select(barycentric && body.binary ? body.id : (root ?? start));
     const members = membersInSystem.filter((b) =>
       bounds.members.includes(b.id),
     );
-    framed = { radius: bounds.radius, members };
+    framed = { radius: bounds.radius, members, focus: root };
     targetDistance = framingDistance(bounds.radius, camera.aspect);
-    onSystemView({ root: describeBody(root), members });
+    if (barycentric) {
+      barycentre(body.systemId, localFocus);
+      commitFocus();
+    }
+    onSystemView({ root: describeBody(start), members, barycentric });
     for (const member of members) {
       const marker = document.createElement('button');
       const kindLabel = messages.bodyKindLabel(member.kind);
@@ -826,8 +867,11 @@ export function createGalaxy(
       });
       host.appendChild(marker);
       systemMarkers.push(marker);
-      if (member.id === root || member.parentId === null) continue;
-      const orbit = orbitFor(member, describeBody(member.parentId));
+      if (member.id === root || !member.orbit) continue;
+      const orbit = orbitFor(
+        member,
+        member.parentId === null ? null : describeBody(member.parentId),
+      );
       const points = Array.from({ length: 96 }, (_, i) => {
         const a = (i / 96) * Math.PI * 2;
         return new THREE.Vector3(
@@ -850,6 +894,16 @@ export function createGalaxy(
     }
   };
 
+  // Reused across frames: the render loop must not allocate.
+  const lightSlots = [0, 1].map(() => ({
+    position: new THREE.Vector3(),
+    power: 1,
+    color: new THREE.Color(),
+  }));
+  const soleSource = lightSlots.slice(0, 1);
+  const lightPool: [LocalLight, LocalLight][] = [];
+  const lightsFor = (index: number) =>
+    (lightPool[index] ??= createLocalLights());
   let renderHeight = 1;
   let reservedBottom = 0;
   let currentReservedBottom = 0;
@@ -1148,16 +1202,19 @@ export function createGalaxy(
     if (!travel)
       distance += (targetDistance - distance) * (1 - Math.exp(-dt * 4));
     if (selected) {
-      particlePosition(
-        positions,
-        seeds,
-        selected.id,
-        rotation,
-        elapsed,
-        localFocus,
-        undefined,
-        orbits,
-      );
+      if (framed && framed.focus === null)
+        barycentre(selected.systemId, localFocus);
+      else
+        particlePosition(
+          positions,
+          seeds,
+          selected.id,
+          rotation,
+          elapsed,
+          localFocus,
+          undefined,
+          orbits,
+        );
       worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
       if (travel) {
         travel.time += reduced.matches ? dt * (5 / 0.35) : dt;
@@ -1322,16 +1379,18 @@ export function createGalaxy(
     if (framed) {
       const position = new THREE.Vector3();
       guideParents.forEach((id, i) => {
-        particlePosition(
-          positions,
-          seeds,
-          id,
-          rotation,
-          elapsed,
-          position,
-          undefined,
-          orbits,
-        );
+        if (id === null) barycentre(framed!.members[0].systemId, position);
+        else
+          particlePosition(
+            positions,
+            seeds,
+            id,
+            rotation,
+            elapsed,
+            position,
+            undefined,
+            orbits,
+          );
         orbitGuides.children[i].position.copy(position);
       });
       framed.members.forEach((member, i) => {
@@ -1438,21 +1497,36 @@ export function createGalaxy(
             : 18)
       ) {
         candidatePosition.copy(localPosition);
-        const stellarPosition = new THREE.Vector3();
-        particlePosition(
-          positions,
-          seeds,
-          catalogue.getBody(id).rootId,
-          rotation,
-          elapsed,
-          stellarPosition,
-          undefined,
-          orbits,
-        );
-        const lightDirection = stellarPosition.sub(candidatePosition);
-        if (lightDirection.lengthSq() === 0) lightDirection.set(1, 0, 0);
+        // One source for a lone star, two for a binary, in catalogue order.
+        const stars = catalogue
+          .getSystem(catalogue.getBody(id).systemId)
+          .bodies.filter((b) => b.role === 'central');
+        let sources = 0;
+        for (const star of stars) {
+          if (sources >= lightSlots.length) break;
+          const slot = lightSlots[sources++];
+          particlePosition(
+            positions,
+            seeds,
+            star.id,
+            rotation,
+            elapsed,
+            slot.position,
+            undefined,
+            orbits,
+          );
+          slot.power =
+            star.radius ** 2 *
+            (STELLAR_LUMINOSITY[star.kind as keyof typeof STELLAR_LUMINOSITY] ??
+              1);
+          slot.color.set(star.color);
+        }
         candidates.push({
-          lightDirection: lightDirection.normalize(),
+          lights: mixLocalLights(
+            candidatePosition,
+            sources > 1 ? lightSlots : soleSource,
+            lightsFor(candidates.length),
+          ),
           identity: selected?.id === id ? selected : describeBody(id),
           position: candidatePosition.clone(),
           pixels: m.pixels,
@@ -1514,6 +1588,7 @@ export function createGalaxy(
     });
     marker.style.display =
       selected &&
+      !framed &&
       distance >
         (selected.phenomenon?.envelope ??
           selected.pulsar?.envelope ??
@@ -1565,6 +1640,9 @@ export function createGalaxy(
       renderPointDepth,
       activityTime,
     );
+    const selectedBinary = selected
+      ? catalogue.getSystem(selected.systemId).binary
+      : undefined;
     onProximity(
       zoomProximity(
         distance,
@@ -1575,6 +1653,9 @@ export function createGalaxy(
       ),
       selected?.kind ?? null,
       selected?.pulsar ? phenomena.pulse(selected.id) : 0.5,
+      selectedBinary
+        ? selectedBinary.phase + rotation * selectedBinary.speed
+        : null,
     );
     if (process.env.NODE_ENV !== 'production') {
       host.dataset.lenses = String(lensing.stats().active);

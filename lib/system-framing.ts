@@ -1,7 +1,10 @@
 import { orbitFor, type OrbitalBody } from './orbits.ts';
 
-/** Conservative bound: remains valid for every orbital phase. */
-export function systemBounds(rootId: number, catalogue: OrbitalBody[]) {
+/**
+ * Conservative bound: remains valid for every orbital phase.
+ * A null root frames the invisible barycentre a binary turns around.
+ */
+export function systemBounds(rootId: number | null, catalogue: OrbitalBody[]) {
   const byId = new Map(catalogue.map((body) => [body.id, body]));
   const members: number[] = [];
   const visualRadius = (
@@ -10,20 +13,26 @@ export function systemBounds(rootId: number, catalogue: OrbitalBody[]) {
       pulsar?: { envelope: number };
     },
   ) => body.phenomenon?.envelope ?? body.pulsar?.envelope ?? body.radius;
-  const root = byId.get(rootId);
+  const root = rootId === null ? undefined : byId.get(rootId);
   let radius = root ? visualRadius(root) : 0;
   for (const body of catalogue) {
     let node = body,
-      extent = visualRadius(body);
+      extent = visualRadius(body),
+      atBarycentre = false;
     const seen = new Set<number>();
-    while (node.id !== rootId && node.parentId !== null && !seen.has(node.id)) {
+    while (node.id !== rootId && !seen.has(node.id)) {
       seen.add(node.id);
+      if (node.parentId === null) {
+        if (node.orbit) extent += node.orbit.radius;
+        atBarycentre = true;
+        break;
+      }
       const parent = byId.get(node.parentId);
       if (!parent) break;
       extent += orbitFor(node, parent).radius;
       node = parent;
     }
-    if (node.id === rootId) {
+    if (node.id === rootId || (rootId === null && atBarycentre)) {
       members.push(body.id);
       radius = Math.max(radius, extent);
     }
@@ -47,9 +56,8 @@ export function localSystemRoot(
     : body.parentId;
   if (root === null) return null;
   const parent = catalogue.find((member) => member.id === root);
-  return parent &&
-    parent.parentId !== null &&
-    catalogue.some((member) => member.parentId === root)
+  // Test the orbit, not the parent: a circumbinary planet has no parent body.
+  return parent && parent.orbit && catalogue.some((m) => m.parentId === root)
     ? root
     : null;
 }

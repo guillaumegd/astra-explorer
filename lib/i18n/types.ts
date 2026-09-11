@@ -126,6 +126,14 @@ export type Dictionary = {
     orbit: string;
     empty: string;
   };
+  binary: {
+    label: string;
+    component: (letter: string) => string;
+    companion: string;
+    circumbinaryOrbit: string;
+    barycentre: string;
+    description: string;
+  };
   system: { exploreBodyAria: (name: string, kind: string) => string };
   language: { label: string };
 };

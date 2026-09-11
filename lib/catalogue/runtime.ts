@@ -6,6 +6,11 @@ export class RuntimeCatalogue {
   readonly bodies: BodyIdentity[] = [];
   readonly systems: SystemDefinition[] = [];
   private readonly byId = new Map<string, BodyIdentity>();
+  // Both lists scan every system, and the panels read them on each render.
+  private destinations = new Map<
+    'phenomena' | 'binaries',
+    { count: number; list: BodyIdentity[] }
+  >();
   readonly seed: number;
   constructor(seed = CATALOGUE_SEED) {
     this.seed = seed;
@@ -64,15 +69,34 @@ export class RuntimeCatalogue {
       ? this.systems[low - 1].rootId + this.systems[low - 1].bodies.length
       : 0;
   }
-  getPhenomena(budget: number) {
+  private listDestinations(
+    key: 'phenomena' | 'binaries',
+    budget: number,
+    match: (system: SystemDefinition) => boolean,
+  ) {
     const count = this.activeCount(budget);
-    return this.systems
-      .filter(
-        (system) =>
-          system.rootId < count &&
-          system.bodies[0].capabilities.renderClass !== 'ordinary',
-      )
+    const cached = this.destinations.get(key);
+    if (cached?.count === count) return cached.list;
+    const list = this.systems
+      .filter((system) => system.rootId < count && match(system))
       .map((system) => system.bodies[0]);
+    this.destinations.set(key, { count, list });
+    return list;
+  }
+  getPhenomena(budget: number) {
+    return this.listDestinations(
+      'phenomena',
+      budget,
+      (system) => system.bodies[0].capabilities.renderClass !== 'ordinary',
+    );
+  }
+  /** Primary components only; the companion is reached from the system card. */
+  getBinaries(budget: number) {
+    return this.listDestinations(
+      'binaries',
+      budget,
+      (system) => system.architecture === 'binary',
+    );
   }
   resolvePick(index: number, budget: number) {
     return Number.isInteger(index) &&

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { lightInView } from './body-lighting.ts';
+import { lightInView, type LocalLight } from './body-lighting.ts';
+import { localLighting } from './light-shaders.ts';
 import { sculptAsteroid } from './asteroid-shape.ts';
 import { createSurfaceActivity } from './surface-activity.ts';
 import { planetWeather } from './planet-weather.ts';
@@ -65,6 +66,7 @@ const fragmentShader = `
  uniform float uRelief,uIsPatch,uPatchAngle,uPatchEnabled,uSurfaceDetail;
  uniform vec3 uPatchAxis;
  uniform mat3 normalMatrix;
+ ${localLighting}
  ${terrainNoise}
  varying vec3 vPosition, vNormal, vView;
  float hash(vec3 p) { return fract(sin(dot(p,vec3(127.1,311.7,74.7))) * 43758.5453); }
@@ -98,7 +100,7 @@ const fragmentShader = `
      shadingNormal=normalize(normalMatrix*normalize(p-(t*dx+b*dy)*uRelief));
    }
    float facing=max(dot(shadingNormal,normalize(vView)),0.0);
-   float light=max(dot(shadingNormal,normalize(uLightDirection)),0.0);
+   float light=localLight(shadingNormal);
    vec3 color;
    if(uType<0.5) {
      vec3 drift=vec3(uTime*0.022,-uTime*0.013,uTime*0.009);
@@ -143,7 +145,7 @@ const fragmentShader = `
        float cracks=iceField(p,uSeed);
        color=mix(uColor*(0.6+land*0.55),uColor*vec3(0.23,0.4,0.5),cracks*0.7);
        float glint=pow(max(dot(reflect(-normalize(uLightDirection),shadingNormal),normalize(vView)),0.),55.);
-       color+=vec3(.7,.9,1.)*glint*noise(p*900.+offset)*.65;
+       color+=vec3(.7,.9,1.)*glint*noise(p*900.+offset)*.65*uLightMix.x;
      }
      if(uType<5.5 || uType>6.5) color*=0.07+0.93*light;
    } else {
@@ -176,7 +178,7 @@ const fragmentShader = `
      vec3 ocean=mix(vec3(0.009,0.035,0.105),vec3(0.025,0.34,0.38),pow(shelf,3.0));
      ocean*=0.25+0.75*light;
      float spec=pow(max(dot(reflect(-normalize(uLightDirection),normalize(vNormal)),normalize(vView)),0.0),90.0);
-     ocean+=vec3(0.5,0.6,0.65)*spec*0.35;
+     ocean+=vec3(0.5,0.6,0.65)*spec*0.35*uLightMix.x;
      color=mix(ocean,ground,dry);
    }
    if(uSurfaceDetail>0.001 && uType>1.5 && uType!=4.0) {
@@ -190,6 +192,7 @@ const fragmentShader = `
      }
      color*=mix(1.0,texture,uSurfaceDetail);
    }
+   if(uType>0.5) color*=localTint(shadingNormal);
    gl_FragColor=vec4(color,uFade);
  }
 `;
@@ -198,6 +201,7 @@ const oceanFragment = `
  uniform float uSeed,uType,uFade,uTime;
  uniform vec3 uLightDirection;
  varying vec3 vPosition,vNormal,vView;
+ ${localLighting}
  ${terrainNoise}
  void main(){
    vec3 p=normalize(vPosition);
@@ -208,10 +212,10 @@ const oceanFragment = `
    vec3 n=normalize(vNormal),l=normalize(uLightDirection);
    vec3 waves=vec3(sin(p.x*850.+uTime*.7+p.z*160.),cos(p.y*710.-uTime*.6+p.x*180.),sin(p.z*790.+uTime*.5));
    n=normalize(n+waves*.055);
-   color*=0.25+0.75*max(dot(n,l),0.0);
+   color*=(0.25+0.75*localLight(n))*localTint(n);
    float foam=(1.-smoothstep(0.,.0006,-floorHeight))*(.5+.5*sin(p.x*1600.+p.z*1300.-uTime*1.2));
    color=mix(color,vec3(.7,.85,.85),foam*.45);
-   color+=vec3(0.4,0.5,0.6)*pow(max(dot(reflect(-l,n),normalize(vView)),0.0),90.0)*0.3;
+   color+=vec3(0.4,0.5,0.6)*pow(max(dot(reflect(-l,n),normalize(vView)),0.0),90.0)*0.3*uLightMix.x;
    gl_FragColor=vec4(color,0.92*uFade);
  }
 `;
@@ -246,7 +250,7 @@ const atmosphereFragment =
    vec3 p=normalize(vPosition);
    vec3 ray=normalize(p-uLocalCamera);
    float facing=max(dot(normalize(vNormal),normalize(vView)),0.0);
-   float light=max(dot(normalize(vNormal),normalize(uLightDirection)),0.0);
+   float light=localLight(normalize(vNormal));
    float transmittance=1.0; vec3 scattering=vec3(0.0);
    // Six samples through a thin shell: genuine depth-dependent accumulation,
    // with advected billows and self-shading, no full-screen volume pass.
@@ -279,11 +283,13 @@ export type BodyCandidate = {
   pixels: number;
   distanceInRadii?: number;
   cameraPosition?: THREE.Vector3;
-  lightDirection?: THREE.Vector3;
+  /** Catalogue order, never sorted: slot 0 is the dominant source. */
+  lights?: readonly [LocalLight, LocalLight];
 };
 type Entry = {
   group: THREE.Group;
   lightDirection: THREE.Vector3;
+  lightDirection2: THREE.Vector3;
   mesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   activity?: ReturnType<typeof createStellarActivity>;
   surfaceActivity?: ReturnType<typeof createSurfaceActivity>;
@@ -396,6 +402,10 @@ export function createBodyLOD(
             depthWrite: true,
             uniforms: {
               uLightDirection: { value: new THREE.Vector3(1, 0, 0) },
+              uLightDirection2: { value: new THREE.Vector3(1, 0, 0) },
+              uLightMix: { value: new THREE.Vector2(1, 0) },
+              uLightColor1: { value: new THREE.Color(1, 1, 1) },
+              uLightColor2: { value: new THREE.Color(1, 1, 1) },
               uRelief: { value: body.type === 8 ? 1 : 0 },
               uNormalStep: { value: 0.03 },
               uSurfaceDetail: { value: 0 },
@@ -423,12 +433,14 @@ export function createBodyLOD(
             group,
             mesh,
             lightDirection: new THREE.Vector3(1, 0, 0),
+            lightDirection2: new THREE.Vector3(1, 0, 0),
             level: 0,
             lastSeen: time,
             fade: 0,
           };
           const lightingEntry = entry;
           const viewLight = material.uniforms.uLightDirection;
+          const viewLight2 = material.uniforms.uLightDirection2;
           const updateLight = (
             _renderer: THREE.WebGLRenderer,
             _scene: THREE.Scene,
@@ -439,6 +451,12 @@ export function createBodyLOD(
               parent.matrixWorld,
               camera.matrixWorldInverse,
               viewLight.value,
+            );
+            lightInView(
+              lightingEntry.lightDirection2,
+              parent.matrixWorld,
+              camera.matrixWorldInverse,
+              viewLight2.value,
             );
           };
           mesh.onBeforeRender = updateLight;
@@ -467,6 +485,10 @@ export function createBodyLOD(
                 uType: { value: body.type },
                 uTime: material.uniforms.uTime,
                 uLightDirection: material.uniforms.uLightDirection,
+                uLightDirection2: material.uniforms.uLightDirection2,
+                uLightMix: material.uniforms.uLightMix,
+                uLightColor1: material.uniforms.uLightColor1,
+                uLightColor2: material.uniforms.uLightColor2,
                 uFade: material.uniforms.uFade,
               },
             });
@@ -489,6 +511,10 @@ export function createBodyLOD(
                 uType: { value: body.type },
                 uColor: { value: new THREE.Color(air.color) },
                 uLightDirection: material.uniforms.uLightDirection,
+                uLightDirection2: material.uniforms.uLightDirection2,
+                uLightMix: material.uniforms.uLightMix,
+                uLightColor1: material.uniforms.uLightColor1,
+                uLightColor2: material.uniforms.uLightColor2,
                 uLocalLight: { value: new THREE.Vector3(1, 0, 0) },
                 uLocalCamera: { value: new THREE.Vector3(0, 0, 4) },
                 uClouds: { value: air.clouds },
@@ -533,8 +559,15 @@ export function createBodyLOD(
           }
           entries.set(body.id, entry);
         }
-        if (candidate.lightDirection)
-          entry.lightDirection.copy(candidate.lightDirection);
+        if (candidate.lights) {
+          const [first, second] = candidate.lights;
+          entry.lightDirection.copy(first.direction);
+          entry.lightDirection2.copy(second.direction);
+          const uniforms = entry.mesh.material.uniforms;
+          uniforms.uLightMix.value.set(first.weight, second.weight);
+          uniforms.uLightColor1.value.copy(first.tint);
+          uniforms.uLightColor2.value.copy(second.tint);
+        }
         entry.lastSeen = time;
         entry.group.visible = true;
         entry.group.position.copy(position);

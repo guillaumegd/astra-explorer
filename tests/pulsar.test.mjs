@@ -21,30 +21,84 @@ const candidate = (identity) => ({
   distanceInRadii: 40,
 });
 
-test('pulsar activation preserves the pre-lot-4 V2 identity, orbit and radius baseline', () => {
+test('binary activation moves nothing else in the V2 baseline', () => {
+  const shape = (o) =>
+    o && {
+      radius: o.radius,
+      phase: o.phase,
+      speed: o.speed,
+      inclination: o.inclination,
+    };
   const hash = createHash('sha256');
+  let binaries = 0;
   for (let i = 0; i < 512; i++) {
     const s = generateSystem(i, i * 56);
+    // Only what lot 5 is allowed to change is neutralised: the companion body,
+    // the identifier it consumes, the compact index, and the orbital parenting
+    // of binaries. Every planet of a binary still has to be bit-identical.
+    const companion = s.architecture === 'binary' ? `${s.id}:body:001` : null;
+    if (companion) binaries++;
     hash.update(
       JSON.stringify({
         id: s.id,
         anchor: s.anchor,
+        reserved: s.reservedBodyIds.filter((r) => r !== companion),
+        nodes: companion
+          ? null
+          : s.nodes.map((n) => ({
+              id: n.id,
+              parentId: n.parentId,
+              bodyId: n.bodyId,
+            })),
+        bodies: s.bodies
+          .filter((b) => b.bodyId !== companion)
+          .map((b) => ({
+            bodyId: b.bodyId,
+            radius: b.radius,
+            seed: b.seed,
+            orbit: b.role === 'central' ? null : shape(b.orbit),
+          })),
+      }),
+    );
+  }
+  // Fail loudly if the filters ever stop filtering anything.
+  assert.equal(binaries, 25);
+  // Captured from generateSystem at d44d924, before activating binaries.
+  assert.equal(
+    hash.digest('hex'),
+    '6a3f67a8cb75975d7df4b598af6f419ce506fa35eb7129945bf8714609e485f8',
+  );
+});
+
+test('binary geometry is frozen', () => {
+  const hash = createHash('sha256');
+  let binaries = 0;
+  for (let i = 0; i < 512; i++) {
+    const s = generateSystem(i, i * 56);
+    if (s.architecture !== 'binary') continue;
+    binaries++;
+    hash.update(
+      JSON.stringify({
+        id: s.id,
+        binary: s.binary,
         nodes: s.nodes,
         reserved: s.reservedBodyIds,
         bodies: s.bodies.map((b) => ({
-          id: b.id,
           bodyId: b.bodyId,
+          kind: b.kind,
           radius: b.radius,
+          color: b.color,
           orbit: b.orbit,
-          seed: b.seed,
+          binary: b.binary,
         })),
       }),
     );
   }
-  // Captured from generateSystem at 941f996, before activating pulsars.
+  assert.equal(binaries, 25);
+  // Captured from generateSystem once lot 5 activated the second source.
   assert.equal(
     hash.digest('hex'),
-    '8c11180b4afb2c7065e1fd0fabcd764d8c771f2073882df8fa98b45c56d4780b',
+    '62b98582c583e58c07235565de469c65e6269b6168e07225b9ea15d8c4ad20a9',
   );
 });
 

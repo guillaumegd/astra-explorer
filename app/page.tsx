@@ -193,8 +193,8 @@ export default function Home() {
         (body) => {
           setSelected(body);
         },
-        (value, kind, pulse) =>
-          soundtrack.current?.setProximity(value, kind, pulse),
+        (value, kind, pulse, binaryAngle) =>
+          soundtrack.current?.setProximity(value, kind, pulse, binaryAngle),
         (view) => {
           setSystemView(view);
         },
@@ -693,15 +693,36 @@ export default function Home() {
               )}
               {panel === 'phenomena' && (
                 <div className="option-list">
-                  {(['black-hole', 'pulsar'] as const).map((kind) => {
-                    const destinations = catalogue
-                      .getPhenomena(density)
-                      .filter((body) => body.kind === kind);
+                  {[
+                    {
+                      key: 'black-hole',
+                      label: t.bodyKinds['black-hole'],
+                      all: catalogue
+                        .getPhenomena(density)
+                        .filter((body) => body.kind === 'black-hole'),
+                      limit: Infinity,
+                    },
+                    {
+                      key: 'pulsar',
+                      label: t.bodyKinds.pulsar,
+                      all: catalogue
+                        .getPhenomena(density)
+                        .filter((body) => body.kind === 'pulsar'),
+                      limit: Infinity,
+                    },
+                    {
+                      key: 'binary',
+                      label: t.binary.label,
+                      all: catalogue.getBinaries(density),
+                      limit: 24,
+                    },
+                  ].map(({ key, label, all, limit }) => {
+                    const destinations = all.slice(0, limit);
                     if (!destinations.length) return null;
                     return (
-                      <details className="phenomenon-category" key={kind}>
+                      <details className="phenomenon-category" key={key}>
                         <summary>
-                          {t.bodyKinds[kind]} · {destinations.length}
+                          {label} · {all.length}
                         </summary>
                         <div className="option-list">
                           {destinations.map((body) => (
@@ -725,9 +746,10 @@ export default function Home() {
                       </details>
                     );
                   })}
-                  {catalogue.getPhenomena(density).length === 0 && (
-                    <p>{t.phenomena.empty}</p>
-                  )}
+                  {catalogue.getPhenomena(density).length === 0 &&
+                    catalogue.getBinaries(density).length === 0 && (
+                      <p>{t.phenomena.empty}</p>
+                    )}
                 </div>
               )}
               {panel === 'advanced' && (
@@ -899,19 +921,27 @@ export default function Home() {
                     <strong>{selected.name}</strong>
                     <p>
                       {selected.systemName} ·{' '}
-                      {selected.parentId === null
+                      {selected.role === 'central'
                         ? selected.phenomenon || selected.pulsar
                           ? t.phenomena.central
-                          : t.inspector.centralStar
+                          : selected.binary
+                            ? t.binary.component(
+                                selected.binary.component === 0 ? 'A' : 'B',
+                              )
+                            : t.inspector.centralStar
                         : selected.kind === 'rocky-moon'
                           ? t.inspector.moonOf(
-                              catalogue.getBody(selected.parentId).name,
+                              catalogue.getBody(
+                                selected.parentId ?? selected.rootId,
+                              ).name,
                             )
                           : catalogue.getBody(selected.rootId).pulsar
                             ? t.phenomena.pulsarOrbit
                             : catalogue.getBody(selected.rootId).phenomenon
                               ? t.phenomena.orbit
-                              : t.inspector.orbitsTheStar}
+                              : catalogue.getBody(selected.rootId).binary
+                                ? t.binary.circumbinaryOrbit
+                                : t.inspector.orbitsTheStar}
                     </p>
                   </div>
                   {(selected.phenomenon || selected.pulsar) && (
@@ -920,6 +950,23 @@ export default function Home() {
                         ? t.phenomena.pulsarDescription
                         : t.phenomena.description}
                     </p>
+                  )}
+                  {selected.binary && (
+                    <>
+                      <p className="reading-copy">{t.binary.description}</p>
+                      <Button
+                        variant="ghost"
+                        onClick={() =>
+                          engine.current?.inspectBody(
+                            selected.binary!.companionId,
+                          )
+                        }
+                      >
+                        <Orbit />
+                        {t.binary.companion}
+                        <ArrowUpRight />
+                      </Button>
+                    </>
                   )}
                   <Button variant="ghost" onClick={() => setPanel('phenomena')}>
                     <Orbit />
@@ -930,6 +977,9 @@ export default function Home() {
                     <details className="detail-section">
                       <summary>{t.controls.members}</summary>
                       <div className="option-list">
+                        {systemView.barycentric && (
+                          <p className="reading-copy">{t.binary.barycentre}</p>
+                        )}
                         {systemView &&
                           systemView.members.map((body) => (
                             <Button

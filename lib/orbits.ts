@@ -5,8 +5,9 @@ export type OrbitalBody = {
   seed: number;
   orbit?: Orbit | null;
 };
+/** A null parent orbits the system origin: the invisible barycentre of a binary. */
 export type Orbit = {
-  parentId: number;
+  parentId: number | null;
   radius: number;
   phase: number;
   speed: number;
@@ -15,8 +16,9 @@ export type Orbit = {
 export const ORBIT_DEPTH = 3;
 export const ORBIT_STRIDE = ORBIT_DEPTH * 4;
 
-export function orbitFor(body: OrbitalBody, parent: OrbitalBody): Orbit {
-  if (body.parentId !== parent.id) throw new Error('Invalid orbital parent');
+export function orbitFor(body: OrbitalBody, parent: OrbitalBody | null): Orbit {
+  if (body.parentId !== (parent?.id ?? null))
+    throw new Error('Invalid orbital parent');
   if (!body.orbit) throw new Error('Missing explicit orbital elements');
   return body.orbit;
 }
@@ -30,17 +32,19 @@ export function compileOrbitChain(
     seen = new Set<number>();
   let body = lookup(id),
     depth = 0;
-  while (body.parentId !== null) {
+  // A body with an orbit but no parent closes the chain on the system origin.
+  while (body.parentId !== null || body.orbit) {
     if (seen.has(body.id)) throw new Error('Cycle dans la hiérarchie orbitale');
     if (depth >= ORBIT_DEPTH)
       throw new Error('Hiérarchie orbitale trop profonde');
     seen.add(body.id);
-    const parent = lookup(body.parentId),
+    const parent = body.parentId === null ? null : lookup(body.parentId),
       orbit = orbitFor(body, parent);
     data.set(
       [orbit.radius, orbit.phase, orbit.speed, orbit.inclination],
       depth++ * 4,
     );
+    if (!parent) break;
     body = parent;
   }
   return data;

@@ -1,5 +1,11 @@
 import {
   ARCHITECTURE_WEIGHTS,
+  BINARY_CONTRAST_PROBABILITY,
+  BINARY_INCLINATION_SPAN,
+  BINARY_MASS_SPAN,
+  BINARY_SEPARATION_LIMIT,
+  BINARY_SEPARATION_SPAN,
+  BINARY_SPEED_SPAN,
   JET_PROBABILITY,
   COMET_PROBABILITY,
   CATALOGUE_SEED,
@@ -102,12 +108,10 @@ export function generateSystem(
   // Reserved architectures use a single ordinary source until their renderer ships.
   // Its persistent ID stays unchanged when that capability is enabled.
   const compact = architecture === 'pulsar' || architecture === 'black-hole';
-  const central = add(
-    compact ? 3 : Math.floor(stream(seed, 'appearance:source')() * 4),
-    'central',
-    null,
-    null,
-  );
+  const primaryFamily = compact
+    ? 3
+    : Math.floor(stream(seed, 'appearance:source')() * 4);
+  const central = add(primaryFamily, 'central', null, null);
   if (architecture === 'black-hole') {
     const draw = stream(seed, 'appearance:black-hole');
     central.radius = 0.0002 * 3 ** draw();
@@ -155,28 +159,101 @@ export function generateSystem(
       renderClass: 'pulsar',
     };
   }
-  if (architecture === 'binary') reservedBodyIds.push(persistentId(slot++));
-  const orbitStream = stream(seed, 'orbits');
-  const spacing = 1.5 + orbitStream() * 0.4;
   // Reserve clearance for the future compact renderer, even while substituted.
   let orbitalRadius = Math.max(
     0.025,
     central.radius * 8,
     (central.phenomenon?.envelope ?? 0) * 1.5,
   );
+  let companion: BodyIdentity | null = null;
+  let binary: SystemDefinition['binary'];
+  if (architecture === 'binary') {
+    // The companion consumes the identifier reserved for it, so every planet
+    // keeps the persistent ID it already had. Both draws use fresh named
+    // streams: touching 'orbits' or 'population' would shift every other body.
+    const look = stream(seed, 'appearance:binary'),
+      pair = stream(seed, 'orbits:binary');
+    companion = add(
+      look() < BINARY_CONTRAST_PROBABILITY
+        ? (primaryFamily + 1 + Math.floor(look() * 3)) % 4
+        : primaryFamily,
+      'central',
+      null,
+      null,
+    );
+    const mass =
+      BINARY_MASS_SPAN[0] +
+      pair() * (BINARY_MASS_SPAN[1] - BINARY_MASS_SPAN[0]);
+    // Clipping to a third of the first planetary orbit keeps every planet
+    // circumbinary without moving a single existing orbit.
+    const separation = Math.min(
+      orbitalRadius * BINARY_SEPARATION_LIMIT,
+      (BINARY_SEPARATION_SPAN[0] +
+        pair() * (BINARY_SEPARATION_SPAN[1] - BINARY_SEPARATION_SPAN[0])) *
+        (central.radius + companion.radius),
+    );
+    const phase = pair() * Math.PI * 2;
+    const speed =
+      BINARY_SPEED_SPAN[0] +
+      pair() * (BINARY_SPEED_SPAN[1] - BINARY_SPEED_SPAN[0]);
+    const inclination =
+      BINARY_INCLINATION_SPAN[0] +
+      pair() * (BINARY_INCLINATION_SPAN[1] - BINARY_INCLINATION_SPAN[0]);
+    // Opposite phases over a shared speed and tilt hold the pair aligned through
+    // the barycentre and keep the separation constant at every time.
+    const total = 1 + mass;
+    central.orbit = {
+      parentId: null,
+      radius: (separation * mass) / total,
+      phase,
+      speed,
+      inclination,
+    };
+    companion.orbit = {
+      parentId: null,
+      radius: separation / total,
+      phase: phase + Math.PI,
+      speed,
+      inclination,
+    };
+    central.binary = {
+      companionId: companion.id,
+      mass: 1,
+      separation,
+      component: 0,
+    };
+    companion.binary = {
+      companionId: central.id,
+      mass,
+      separation,
+      component: 1,
+    };
+    binary = { separation, speed, phase, inclination, masses: [1, mass] };
+  }
+  const orbitStream = stream(seed, 'orbits');
+  const spacing = 1.5 + orbitStream() * 0.4;
   const planetCount = weighted(
     population,
     compact ? COMPACT_PLANET_WEIGHTS : PLANET_WEIGHTS,
   );
   let envelope =
     central.phenomenon?.envelope ?? central.pulsar?.envelope ?? central.radius;
+  // A binary with no planet still has to frame its own pair.
+  if (companion)
+    envelope = Math.max(
+      envelope,
+      central.orbit!.radius + central.radius,
+      companion.orbit!.radius + companion.radius,
+    );
+  // Planets of a binary are circumbinary: they orbit the barycentre, not a star.
+  const orbitParent = architecture === 'binary' ? null : central;
   const makeOrbit = (
-    parent: BodyIdentity,
+    parent: BodyIdentity | null,
     radius: number,
     rank: number,
     moon = false,
   ): Orbit => ({
-    parentId: parent.id,
+    parentId: parent?.id ?? null,
     radius,
     phase: orbitStream() * Math.PI * 2,
     speed: moon ? 0.7 + orbitStream() * 0.4 : 0.16 / (rank + 1) ** 1.5,
@@ -186,8 +263,8 @@ export function generateSystem(
     const planet = add(
       4 + Math.floor(population() * 6),
       'planet',
-      central,
-      makeOrbit(central, orbitalRadius, rank),
+      orbitParent,
+      makeOrbit(orbitParent, orbitalRadius, rank),
     );
     const moons = weighted(
       population,
@@ -208,8 +285,8 @@ export function generateSystem(
     const body = add(
       11,
       'asteroid',
-      central,
-      makeOrbit(central, orbitalRadius, planetCount + rank),
+      orbitParent,
+      makeOrbit(orbitParent, orbitalRadius, planetCount + rank),
     );
     envelope = Math.max(envelope, orbitalRadius + body.radius);
     orbitalRadius *= spacing;
@@ -273,6 +350,7 @@ export function generateSystem(
     orbitalRootId,
     bodies,
     reservedBodyIds,
+    binary,
     anchor,
     motionSeed: placement(),
     envelope,

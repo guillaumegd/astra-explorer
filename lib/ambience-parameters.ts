@@ -30,6 +30,21 @@ export function ambienceMix(proximity: number) {
   };
 }
 
+export const BINARY_COLOUR_DEPTH = 0.06;
+/**
+ * A light colouring of the existing score, as the guide asks: no extra voice
+ * and no new layer, only a shallow breath and drift following the pair's angle,
+ * and nothing at all from the galaxy view.
+ */
+export function binaryColour(angle: number, local: number) {
+  const wave = Math.sin(Number.isFinite(angle) ? angle : 0);
+  const close = Number.isFinite(local) ? Math.min(1, Math.max(0, local)) : 0;
+  return {
+    gain: 1 - BINARY_COLOUR_DEPTH * close * (0.5 - 0.5 * wave),
+    pan: 0.22 * close * wave,
+  };
+}
+
 // Noise band, breath speed, drone and resonant detail share the score's A root.
 export const soundProfiles: Record<
   BodyKind,
