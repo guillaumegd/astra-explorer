@@ -91,10 +91,13 @@ export function buildAmbientGraph(context: BaseAudioContext) {
   const atmospheres = Object.entries(soundProfiles).map(([kind, profile]) => {
     const output = track(context.createGain());
     output.gain.value = 0;
-    output.connect(highpass);
+    const pulseGain = track(context.createGain());
+    pulseGain.gain.value = 1;
+    output.connect(pulseGain);
+    pulseGain.connect(highpass);
     const send = track(context.createGain());
     send.gain.value = 0.25;
-    output.connect(send);
+    pulseGain.connect(send);
     send.connect(reverb);
     const band = track(context.createBiquadFilter());
     band.type = 'bandpass';
@@ -119,7 +122,7 @@ export function buildAmbientGraph(context: BaseAudioContext) {
     tone.connect(output);
     lfo.start();
     drone.start();
-    return { kind, output, lfo, drone, profile };
+    return { kind, output, lfo, drone, profile, pulseGain };
   });
 
   const harmonics = context.createPeriodicWave(
@@ -151,11 +154,23 @@ export function buildAmbientGraph(context: BaseAudioContext) {
   let chordIndex = 0;
   let proximity = 0;
   let bodyKind: BodyKind | null = null;
+  let lastPulse: number | null = null;
+  const pulsarLayer = atmospheres.find((entry) => entry.kind === 'pulsar');
   const smooth = (param: AudioParam, value: number, seconds: number) =>
     param.setTargetAtTime(value, context.currentTime, seconds);
   return {
     setVolume(volume: number, seconds = 0.35) {
       smooth(master.gain, Math.min(1, Math.max(0, volume)) * 0.7, seconds);
+    },
+    setPulse(value: number) {
+      const bounded = Math.max(
+        0,
+        Math.min(1, Number.isFinite(value) ? value : 0.5),
+      );
+      if (bounded === lastPulse) return;
+      lastPulse = bounded;
+      if (pulsarLayer)
+        smooth(pulsarLayer.pulseGain.gain, 0.88 + 0.12 * bounded, 0.08);
     },
     setProximity(value: number, kind: BodyKind | null = null) {
       proximity = value;
@@ -259,6 +274,7 @@ export function createAmbientSoundtrack(onFailure: () => void) {
     volume = 0.35,
     proximity = 0;
   let bodyKind: BodyKind | null = null;
+  let pulse = 0.5;
   let nextChord = 0,
     nextNote = 0,
     chord = 0,
@@ -324,6 +340,7 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         await context.resume();
         if (disposed || version !== request || !enabled) return false;
         graph!.setProximity(proximity, bodyKind);
+        graph!.setPulse(pulse);
         graph!.setVolume(volume);
         startTimer();
         return true;
@@ -342,7 +359,13 @@ export function createAmbientSoundtrack(onFailure: () => void) {
       volume = Math.min(1, Math.max(0, value));
       if (enabled) graph?.setVolume(volume, seconds);
     },
-    setProximity(value: number, kind: BodyKind | null = null) {
+    setProximity(
+      value: number,
+      kind: BodyKind | null = null,
+      modulation = 0.5,
+    ) {
+      pulse = modulation;
+      if (enabled) graph?.setPulse(pulse);
       value = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
       if (Math.abs(value - proximity) < 0.01 && kind === bodyKind) return;
       proximity = value;

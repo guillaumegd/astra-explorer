@@ -5,8 +5,11 @@ export function systemBounds(rootId: number, catalogue: OrbitalBody[]) {
   const byId = new Map(catalogue.map((body) => [body.id, body]));
   const members: number[] = [];
   const visualRadius = (
-    body: OrbitalBody & { phenomenon?: { envelope: number } },
-  ) => body.phenomenon?.envelope ?? body.radius;
+    body: OrbitalBody & {
+      phenomenon?: { envelope: number };
+      pulsar?: { envelope: number };
+    },
+  ) => body.phenomenon?.envelope ?? body.pulsar?.envelope ?? body.radius;
   const root = byId.get(rootId);
   let radius = root ? visualRadius(root) : 0;
   for (const body of catalogue) {

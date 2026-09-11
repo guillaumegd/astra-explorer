@@ -141,6 +141,7 @@ export const fr: Dictionary = {
   },
   loading: 'Allumage des étoiles…',
   bodyKinds: {
+    pulsar: 'Pulsar',
     'black-hole': 'Trou noir',
     'red-dwarf': 'Naine rouge',
     'giant-star': 'Étoile géante',
@@ -156,6 +157,9 @@ export const fr: Dictionary = {
     asteroid: 'Astéroïde',
   },
   phenomena: {
+    pulsarDescription:
+      'Une petite étoile blanc bleuté dont les deux faisceaux tournants rythment doucement la lumière. Période artistique de 4 à 10 secondes ; observation extérieure, sans accès au sol.',
+    pulsarOrbit: 'Orbite autour du pulsar',
     description:
       'Une ombre profonde entourée d’un disque de matière lumineux. Dimensions et couleurs artistiques ; observation extérieure uniquement.',
     central: 'Objet compact central',

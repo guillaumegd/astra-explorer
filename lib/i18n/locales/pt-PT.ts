@@ -142,6 +142,7 @@ export const ptPT: Dictionary = {
   },
   loading: 'A acender as estrelas…',
   bodyKinds: {
+    pulsar: 'Pulsar',
     'black-hole': 'Buraco negro',
     'red-dwarf': 'Anã vermelha',
     'giant-star': 'Estrela gigante',
@@ -157,6 +158,9 @@ export const ptPT: Dictionary = {
     asteroid: 'Asteroide',
   },
   phenomena: {
+    pulsarDescription:
+      'Uma pequena estrela branco-azulada com dois feixes em rotação que modulam suavemente a sua luz. Período artístico de 4 a 10 segundos; observação exterior sem acesso à superfície.',
+    pulsarOrbit: 'Órbita em torno do pulsar',
     description:
       'Uma sombra profunda rodeada por um disco luminoso de matéria. Dimensões e cores artísticas; apenas observação exterior.',
     central: 'Objeto compacto central',

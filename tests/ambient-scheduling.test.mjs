@@ -103,3 +103,30 @@ test('an ambient note already scheduled ahead keeps its intended musical timing'
   );
   graph.dispose();
 });
+
+test('pulsar modulation uses one bounded smoothed gain and adds no nodes during updates', () => {
+  const { context, nodes } = mockContext();
+  const graph = buildAmbientGraph(context);
+  const count = nodes.length;
+  graph.setProximity(1, 'pulsar');
+  graph.setPulse(0);
+  const pulseNode = nodes.find((n) => n.gain.events.at(-1)?.value === 0.88);
+  assert.ok(pulseNode);
+  const initial = pulseNode.gain.events.length;
+  for (let i = 0; i < 100; i++) graph.setPulse(0);
+  assert.equal(
+    pulseNode.gain.events.length,
+    initial,
+    'paused signal does not grow automation',
+  );
+  for (const value of [-1, 0.5, 1, 100, NaN]) graph.setPulse(value);
+  assert.equal(nodes.length, count);
+  for (const event of pulseNode.gain.events) {
+    assert.ok(Number.isFinite(event.value));
+    assert.ok(event.value >= 0.88 && event.value <= 1);
+    assert.equal(event.method, 'target');
+  }
+  graph.setVolume(0);
+  assert.ok(nodes.some((n) => n.gain.events.at(-1)?.value === 0));
+  graph.dispose();
+});

@@ -70,7 +70,7 @@ export class RuntimeCatalogue {
       .filter(
         (system) =>
           system.rootId < count &&
-          system.bodies[0].capabilities.renderClass === 'black-hole',
+          system.bodies[0].capabilities.renderClass !== 'ordinary',
       )
       .map((system) => system.bodies[0]);
   }

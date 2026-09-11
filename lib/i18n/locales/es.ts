@@ -142,6 +142,7 @@ export const es: Dictionary = {
   },
   loading: 'Encendiendo las estrellas…',
   bodyKinds: {
+    pulsar: 'Púlsar',
     'black-hole': 'Agujero negro',
     'red-dwarf': 'Enana roja',
     'giant-star': 'Estrella gigante',
@@ -157,6 +158,9 @@ export const es: Dictionary = {
     asteroid: 'Asteroide',
   },
   phenomena: {
+    pulsarDescription:
+      'Una pequeña estrella blanco azulada con dos haces giratorios que modulan suavemente su luz. Periodo artístico de 4 a 10 segundos; observación exterior sin acceso al suelo.',
+    pulsarOrbit: 'Órbita alrededor del púlsar',
     description:
       'Una sombra profunda rodeada por un disco de materia luminoso. Dimensiones y colores artísticos; observación exterior únicamente.',
     central: 'Objeto compacto central',

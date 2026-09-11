@@ -43,6 +43,15 @@ export const soundProfiles: Record<
     sparkle: number;
   }
 > = {
+  pulsar: {
+    band: 1600,
+    q: 0.8,
+    breath: 0,
+    noise: 0.045,
+    drone: 220,
+    tone: 0.014,
+    sparkle: 0.012,
+  },
   'black-hole': {
     band: 100,
     q: 1.5,

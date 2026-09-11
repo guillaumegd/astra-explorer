@@ -4,11 +4,19 @@ Le catalogue V2 permet des systèmes de tailles variables et des identités pers
 
 ## Trous noirs
 
-**Options → Phénomènes rares** donne accès aux trous noirs du catalogue actif. Le premier système en contient un ; les autres suivent une distribution déterministe de 0,3 % des systèmes. Les architectures binaires et pulsars sont réservées avec un substitut ordinaire ; leurs phénomènes visuels ne sont pas activés.
+**Options → Phénomènes rares** donne accès aux trous noirs et aux pulsars du catalogue actif, regroupés par catégorie avec leur effectif. Le premier système en contient un ; les autres suivent une distribution déterministe de 0,3 % des systèmes. Les binaires gardent une seule source ordinaire de substitution ; leur seconde composante reste réservée.
 
 Un trou noir constitue une destination unique : disque et ombre partagent sa sélection. La caméra reste hors du disque et ne propose aucune exploration de surface. Le cadrage tient compte de l’enveloppe et du format de l’écran. Une ambiance grave utilise le graphe audio existant. Les contrôles sont traduits en français, anglais, espagnol et portugais du Portugal.
 
 La pause fige les animations, mais laisse actifs la caméra, les fondus et le nettoyage des ressources. Le mouvement réduit fige le disque et raccourcit les trajets ; le ciel suit les orbites encore mobiles.
+
+## Pulsars
+
+Le lot 4 active les pulsars déjà réservés en V2 : cœur blanc bleuté, halo contenu et deux cônes opposés tournant autour d’un axe magnétique incliné. Leur période artistique déterministe varie de 4 à 10 secondes. Le passage d’un faisceau vers la caméra module doucement la lumière et la couche sonore locale ; le cœur ne s’éteint jamais.
+
+La caméra cadre l’enveloppe des faisceaux, respecte une exclusion de trois rayons du cœur et ne propose aucune exploration de surface. La pause fige la phase ; le mouvement réduit fixe les faisceaux et leur intensité. Les fiches et catégories sont traduites dans les quatre langues.
+
+L’activation conserve les identités, rayons et orbites existants. Les pulsars ne créent aucune lentille, cible de rendu ou texture supplémentaire.
 
 ## Rendu et ressources
 

@@ -141,6 +141,7 @@ export const en: Dictionary = {
   },
   loading: 'Lighting the stars…',
   bodyKinds: {
+    pulsar: 'Pulsar',
     'black-hole': 'Black hole',
     'red-dwarf': 'Red dwarf',
     'giant-star': 'Giant star',
@@ -156,6 +157,9 @@ export const en: Dictionary = {
     asteroid: 'Asteroid',
   },
   phenomena: {
+    pulsarDescription:
+      'A small blue-white star with two rotating beams that gently modulate its light. Artistic period of 4 to 10 seconds; external observation with no surface landing.',
+    pulsarOrbit: 'Orbiting the pulsar',
     description:
       'A deep shadow surrounded by a luminous disk of matter. Artistic dimensions and colors; exterior observation only.',
     central: 'Central compact object',

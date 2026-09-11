@@ -193,7 +193,8 @@ export default function Home() {
         (body) => {
           setSelected(body);
         },
-        (value, kind) => soundtrack.current?.setProximity(value, kind),
+        (value, kind, pulse) =>
+          soundtrack.current?.setProximity(value, kind, pulse),
         (view) => {
           setSystemView(view);
         },
@@ -692,27 +693,38 @@ export default function Home() {
               )}
               {panel === 'phenomena' && (
                 <div className="option-list">
-                  <p>
-                    {t.bodyKinds['black-hole']} ·{' '}
-                    {catalogue.getPhenomena(density).length}
-                  </p>
-                  {catalogue.getPhenomena(density).map((body) => (
-                    <Button
-                      key={body.bodyId}
-                      variant="ghost"
-                      aria-label={t.system.exploreBodyAria(
-                        body.name,
-                        t.bodyKinds[body.kind],
-                      )}
-                      onClick={() => {
-                        engine.current?.inspectBody(body.id);
-                        setPanel(null);
-                      }}
-                    >
-                      <span>{body.name}</span>
-                      <ArrowUpRight />
-                    </Button>
-                  ))}
+                  {(['black-hole', 'pulsar'] as const).map((kind) => {
+                    const destinations = catalogue
+                      .getPhenomena(density)
+                      .filter((body) => body.kind === kind);
+                    if (!destinations.length) return null;
+                    return (
+                      <details className="phenomenon-category" key={kind}>
+                        <summary>
+                          {t.bodyKinds[kind]} · {destinations.length}
+                        </summary>
+                        <div className="option-list">
+                          {destinations.map((body) => (
+                            <Button
+                              key={body.bodyId}
+                              variant="ghost"
+                              aria-label={t.system.exploreBodyAria(
+                                body.name,
+                                t.bodyKinds[body.kind],
+                              )}
+                              onClick={() => {
+                                engine.current?.inspectBody(body.id);
+                                setPanel(null);
+                              }}
+                            >
+                              <span>{body.name}</span>
+                              <ArrowUpRight />
+                            </Button>
+                          ))}
+                        </div>
+                      </details>
+                    );
+                  })}
                   {catalogue.getPhenomena(density).length === 0 && (
                     <p>{t.phenomena.empty}</p>
                   )}
@@ -888,20 +900,26 @@ export default function Home() {
                     <p>
                       {selected.systemName} ·{' '}
                       {selected.parentId === null
-                        ? selected.phenomenon
+                        ? selected.phenomenon || selected.pulsar
                           ? t.phenomena.central
                           : t.inspector.centralStar
                         : selected.kind === 'rocky-moon'
                           ? t.inspector.moonOf(
                               catalogue.getBody(selected.parentId).name,
                             )
-                          : catalogue.getBody(selected.rootId).phenomenon
-                            ? t.phenomena.orbit
-                            : t.inspector.orbitsTheStar}
+                          : catalogue.getBody(selected.rootId).pulsar
+                            ? t.phenomena.pulsarOrbit
+                            : catalogue.getBody(selected.rootId).phenomenon
+                              ? t.phenomena.orbit
+                              : t.inspector.orbitsTheStar}
                     </p>
                   </div>
-                  {selected.phenomenon && (
-                    <p className="reading-copy">{t.phenomena.description}</p>
+                  {(selected.phenomenon || selected.pulsar) && (
+                    <p className="reading-copy">
+                      {selected.pulsar
+                        ? t.phenomena.pulsarDescription
+                        : t.phenomena.description}
+                    </p>
                   )}
                   <Button variant="ghost" onClick={() => setPanel('phenomena')}>
                     <Orbit />

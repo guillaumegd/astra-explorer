@@ -14,7 +14,8 @@ export type BodyKind =
   | 'gas-giant'
   | 'rocky-moon'
   | 'asteroid'
-  | 'black-hole';
+  | 'black-hole'
+  | 'pulsar';
 export type BodyIdentity = {
   /** Compact picking index; never persist this number. */
   id: number;
@@ -26,8 +27,8 @@ export type BodyIdentity = {
     hasSolidSurface: boolean;
     canSurfaceExplore: boolean;
     emitsLight: boolean;
-    observationProfile: 'surface' | 'stellar' | 'gas' | 'black-hole';
-    renderClass: 'ordinary' | 'black-hole';
+    observationProfile: 'surface' | 'stellar' | 'gas' | 'black-hole' | 'pulsar';
+    renderClass: 'ordinary' | 'black-hole' | 'pulsar';
   };
   systemId: number;
   systemName: string;
@@ -39,6 +40,14 @@ export type BodyIdentity = {
   radius: number;
   color: string;
   rings: boolean;
+  pulsar?: {
+    period: number;
+    phase: number;
+    magneticTilt: number;
+    axisTilt: number;
+    envelope: number;
+    exclusion: number;
+  };
   phenomenon?: {
     shadowRadius: number;
     diskInner: number;

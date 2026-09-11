@@ -134,6 +134,27 @@ export function generateSystem(
       renderClass: 'black-hole',
     };
   }
+  if (architecture === 'pulsar') {
+    // Keep the reserved V2 radius and every existing orbit/identity unchanged.
+    const activity = stream(seed, 'activity:pulsar');
+    central.kind = 'pulsar';
+    central.color = '#b9dcff';
+    central.pulsar = {
+      period: 4 + activity() * 6,
+      phase: activity() * Math.PI * 2,
+      magneticTilt: 0.45 + activity() * 0.5,
+      axisTilt: (activity() - 0.5) * 0.6,
+      envelope: central.radius * 10,
+      exclusion: central.radius * 3,
+    };
+    central.capabilities = {
+      hasSolidSurface: false,
+      canSurfaceExplore: false,
+      emitsLight: true,
+      observationProfile: 'pulsar',
+      renderClass: 'pulsar',
+    };
+  }
   if (architecture === 'binary') reservedBodyIds.push(persistentId(slot++));
   const orbitStream = stream(seed, 'orbits');
   const spacing = 1.5 + orbitStream() * 0.4;
@@ -147,7 +168,8 @@ export function generateSystem(
     population,
     compact ? COMPACT_PLANET_WEIGHTS : PLANET_WEIGHTS,
   );
-  let envelope = central.phenomenon?.envelope ?? central.radius;
+  let envelope =
+    central.phenomenon?.envelope ?? central.pulsar?.envelope ?? central.radius;
   const makeOrbit = (
     parent: BodyIdentity,
     radius: number,

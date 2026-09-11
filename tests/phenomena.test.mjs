@@ -86,7 +86,9 @@ test('shadow and disk are a single selectable destination at face, profile, and 
 });
 test('special cache is bounded and expires while simulation is paused; fade remains smooth', () => {
   catalogue.ensure(120000);
-  const holes = catalogue.getPhenomena(120000);
+  const holes = catalogue
+    .getPhenomena(120000)
+    .filter((b) => b.kind === 'black-hole');
   assert.ok(holes.length >= 30);
   const parent = new THREE.Group(),
     manager = createPhenomenaManager(parent);

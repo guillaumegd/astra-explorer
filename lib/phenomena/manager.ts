@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createPulsar } from './pulsar.ts';
 import { createBlackHole } from './black-hole.ts';
 import type { LensSubject } from './lensing.ts';
 import type { BodyCandidate } from '../stellar-lod.ts';
@@ -10,19 +11,30 @@ export function phenomenonVisibility(pixels: number) {
 export function createPhenomenaManager(parent: THREE.Group) {
   const entries = new Map<
     number,
-    { renderer: ReturnType<typeof createBlackHole>; fade: number; seen: number }
+    {
+      renderer:
+        | ReturnType<typeof createBlackHole>
+        | ReturnType<typeof createPulsar>;
+      fade: number;
+      seen: number;
+    }
   >();
   let previous: number | null = null;
   let subject: LensSubject | null = null;
   return {
-    update(candidates: BodyCandidate[], time: number, simulationTime: number) {
+    update(
+      candidates: BodyCandidate[],
+      time: number,
+      simulationTime: number,
+      reducedMotion = false,
+    ) {
       const dt =
         previous === null ? 0 : Math.min(0.1, Math.max(0, time - previous));
       previous = time;
       const active = candidates
         .filter(
           (c) =>
-            c.identity.capabilities.renderClass === 'black-hole' &&
+            c.identity.capabilities.renderClass !== 'ordinary' &&
             c.pixels > (entries.has(c.identity.id) ? 4.8 : 6),
         )
         .slice(0, 4);
@@ -38,7 +50,9 @@ export function createPhenomenaManager(parent: THREE.Group) {
             entries.delete(stale[0]);
           }
           entry = {
-            renderer: createBlackHole(c.identity),
+            renderer: c.identity.pulsar
+              ? createPulsar(c.identity)
+              : createBlackHole(c.identity),
             fade: 0,
             seen: time,
           };
@@ -54,13 +68,15 @@ export function createPhenomenaManager(parent: THREE.Group) {
       const fades: { id: number; fade: number }[] = [];
       for (const [id, entry] of entries) {
         if (!ids.has(id)) entry.fade *= Math.exp(-dt / 0.4);
-        entry.renderer.update(simulationTime, entry.fade);
+        entry.renderer.update(simulationTime, entry.fade, reducedMotion);
         if (time - entry.seen > 4) {
           entry.renderer.dispose();
           entries.delete(id);
         } else if (entry.fade > 0.002) fades.push({ id, fade: entry.fade });
       }
-      const identity = active[0]?.identity ?? subject?.body;
+      const identity =
+        active.find((c) => c.identity.kind === 'black-hole')?.identity ??
+        subject?.body;
       const primary = identity && entries.get(identity.id);
       subject =
         primary && identity
@@ -72,6 +88,13 @@ export function createPhenomenaManager(parent: THREE.Group) {
             }
           : null;
       return fades;
+    },
+    detailThreshold(id: number) {
+      return entries.has(id) ? 4.8 : 6;
+    },
+    pulse(id: number) {
+      const renderer = entries.get(id)?.renderer;
+      return renderer && 'pulse' in renderer ? renderer.pulse() : 0.5;
     },
     lensSubject() {
       return subject;

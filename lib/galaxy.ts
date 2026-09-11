@@ -159,6 +159,12 @@ const impostorFragment = `
  void main(){
    if(vSurface<0.001 || vFade<0.001) discard;
    vec2 p=(gl_PointCoord-0.5)*2.0/max(vDiscScale,0.001); float r=dot(p,p); if(r>1.0)discard;
+   if(vPhenomenon>1.5){
+     float core=1.-smoothstep(.006,.018,r);
+     float halo=exp(-r*32.)*.24;
+     gl_FragColor=vec4(mix(vBodyColor,vec3(1.),core*.35),
+       max(core,halo)*vSurface*vFade);return;
+   }
    if(vPhenomenon>.5){
      float ring=smoothstep(.05,.12,r)*(1.-smoothstep(.5,1.,r));
      gl_FragColor=vec4(vBodyColor*ring*.8,vSurface*vFade);return;
@@ -178,7 +184,11 @@ export function createGalaxy(
   initialMessages: GalaxyMessages,
   onError: (error: string) => void,
   onSelection: (body: BodyIdentity | null) => void,
-  onProximity: (value: number, kind: BodyIdentity['kind'] | null) => void,
+  onProximity: (
+    value: number,
+    kind: BodyIdentity['kind'] | null,
+    pulse: number,
+  ) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
   onPointing: (pointing: SkyPointing) => void = () => {},
   onFirstFrame: () => void = () => {},
@@ -231,7 +241,8 @@ export function createGalaxy(
   const scratchColor = new THREE.Color();
   for (let id = 0; id < max; id++) {
     const body = describeBody(id);
-    bodyRadii[id] = body.phenomenon?.envelope ?? body.radius;
+    bodyRadii[id] =
+      body.phenomenon?.envelope ?? body.pulsar?.envelope ?? body.radius;
     bodyTypes[id] = body.type;
     scratchColor.set(body.color).toArray(bodyColors, id * 3);
   }
@@ -250,7 +261,11 @@ export function createGalaxy(
     'aPhenomenon',
     new THREE.BufferAttribute(
       Float32Array.from({ length: max }, (_, id) =>
-        catalogue.getBody(id).phenomenon ? 1 : 0,
+        catalogue.getBody(id).pulsar
+          ? 2
+          : catalogue.getBody(id).phenomenon
+            ? 1
+            : 0,
       ),
       1,
     ),
@@ -423,8 +438,8 @@ export function createGalaxy(
     vertexShader,
     uniforms,
     fragmentShader: `varying float vSurface,vFade,vDiscScale,vPhenomenon;
-      void main(){if(vPhenomenon>.5 || vSurface<.5 || vFade<.5 ||
-        length((gl_PointCoord-.5)*2.)>vDiscScale*.98)discard;gl_FragColor=vec4(0.);}`,
+      void main(){if((vPhenomenon>.5 && vPhenomenon<1.5) || vSurface<.5 || vFade<.5 ||
+        length((gl_PointCoord-.5)*2.)>vDiscScale*(vPhenomenon>1.5?.098:.98))discard;gl_FragColor=vec4(0.);}`,
     colorWrite: false,
     depthWrite: true,
     depthTest: true,
@@ -473,7 +488,7 @@ export function createGalaxy(
   const pickMaterial = new THREE.ShaderMaterial({
     vertexShader: vertexShader.replace(
       'vId = aId;',
-      'gl_PointSize = max(gl_PointSize, (aPhenomenon>.5 ? 12.0 : 7.0) * uPixelRatio); vId = aId;',
+      'gl_PointSize = max(aPhenomenon>1.5 ? min(diameter*.1,uMaxPointSize) : gl_PointSize, (aPhenomenon>.5 ? 12.0 : 7.0) * uPixelRatio); vId = aId;',
     ),
     fragmentShader: `
     varying float vId;
@@ -490,10 +505,14 @@ export function createGalaxy(
   const opticalPickMaterial = new THREE.ShaderMaterial({
     vertexShader,
     uniforms,
-    fragmentShader: `varying float vId,vFade,vSurface,vDiscScale;
+    fragmentShader: `varying float vId,vFade,vSurface,vDiscScale,vPhenomenon;
       void main(){float d=length(gl_PointCoord-.5)*2.;
         if(vFade<.01 || d>1.)discard;
         float alpha=vSurface>.5 ? (d<vDiscScale?1.:0.) : exp(-d*d*5.)*.42+exp(-d*d*35.)*.58;
+        if(vPhenomenon>1.5 && vSurface>.5){
+          float r=pow(d/max(vDiscScale,.001),2.);
+          alpha=max(1.-smoothstep(.006,.018,r),exp(-r*32.)*.24)*vSurface;
+        }
         if(alpha*vFade<.08)discard;
         float id=vId+1.;gl_FragColor=vec4(mod(id,256.),mod(floor(id/256.),256.),floor(id/65536.),255.)/255.;}`,
     depthTest: true,
@@ -547,7 +566,13 @@ export function createGalaxy(
           .sub(raycaster.ray.origin)
           .dot(raycaster.ray.direction);
         if (along <= 0 || along >= foregroundDistance) continue;
-        if (raycaster.ray.distanceSqToPoint(point) < bodyRadii[id] ** 2) {
+        if (
+          raycaster.ray.distanceSqToPoint(point) <
+          (catalogue.getBody(id).pulsar
+            ? catalogue.getBody(id).radius
+            : bodyRadii[id]) **
+            2
+        ) {
           foregroundId = id;
           foregroundDistance = along;
         }
@@ -679,9 +704,13 @@ export function createGalaxy(
     previous: BodyIdentity | null,
   ) => {
     if (!selected) return;
-    targetDistance = selected.phenomenon
-      ? framingDistance(selected.phenomenon.envelope, camera.aspect)
-      : selected.radius * 4.2;
+    targetDistance =
+      (selected.phenomenon ?? selected.pulsar)
+        ? framingDistance(
+            (selected.phenomenon ?? selected.pulsar)!.envelope,
+            camera.aspect,
+          )
+        : selected.radius * 4.2;
     travel = {
       time: 0,
       origin,
@@ -714,7 +743,7 @@ export function createGalaxy(
     clearFrame();
     surfaceAnchor = null;
     selected = describeBody(id);
-    if (selected.phenomenon) {
+    if (selected.phenomenon || selected.pulsar) {
       elevation = (25 * Math.PI) / 180;
       azimuth = 0.6;
     }
@@ -748,12 +777,16 @@ export function createGalaxy(
   const approach = () => {
     clearFrame();
     if (!selected) select(0);
-    targetDistance = selected!.phenomenon
-      ? framingDistance(selected!.phenomenon.envelope, camera.aspect)
-      : selected!.radius * 4.2;
+    targetDistance =
+      (selected!.phenomenon ?? selected!.pulsar)
+        ? framingDistance(
+            (selected!.phenomenon ?? selected!.pulsar)!.envelope,
+            camera.aspect,
+          )
+        : selected!.radius * 4.2;
     if (!travel && distance > targetDistance * 1.1)
       startTravel(focus.clone(), selected);
-    if (selected!.phenomenon) {
+    if (selected!.phenomenon || selected!.pulsar) {
       elevation = (25 * Math.PI) / 180;
       azimuth = 0.6;
     }
@@ -861,11 +894,11 @@ export function createGalaxy(
     camera.updateProjectionMatrix();
     renderHeight = height;
     if (framed) targetDistance = framingDistance(framed.radius, camera.aspect);
-    else if (selected?.phenomenon) {
+    else if (selected && (selected.phenomenon || selected.pulsar)) {
       const scale =
         framingDistance(1, camera.aspect) / framingDistance(1, previousAspect);
       targetDistance = Math.max(
-        selected.phenomenon.exclusion,
+        (selected.phenomenon ?? selected.pulsar)!.exclusion,
         targetDistance * scale,
       );
     }
@@ -1374,7 +1407,10 @@ export function createGalaxy(
         const m = measure(id);
         if (
           m.visible &&
-          m.pixels >= (catalogue.getBody(id).phenomenon ? 6 : 18)
+          m.pixels >=
+            (catalogue.getBody(id).capabilities.renderClass !== 'ordinary'
+              ? phenomena.detailThreshold(id)
+              : 18)
         )
           detailShortlist.set(id, { pixels: m.pixels, seen: elapsed });
         else detailShortlist.delete(id);
@@ -1396,7 +1432,10 @@ export function createGalaxy(
       const m = measure(id);
       if (
         (m.visible || id === selected?.id) &&
-        m.pixels >= (catalogue.getBody(id).phenomenon ? 6 : 18)
+        m.pixels >=
+          (catalogue.getBody(id).capabilities.renderClass !== 'ordinary'
+            ? phenomena.detailThreshold(id)
+            : 18)
       ) {
         candidatePosition.copy(localPosition);
         const stellarPosition = new THREE.Vector3();
@@ -1457,6 +1496,7 @@ export function createGalaxy(
       visibleCandidates.slice(0, 8),
       wallTime,
       reduced.matches ? 0 : activityTime,
+      reduced.matches,
     );
     fades.push(...specialFades);
     host.dataset.phenomena = String(phenomena.stats().cached);
@@ -1474,7 +1514,11 @@ export function createGalaxy(
     });
     marker.style.display =
       selected &&
-      distance > (selected.phenomenon?.envelope ?? selected.radius) * 20
+      distance >
+        (selected.phenomenon?.envelope ??
+          selected.pulsar?.envelope ??
+          selected.radius) *
+          20
         ? 'block'
         : 'none';
     if (selected) {
@@ -1489,9 +1533,13 @@ export function createGalaxy(
       host.dataset.distance = distance.toFixed(4);
     }
     // Report discrete UI changes only, including wheel and keyboard navigation.
-    const viewRadius = selected?.phenomenon
-      ? framingDistance(selected.phenomenon.envelope, camera.aspect) / 4.2
-      : (selected?.radius ?? 1);
+    const viewRadius =
+      selected && (selected.phenomenon ?? selected.pulsar)
+        ? framingDistance(
+            (selected.phenomenon ?? selected.pulsar)!.envelope,
+            camera.aspect,
+          ) / 4.2
+        : (selected?.radius ?? 1);
     const cameraView: CameraView = !selected
       ? 'overview'
       : framed
@@ -1506,13 +1554,6 @@ export function createGalaxy(
       reportedCameraView = cameraView;
       onCameraView(cameraView);
     }
-    onProximity(
-      zoomProximity(
-        distance,
-        selected?.phenomenon?.diskOuter ?? selected?.radius ?? null,
-      ),
-      selected?.kind ?? null,
-    );
     lensing.render(
       renderer,
       scene,
@@ -1523,6 +1564,17 @@ export function createGalaxy(
       captureSky,
       renderPointDepth,
       activityTime,
+    );
+    onProximity(
+      zoomProximity(
+        distance,
+        selected?.phenomenon?.diskOuter ??
+          selected?.pulsar?.envelope ??
+          selected?.radius ??
+          null,
+      ),
+      selected?.kind ?? null,
+      selected?.pulsar ? phenomena.pulse(selected.id) : 0.5,
     );
     if (process.env.NODE_ENV !== 'production') {
       host.dataset.lenses = String(lensing.stats().active);
