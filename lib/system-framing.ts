@@ -61,3 +61,18 @@ export function localSystemRoot(
     ? root
     : null;
 }
+
+/**
+ * Which body a zoom-in gesture adopts. Empty sky is not a destination: with
+ * nothing under the centre of the frame the gesture only moves the camera.
+ * Returning a fixed body instead teleported the viewer to that body from
+ * anywhere in the galaxy. The hit is a callback so the ray is only cast when
+ * the gesture could actually take a destination.
+ */
+export function zoomSelection(
+  factor: number,
+  selected: boolean,
+  centreHit: () => number | null,
+): number | null {
+  return factor > 1 && !selected ? centreHit() : null;
+}

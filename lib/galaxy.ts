@@ -12,6 +12,7 @@ import {
   systemBounds,
   framingDistance,
   localSystemRoot,
+  zoomSelection,
 } from './system-framing';
 import * as THREE from 'three';
 import {
@@ -1021,12 +1022,15 @@ export function createGalaxy(
     }
   };
   const changeZoom = (factor: number) => {
-    if (factor > 1 && !selected) {
+    // Empty sky is not a destination. Falling back to body 0 sent anyone who
+    // zoomed with a clear centre — five of the nine framed nebulae — to the
+    // reference black hole at the other end of the galaxy. The wheel already
+    // only selects what it actually hit.
+    const target = zoomSelection(factor, !!selected, () => {
       const rect = host.getBoundingClientRect();
-      select(
-        pickAt(rect.left + rect.width / 2, rect.top + rect.height / 2) ?? 0,
-      );
-    }
+      return pickAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    });
+    if (target !== null) select(target);
     targetDistance = THREE.MathUtils.clamp(
       selected
         ? selected.radius + (targetDistance - selected.radius) / factor
