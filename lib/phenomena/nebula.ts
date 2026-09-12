@@ -15,14 +15,13 @@ export function createNebula(region: RegionDefinition, steps = 16) {
   const group = new THREE.Group();
   const uniforms = {
     uShear: { value: new THREE.Vector2(1, 0) },
-    uGroupPos: { value: new THREE.Vector3() },
-    uCenterBase: { value: new THREE.Vector3(...region.center) },
     uEye: { value: new THREE.Vector3() },
     uEnvelope: { value: region.envelope },
     uRadius: { value: region.radius },
     uFade: { value: 0 },
     uDensity: { value: region.density },
     uTime: { value: 0 },
+    uSeed: { value: region.seed },
     uGlow: { value: new THREE.Color(region.palette[0]) },
     uFilament: { value: new THREE.Color(region.palette[1]) },
     uPocket: { value: new THREE.Color(region.palette[2]) },
@@ -54,11 +53,11 @@ export function createNebula(region: RegionDefinition, steps = 16) {
           float r = length(base) / uRadius;
           // The silhouette follows a low frequency of the same field, so the
           // cloud is never the clean ball its bounding sphere would give.
-          float shape = valueNoise(base * (0.9 / uRadius));
+          float shape = valueNoise(base * (0.9 / uRadius) + uSeed);
           float falloff =
             1.0 - smoothstep(0.28 + shape * 0.3, 0.72 + shape * 0.42, r);
           if (falloff <= 0.0) continue;
-          float n = fbm(base * (3.4 / uRadius) +
+          float n = fbm(base * (3.4 / uRadius) + uSeed +
                         vec3(0.0, uTime * 0.015, uTime * 0.01));
           // Dark pockets: a soft threshold on the field, never a hard cut.
           float pocket = smoothstep(0.3, 0.62, n);
@@ -97,7 +96,6 @@ export function createNebula(region: RegionDefinition, steps = 16) {
       uniforms.uFade.value = fade;
       const angle = shearAngle(region.center[0], region.center[2], rotation);
       uniforms.uShear.value.set(Math.cos(angle), Math.sin(angle));
-      uniforms.uGroupPos.value.copy(group.position);
       group.visible = fade > 0.002;
     },
     setSteps(next: number) {

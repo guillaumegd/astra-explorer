@@ -14,14 +14,13 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
   const group = new THREE.Group();
   const uniforms = {
     uShear: { value: new THREE.Vector2(1, 0) },
-    uGroupPos: { value: new THREE.Vector3() },
-    uCenterBase: { value: new THREE.Vector3(...region.center) },
     uEye: { value: new THREE.Vector3() },
     uEnvelope: { value: region.envelope },
     uRadius: { value: region.radius },
     uFade: { value: 0 },
     uDensity: { value: region.density },
     uTime: { value: 0 },
+    uSeed: { value: region.seed },
     uGlow: { value: new THREE.Color(region.palette[0]) },
     uFilament: { value: new THREE.Color(region.palette[1]) },
     uPocket: { value: new THREE.Color(region.palette[2]) },
@@ -57,7 +56,7 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
           shell *= smoothstep(0.34, 0.56, r) * (1.0 - smoothstep(0.86, 1.0, r));
           if (shell <= 0.002) continue;
           // Higher frequency and harder contrast than a nebula: thin filaments.
-          float n = fbm(base * (7.4 / uRadius));
+          float n = fbm(base * (7.4 / uRadius) + uSeed);
           float filament = smoothstep(0.42, 0.72, n);
           float density = uDensity * shell * filament * breath;
           if (density <= 0.002) continue;
@@ -90,7 +89,6 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
       uniforms.uFade.value = fade;
       const angle = shearAngle(region.center[0], region.center[2], rotation);
       uniforms.uShear.value.set(Math.cos(angle), Math.sin(angle));
-      uniforms.uGroupPos.value.copy(group.position);
       group.visible = fade > 0.002;
     },
     setSteps(next: number) {

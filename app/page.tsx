@@ -985,6 +985,11 @@ export default function Home() {
                   )}
                 </dl>
               )}
+              {panel === 'details' && selected && regionView?.occupied && (
+                <p className="reading-copy">
+                  {t.regions.inside} · {regionView.occupied.name}
+                </p>
+              )}
               {panel === 'details' && !selected && regionView && (
                 <>
                   <div className="body-identity">

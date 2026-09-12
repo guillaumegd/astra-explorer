@@ -54,7 +54,7 @@ export const REGION_DEPTH = 0.3;
 export function regionPresence(distance: number, radius: number) {
   if (!Number.isFinite(distance) || !Number.isFinite(radius) || radius <= 0)
     return 0;
-  return 1 - ease((distance / radius - 0.35) / 0.75);
+  return 1 - ease((distance / radius - 0.35) / 0.73);
 }
 /**
  * A secondary layer, mixed on top of whatever body is being observed, as the

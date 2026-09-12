@@ -34,6 +34,8 @@ export function createRegionManager(parent: THREE.Group) {
       seen: number;
     }
   >();
+  const active: RegionCandidate[] = [];
+  const ids = new Set<string>();
   let previous: number | null = null;
   let steps = 16;
   return {
@@ -44,31 +46,44 @@ export function createRegionManager(parent: THREE.Group) {
       rotation: number,
       reducedMotion = false,
     ) {
-      const dt =
-        previous === null ? 0 : Math.min(0.1, Math.max(0, time - previous));
+      const dt = previous === null ? 0 : Math.max(0, time - previous);
       previous = time;
-      const active = candidates
-        .filter(
-          (c) =>
-            c.focused ||
-            c.inside > 0 ||
-            c.pixels > (entries.has(c.region.regionId) ? 6.4 : 8),
+      active.length = 0;
+      for (const c of candidates)
+        if (
+          c.focused ||
+          c.inside > 0 ||
+          c.pixels > (entries.has(c.region.regionId) ? 6.4 : 8)
         )
-        // The framed region first, then presence, then screen coverage.
-        .sort(
-          (a, b) =>
-            Number(b.focused) - Number(a.focused) ||
-            b.inside - a.inside ||
-            b.pixels - a.pixels,
-        )
-        .slice(0, REGION_DETAIL_LIMIT);
-      const ids = new Set(active.map((c) => c.region.regionId));
+          active.push(c);
+      active.sort(
+        (a, b) =>
+          Number(b.focused) - Number(a.focused) ||
+          b.inside - a.inside ||
+          b.pixels * (entries.has(b.region.regionId) ? 1.1 : 1) -
+            a.pixels * (entries.has(a.region.regionId) ? 1.1 : 1) ||
+          a.region.regionId.localeCompare(b.region.regionId),
+      );
+      active.length = Math.min(active.length, REGION_DETAIL_LIMIT);
+      ids.clear();
+      for (const c of active) ids.add(c.region.regionId);
+      for (const [id, entry] of entries) {
+        if (!ids.has(id)) entry.fade *= Math.exp(-dt / 0.4);
+      }
       for (const c of active) {
         let entry = entries.get(c.region.regionId);
         const created = !entry;
         if (!entry) {
           if (entries.size >= REGION_DETAIL_LIMIT) {
-            const stale = [...entries].find(([id]) => !ids.has(id));
+            let stale:
+              | (typeof entries extends Map<infer K, infer V> ? [K, V] : never)
+              | undefined;
+            for (const [id, cached] of entries) {
+              if (!ids.has(id) && cached.fade <= 0.002) {
+                stale = [id, cached];
+                break;
+              }
+            }
             if (!stale) continue;
             stale[1].renderer.dispose();
             entries.delete(stale[0]);
@@ -91,7 +106,9 @@ export function createRegionManager(parent: THREE.Group) {
           (1 - Math.exp(-(created ? 0 : dt) / 0.4));
       }
       for (const [id, entry] of entries) {
-        if (!ids.has(id)) entry.fade *= Math.exp(-dt / 0.4);
+        // Outgoing entries continue following their source while fading.
+        const source = candidates.find((c) => c.region.regionId === id);
+        if (source) entry.renderer.group.position.copy(source.position);
         entry.renderer.update(
           simulationTime,
           entry.fade,
@@ -116,7 +133,8 @@ export function createRegionManager(parent: THREE.Group) {
     stats() {
       return {
         cached: entries.size,
-        visible: [...entries.values()].filter((e) => e.fade > 0.002).length,
+        visible: Array.from(entries.values()).filter((e) => e.fade > 0.002)
+          .length,
       };
     },
     dispose() {

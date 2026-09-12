@@ -3,8 +3,8 @@ import type { Vector3 } from 'three';
 
 /**
  * Differential shear: the rotation angle depends on the radius, so anything
- * wider than a point cannot be turned as a rigid block. Shared by bodies and
- * by regions, which undo it per sample to stay locked to their stars.
+ * wider than a point cannot be turned as a rigid block. Shared by bodies and region centres; extended regions rotate rigidly
+ * at their centre rate rather than applying differential shear per sample.
  */
 export function shearAngle(x: number, z: number, rotation: number) {
   return rotation * (0.35 + 0.65 / (Math.hypot(x, z) * 0.15 + 1));

@@ -11,10 +11,8 @@
 export const VOLUME_STEPS = [4, 8, 16] as const;
 export const volumeChunk = `
   uniform vec2 uShear;
-  uniform vec3 uGroupPos;
-  uniform vec3 uCenterBase;
   uniform vec3 uEye;
-  uniform float uEnvelope, uRadius, uFade, uDensity, uTime;
+  uniform float uEnvelope, uRadius, uFade, uDensity, uTime, uSeed;
   uniform vec3 uGlow, uFilament, uPocket;
   varying vec3 vLocal;
 
@@ -49,13 +47,14 @@ export const volumeChunk = `
     return t1 > t0;
   }
   /** Base-space offset from the region centre; uShear is (cos, sin) of the
-      centre's own rotation, so this is an exact rigid inverse. */
+      centre's own rotation. p is already relative to the animated host;
+      its translation must never enter the noise/shell field. */
   vec3 basePoint(vec3 p) {
-    vec3 g = p + uGroupPos;
+    vec3 g = p;
     return vec3(
       uShear.x * g.x - uShear.y * g.z,
       g.y,
-      uShear.y * g.x + uShear.x * g.z) - uCenterBase;
+      uShear.y * g.x + uShear.x * g.z);
   }
 `;
 export const volumeVertex = `

@@ -144,8 +144,8 @@ const fragmentShader = `
      } else {
        float cracks=iceField(p,uSeed);
        color=mix(uColor*(0.6+land*0.55),uColor*vec3(0.23,0.4,0.5),cracks*0.7);
-       float glint=pow(max(dot(reflect(-normalize(uLightDirection),shadingNormal),normalize(vView)),0.),55.);
-       color+=vec3(.7,.9,1.)*glint*noise(p*900.+offset)*.65*uLightMix.x;
+       float glint=localSpecular(shadingNormal,normalize(vView),55.);
+       color+=vec3(.7,.9,1.)*glint*noise(p*900.+offset)*.65;
      }
      if(uType<5.5 || uType>6.5) color*=0.07+0.93*light;
    } else {
@@ -177,8 +177,8 @@ const fragmentShader = `
      float shelf=smoothstep(shore-0.075,shore,land);
      vec3 ocean=mix(vec3(0.009,0.035,0.105),vec3(0.025,0.34,0.38),pow(shelf,3.0));
      ocean*=0.25+0.75*light;
-     float spec=pow(max(dot(reflect(-normalize(uLightDirection),normalize(vNormal)),normalize(vView)),0.0),90.0);
-     ocean+=vec3(0.5,0.6,0.65)*spec*0.35*uLightMix.x;
+     float spec=localSpecular(normalize(vNormal),normalize(vView),90.0);
+     ocean+=vec3(0.5,0.6,0.65)*spec*0.35;
      color=mix(ocean,ground,dry);
    }
    if(uSurfaceDetail>0.001 && uType>1.5 && uType!=4.0) {
@@ -209,13 +209,13 @@ const oceanFragment = `
    if(floorHeight>=0.0)discard;
    float shelf=1.0-smoothstep(0.0,0.003,-floorHeight);
    vec3 color=mix(vec3(0.009,0.035,0.105),vec3(0.025,0.34,0.38),pow(shelf,2.0));
-   vec3 n=normalize(vNormal),l=normalize(uLightDirection);
+   vec3 n=normalize(vNormal);
    vec3 waves=vec3(sin(p.x*850.+uTime*.7+p.z*160.),cos(p.y*710.-uTime*.6+p.x*180.),sin(p.z*790.+uTime*.5));
    n=normalize(n+waves*.055);
    color*=(0.25+0.75*localLight(n))*localTint(n);
    float foam=(1.-smoothstep(0.,.0006,-floorHeight))*(.5+.5*sin(p.x*1600.+p.z*1300.-uTime*1.2));
    color=mix(color,vec3(.7,.85,.85),foam*.45);
-   color+=vec3(0.4,0.5,0.6)*pow(max(dot(reflect(-l,n),normalize(vView)),0.0),90.0)*0.3*uLightMix.x;
+   color+=vec3(0.4,0.5,0.6)*localSpecular(n,normalize(vView),90.0)*0.3;
    gl_FragColor=vec4(color,0.92*uFade);
  }
 `;

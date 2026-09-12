@@ -5,6 +5,12 @@ import {
   type RegionCandidate,
 } from './phenomena/region-manager';
 import { catalogue } from './catalogue/runtime';
+import {
+  animatedRegionCenter,
+  regionZoomDistance,
+  resizeRegionDistance,
+} from './region-navigation';
+import { createQualityPolicy } from './quality-policy';
 import { asteroidRadius } from './asteroid-shape';
 import { sampleBodyTravel } from './body-travel';
 import { desiredSurfaceTilt, surfaceCameraPose } from './surface-camera';
@@ -32,11 +38,7 @@ import {
   type BodyCandidate,
   type BodyKind,
 } from './stellar-lod';
-import {
-  galacticShear,
-  galacticUnshear,
-  particlePosition,
-} from './particle-motion';
+import { particlePosition } from './particle-motion';
 import {
   createLocalLights,
   mixLocalLights,
@@ -85,6 +87,7 @@ export type RegionView = {
   region: RegionDefinition;
   framed: boolean;
   inside: number;
+  occupied: RegionDefinition | null;
 };
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
@@ -507,13 +510,15 @@ export function createGalaxy(
   let regionFocus: RegionDefinition | null = null;
   let insideRegion: RegionDefinition | null = null;
   let insidePresence = 0;
-  let reportedRegion: string | null = null;
+  let reportedRegion = '';
+  const regionFrustum = new THREE.Frustum();
+  const regionProjection = new THREE.Matrix4();
+  const regionSphere = new THREE.Sphere();
   const nearbyRegions: RegionDefinition[] = [];
   const regionPool: RegionCandidate[] = [];
   const regionCandidates: RegionCandidate[] = [];
   const markedRegions: RegionCandidate[] = [];
   const regionMarkers = new Map<string, HTMLButtonElement>();
-  const cameraBase = new THREE.Vector3();
   const regionPoint = new THREE.Vector3();
   let distance = 29.4,
     targetDistance = 29.4;
@@ -722,6 +727,7 @@ export function createGalaxy(
     radius: number;
     members: BodyIdentity[];
     focus: number | null;
+    scope: 'stellar' | 'local';
   } | null = null;
   const orbitGuides = new THREE.Group();
   group.add(orbitGuides);
@@ -875,11 +881,12 @@ export function createGalaxy(
     surfaceAnchor = null;
     selected = null;
     regionFocus = region;
-    galacticShear(
-      region.center[0],
-      region.center[1],
-      region.center[2],
+    animatedRegionCenter(
+      region,
+      positions,
+      seeds,
       rotation,
+      elapsed,
       localFocus,
     );
     commitFocus();
@@ -906,13 +913,13 @@ export function createGalaxy(
     const members = membersInSystem.filter((b) =>
       bounds.members.includes(b.id),
     );
-    framed = { radius: bounds.radius, members, focus: root };
+    framed = { radius: bounds.radius, members, focus: root, scope };
     targetDistance = framingDistance(bounds.radius, camera.aspect);
     if (barycentric) {
       barycentre(body.systemId, localFocus);
       commitFocus();
     }
-    onSystemView({ root: describeBody(start), members, barycentric });
+    onSystemView({ root: describeBody(root ?? start), members, barycentric });
     for (const member of members) {
       const marker = document.createElement('button');
       const kindLabel = messages.bodyKindLabel(member.kind);
@@ -980,8 +987,7 @@ export function createGalaxy(
   let surfaceAnchor: THREE.Vector3 | null = null;
   const surfaceOrientation = new THREE.Quaternion();
   const surfaceEuler = new THREE.Euler();
-  let slowFrames = 0;
-  let qualityCheck = 0;
+  const quality = createQualityPolicy(renderer.getPixelRatio());
   let lastFrame = performance.now();
   let lastPointingReport = 0;
   let reportedCameraView: CameraView = 'overview';
@@ -1012,7 +1018,14 @@ export function createGalaxy(
     camera.updateProjectionMatrix();
     renderHeight = height;
     if (framed) targetDistance = framingDistance(framed.radius, camera.aspect);
-    else if (selected && (selected.phenomenon || selected.pulsar)) {
+    else if (regionFocus && targetDistance > regionFocus.envelope) {
+      targetDistance = resizeRegionDistance(
+        targetDistance,
+        regionFocus.envelope,
+        previousAspect,
+        camera.aspect,
+      );
+    } else if (selected && (selected.phenomenon || selected.pulsar)) {
       const scale =
         framingDistance(1, camera.aspect) / framingDistance(1, previousAspect);
       targetDistance = Math.max(
@@ -1026,11 +1039,19 @@ export function createGalaxy(
     // zoomed with a clear centre — five of the nine framed nebulae — to the
     // reference black hole at the other end of the galaxy. The wheel already
     // only selects what it actually hit.
-    const target = zoomSelection(factor, !!selected, () => {
+    const target = zoomSelection(factor, !!selected || !!regionFocus, () => {
       const rect = host.getBoundingClientRect();
       return pickAt(rect.left + rect.width / 2, rect.top + rect.height / 2);
     });
     if (target !== null) select(target);
+    if (regionFocus) {
+      targetDistance = regionZoomDistance(
+        targetDistance,
+        factor,
+        regionFocus.envelope,
+      );
+      return;
+    }
     targetDistance = THREE.MathUtils.clamp(
       selected
         ? selected.radius + (targetDistance - selected.radius) / factor
@@ -1044,7 +1065,7 @@ export function createGalaxy(
     const delta =
       e.deltaY *
       (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? host.clientHeight : 1);
-    if (delta < 0 && !selected) {
+    if (delta < 0 && !selected && !regionFocus) {
       const id = pickAt(e.clientX, e.clientY);
       if (id !== null) select(id);
     }
@@ -1204,20 +1225,14 @@ export function createGalaxy(
     lastFrame = now;
     const dt = Math.min((now - previous) / 1000, 0.1);
     previous = now;
-    slowFrames += frameTime > 38 ? 1 : 0;
-    qualityCheck++;
-    if (qualityCheck >= 90) {
-      // Target resolution first, volumetric samples only once it bottoms out.
-      if (slowFrames > 45) {
-        if (renderer.getPixelRatio() > 0.8) {
-          renderer.setPixelRatio(Math.max(0.8, renderer.getPixelRatio() - 0.2));
-          uniforms.uPixelRatio.value = renderer.getPixelRatio();
-        } else regions.setSteps(regions.steps() > 8 ? 8 : 4);
-      } else if (slowFrames < 9 && regions.steps() < 16)
-        regions.setSteps(regions.steps() < 8 ? 8 : 16);
-      slowFrames = 0;
-      qualityCheck = 0;
+    if (quality.update(frameTime)) {
+      renderer.setPixelRatio(quality.dpr);
+      uniforms.uPixelRatio.value = quality.dpr;
+      regions.setSteps(quality.steps);
     }
+    host.dataset.pixelRatio = String(quality.dpr);
+    host.dataset.volumeSteps = String(quality.steps);
+    host.dataset.renderedFrames = String(quality.frames);
     wallTime += dt;
     if (!settings.paused) {
       elapsed += dt * settings.speed;
@@ -1254,6 +1269,7 @@ export function createGalaxy(
       const height = host.clientHeight;
       insetWidth = width;
       insetHeight = height;
+      const oldAspect = camera.aspect;
       if (currentReservedBottom > 0) {
         camera.setViewOffset(
           width,
@@ -1267,6 +1283,14 @@ export function createGalaxy(
         camera.clearViewOffset();
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
+      }
+      if (regionFocus && targetDistance > regionFocus.envelope) {
+        targetDistance = resizeRegionDistance(
+          targetDistance,
+          regionFocus.envelope,
+          oldAspect,
+          camera.aspect,
+        );
       }
     }
     const baseDistance = mobile ? 40 : 29.4;
@@ -1304,12 +1328,12 @@ export function createGalaxy(
         focus.copy(worldFocus).add(focusOffset);
       }
     } else if (regionFocus) {
-      // The cloud shears with its stars, so the focus has to follow it.
-      galacticShear(
-        regionFocus.center[0],
-        regionFocus.center[1],
-        regionFocus.center[2],
+      animatedRegionCenter(
+        regionFocus,
+        positions,
+        seeds,
         rotation,
+        elapsed,
         localFocus,
       );
       worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
@@ -1658,24 +1682,19 @@ export function createGalaxy(
       reduced.matches,
     );
     fades.push(...specialFades);
-    // Regions are queried in base space, where their volumes are defined, then
-    // each centre is sheared back for rendering. Nothing here touches picking.
+    // A small sweep is exact for rigid moving regions; differential unshear is not.
     regionPoint.copy(camera.position);
     group.worldToLocal(regionPoint);
-    galacticUnshear(
-      regionPoint.x,
-      regionPoint.y,
-      regionPoint.z,
-      rotation,
-      cameraBase,
+    nearbyRegions.length = 0;
+    nearbyRegions.push(
+      ...catalogue.listNebulae(),
+      ...catalogue.getRemnants(settings.density),
     );
-    catalogue.regionsNear(
-      cameraBase.x,
-      cameraBase.y,
-      cameraBase.z,
-      distance * 1.5 + 4,
-      settings.density,
-      nearbyRegions,
+    regionFrustum.setFromProjectionMatrix(
+      regionProjection.multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse,
+      ),
     );
     regionCandidates.length = 0;
     insideRegion = null;
@@ -1689,27 +1708,26 @@ export function createGalaxy(
         focused: false,
       });
       candidate.region = region;
-      candidate.focused = region === regionFocus;
-      galacticShear(
-        region.center[0],
-        region.center[1],
-        region.center[2],
+      candidate.focused = region.regionId === regionFocus?.regionId;
+      animatedRegionCenter(
+        region,
+        positions,
+        seeds,
         rotation,
+        elapsed,
         candidate.position,
       );
       projected.copy(candidate.position).applyMatrix4(group.matrixWorld);
       viewPosition.copy(projected).applyMatrix4(camera.matrixWorldInverse);
       const depth = -viewPosition.z;
-      candidate.pixels =
-        depth > camera.near ? (region.envelope * projectionScale) / depth : 0;
+      regionSphere.set(projected, region.envelope);
       candidate.inside = regionPresence(
-        Math.hypot(
-          cameraBase.x - region.center[0],
-          cameraBase.y - region.center[1],
-          cameraBase.z - region.center[2],
-        ),
+        regionPoint.distanceTo(candidate.position),
         region.radius,
       );
+      candidate.pixels = regionFrustum.intersectsSphere(regionSphere)
+        ? (region.envelope * projectionScale) / Math.max(camera.near, depth)
+        : 0;
       regionCandidates.push(candidate);
       if (candidate.inside > insidePresence) {
         insidePresence = candidate.inside;
@@ -1773,14 +1791,21 @@ export function createGalaxy(
       node.style.top = `${(-projected.y * 0.5 + 0.5) * renderHeight}px`;
     }
     const activeRegion = regionFocus ?? insideRegion;
-    if ((activeRegion?.regionId ?? null) !== reportedRegion) {
-      reportedRegion = activeRegion?.regionId ?? null;
+    const focusedPresence =
+      regionCandidates.find((c) => c.region.regionId === regionFocus?.regionId)
+        ?.inside ?? 0;
+    const activePresence = regionFocus ? focusedPresence : insidePresence;
+    // Quantized reports include framing and occupancy; no React update per frame.
+    const regionReport = `${activeRegion?.regionId ?? ''}:${!!regionFocus}:${insideRegion?.regionId ?? ''}:${Math.ceil(activePresence * 20)}`;
+    if (regionReport !== reportedRegion) {
+      reportedRegion = regionReport;
       onRegion(
         activeRegion
           ? {
               region: activeRegion,
-              framed: activeRegion === regionFocus,
-              inside: insidePresence,
+              framed: !!regionFocus,
+              inside: Math.ceil(activePresence * 20) / 20,
+              occupied: insideRegion,
             }
           : null,
       );
@@ -1889,11 +1914,19 @@ export function createGalaxy(
   return {
     catalogue,
     configure(next) {
-      const densityChanged = settings.density !== next.density;
+      const densityChanged =
+        settings.density !== catalogue.activeCount(next.density);
       settings = { ...next, density: catalogue.activeCount(next.density) };
       if (selected && densityChanged) {
         if (selected.id >= settings.density) overview();
-        else if (framed) frameSystem('local');
+        else if (framed) frameSystem(framed.scope);
+      }
+      if (regionFocus && densityChanged) {
+        regionFocus = catalogue.resolveRegion(
+          regionFocus.regionId,
+          settings.density,
+        );
+        if (!regionFocus) overview();
       }
       geometry.setDrawRange(0, settings.density);
       lensing.invalidate();
@@ -1913,6 +1946,16 @@ export function createGalaxy(
     setMessages(next) {
       messages = next;
       renderer.domElement.setAttribute('aria-label', messages.canvasHint);
+      for (const [id, marker] of regionMarkers) {
+        const region = catalogue.resolveRegion(id, settings.density);
+        if (!region) continue;
+        const label = messages.regionLabel(region.type);
+        marker.title = label;
+        marker.setAttribute(
+          'aria-label',
+          messages.exploreBodyAria(region.name, label),
+        );
+      }
       // Markers already on screen are re-labelled in place; frameSystem()
       // will use the new messages for any it creates from here on.
       framed?.members.forEach((member, i) => {
