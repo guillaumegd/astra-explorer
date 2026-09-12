@@ -176,6 +176,19 @@ export const ptPT: Dictionary = {
     description:
       'Duas estrelas giram em torno de um baricentro invisível, em fases opostas. Massas, separação e período artísticos; os planetas orbitam o par inteiro.',
   },
+  regions: {
+    nebula: 'Nebulosa',
+    remnant: 'Remanescente de supernova',
+    nebulae: 'Nebulosas',
+    remnants: 'Remanescentes de supernova',
+    nebulaDescription:
+      'Uma nuvem de gás e poeira que abrange vários sistemas, com bolsas escuras e filamentos lentos. É possível atravessá-la. Paleta e densidade artísticas.',
+    remnantDescription:
+      'A casca fragmentada deixada por uma estrela, em torno de uma cavidade oca que abriga o seu pulsar. O brilho respira lentamente; a casca não se expande.',
+    inside: 'Está dentro desta região',
+    toPulsar: 'Ver o pulsar',
+    toRemnant: 'Ver o remanescente',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explorar ${name}, ${kind}`,
   },

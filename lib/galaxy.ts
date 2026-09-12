@@ -1,5 +1,9 @@
 import { createLensing } from './phenomena/lensing';
 import { createPhenomenaManager } from './phenomena/manager';
+import {
+  createRegionManager,
+  type RegionCandidate,
+} from './phenomena/region-manager';
 import { catalogue } from './catalogue/runtime';
 import { asteroidRadius } from './asteroid-shape';
 import { sampleBodyTravel } from './body-travel';
@@ -18,7 +22,7 @@ import {
   ORBIT_DEPTH,
 } from './orbits';
 import { createLocalDebris } from './local-debris';
-import { zoomProximity } from './ambience-parameters';
+import { regionPresence, zoomProximity } from './ambience-parameters';
 import {
   createBodyLOD,
   describeBody,
@@ -27,13 +31,18 @@ import {
   type BodyCandidate,
   type BodyKind,
 } from './stellar-lod';
-import { particlePosition } from './particle-motion';
+import {
+  galacticShear,
+  galacticUnshear,
+  particlePosition,
+} from './particle-motion';
 import {
   createLocalLights,
   mixLocalLights,
   type LocalLight,
 } from './body-lighting';
-import { STELLAR_LUMINOSITY } from './catalogue/config';
+import { REGION_DETAIL_LIMIT, STELLAR_LUMINOSITY } from './catalogue/config';
+import type { RegionDefinition } from './catalogue/types';
 
 export type GalaxySettings = {
   density: number;
@@ -50,6 +59,7 @@ export type GalaxyMessages = {
   contextLost: string;
   bodyKindLabel: (kind: BodyKind) => string;
   exploreBodyAria: (name: string, kindLabel: string) => string;
+  regionLabel: (type: 'nebula' | 'remnant') => string;
 };
 export type SystemView = {
   root: BodyIdentity;
@@ -65,10 +75,21 @@ export type CameraView =
   | 'close'
   | 'system';
 export type SkyPointing = { ra: number; dec: number };
+/**
+ * A region rides alongside the selected body rather than replacing it: the
+ * camera can sit inside a nebula while a planet is selected, and the guide
+ * requires the ambience to mix in that case.
+ */
+export type RegionView = {
+  region: RegionDefinition;
+  framed: boolean;
+  inside: number;
+};
 export type GalaxyEngine = {
   inspectBody: (id: number) => void;
   catalogue: typeof catalogue;
   frameSystem: (scope: 'stellar' | 'local') => void;
+  frameRegion: (regionId: string) => void;
   configure: (settings: GalaxySettings) => void;
   setMessages: (messages: GalaxyMessages) => void;
   setViewportInset: (pixels: number) => void;
@@ -199,11 +220,13 @@ export function createGalaxy(
     kind: BodyIdentity['kind'] | null,
     pulse: number,
     binaryAngle: number | null,
+    region: { presence: number; type: 'nebula' | 'remnant' } | null,
   ) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
   onPointing: (pointing: SkyPointing) => void = () => {},
   onFirstFrame: () => void = () => {},
   onCameraView: (view: CameraView) => void = () => {},
+  onRegion: (view: RegionView | null) => void = () => {},
 ): GalaxyEngine {
   let messages = initialMessages;
   let firstFrameRendered = false;
@@ -410,6 +433,7 @@ export function createGalaxy(
   };
   const bodyLOD = createBodyLOD(group, 8);
   const phenomena = createPhenomenaManager(group);
+  const regions = createRegionManager(group);
   const lensing = createLensing();
   // The all-sky catalogue uses the same geometry, motion, colours and active range.
   // Local detailed bodies are composited using depth, never baked into infinity.
@@ -478,6 +502,18 @@ export function createGalaxy(
   const candidatePosition = new THREE.Vector3();
   const viewPosition = new THREE.Vector3();
   let selected: BodyIdentity | null = null;
+  // Regions ride alongside the selection: only framing is exclusive.
+  let regionFocus: RegionDefinition | null = null;
+  let insideRegion: RegionDefinition | null = null;
+  let insidePresence = 0;
+  let reportedRegion: string | null = null;
+  const nearbyRegions: RegionDefinition[] = [];
+  const regionPool: RegionCandidate[] = [];
+  const regionCandidates: RegionCandidate[] = [];
+  const markedRegions: RegionCandidate[] = [];
+  const regionMarkers = new Map<string, HTMLButtonElement>();
+  const cameraBase = new THREE.Vector3();
+  const regionPoint = new THREE.Vector3();
   let distance = 29.4,
     targetDistance = 29.4;
   let azimuth = 0,
@@ -775,6 +811,7 @@ export function createGalaxy(
     }
     clearFrame();
     surfaceAnchor = null;
+    regionFocus = null;
     selected = describeBody(id);
     if (selected.phenomenon || selected.pulsar) {
       elevation = (25 * Math.PI) / 180;
@@ -801,6 +838,7 @@ export function createGalaxy(
   const overview = () => {
     travel = null;
     clearFrame();
+    regionFocus = null;
     selected = null;
     targetDistance = mobile ? 40 : 29.4;
     onSelection(null);
@@ -821,6 +859,31 @@ export function createGalaxy(
       elevation = (25 * Math.PI) / 180;
       azimuth = 0.6;
     }
+  };
+
+  /**
+   * Framing a region is exclusive: it drops the selected body the way overview
+   * does, so no surface control can survive. There is no camera exclusion —
+   * entering the cloud is the point.
+   */
+  const frameRegion = (regionId: string) => {
+    const region = catalogue.resolveRegion(regionId, settings.density);
+    if (!region) return;
+    travel = null;
+    clearFrame();
+    surfaceAnchor = null;
+    selected = null;
+    regionFocus = region;
+    galacticShear(
+      region.center[0],
+      region.center[1],
+      region.center[2],
+      rotation,
+      localFocus,
+    );
+    commitFocus();
+    targetDistance = framingDistance(region.envelope, camera.aspect);
+    onSelection(null);
   };
 
   const frameSystem = (scope: 'stellar' | 'local') => {
@@ -1140,10 +1203,14 @@ export function createGalaxy(
     slowFrames += frameTime > 38 ? 1 : 0;
     qualityCheck++;
     if (qualityCheck >= 90) {
-      if (slowFrames > 45 && renderer.getPixelRatio() > 0.8) {
-        renderer.setPixelRatio(Math.max(0.8, renderer.getPixelRatio() - 0.2));
-        uniforms.uPixelRatio.value = renderer.getPixelRatio();
-      }
+      // Target resolution first, volumetric samples only once it bottoms out.
+      if (slowFrames > 45) {
+        if (renderer.getPixelRatio() > 0.8) {
+          renderer.setPixelRatio(Math.max(0.8, renderer.getPixelRatio() - 0.2));
+          uniforms.uPixelRatio.value = renderer.getPixelRatio();
+        } else regions.setSteps(regions.steps() > 8 ? 8 : 4);
+      } else if (slowFrames < 9 && regions.steps() < 16)
+        regions.setSteps(regions.steps() < 8 ? 8 : 16);
       slowFrames = 0;
       qualityCheck = 0;
     }
@@ -1232,6 +1299,18 @@ export function createGalaxy(
         focusOffset.multiplyScalar(Math.exp(-dt * 4));
         focus.copy(worldFocus).add(focusOffset);
       }
+    } else if (regionFocus) {
+      // The cloud shears with its stars, so the focus has to follow it.
+      galacticShear(
+        regionFocus.center[0],
+        regionFocus.center[1],
+        regionFocus.center[2],
+        rotation,
+        localFocus,
+      );
+      worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
+      focusOffset.multiplyScalar(Math.exp(-dt * 4));
+      focus.copy(worldFocus).add(focusOffset);
     } else focus.lerp(new THREE.Vector3(), 1 - Math.exp(-dt * 4));
     cameraDirection.set(
       Math.sin(azimuth) * Math.cos(elevation),
@@ -1344,7 +1423,9 @@ export function createGalaxy(
       camera.up.copy(pose.up);
     }
     host.dataset.surfaceTilt = surfaceTilt.toFixed(2);
-    if (!selected) {
+    // Galaxy-view composition only. A framed region has no selected body but is
+    // very much a subject, and this offset would push it out of frame.
+    if (!selected && !regionFocus) {
       cameraTarget.x += mobile ? 0 : 1.4;
       cameraTarget.y += mobile ? -6 : 0;
     }
@@ -1573,6 +1654,133 @@ export function createGalaxy(
       reduced.matches,
     );
     fades.push(...specialFades);
+    // Regions are queried in base space, where their volumes are defined, then
+    // each centre is sheared back for rendering. Nothing here touches picking.
+    regionPoint.copy(camera.position);
+    group.worldToLocal(regionPoint);
+    galacticUnshear(
+      regionPoint.x,
+      regionPoint.y,
+      regionPoint.z,
+      rotation,
+      cameraBase,
+    );
+    catalogue.regionsNear(
+      cameraBase.x,
+      cameraBase.y,
+      cameraBase.z,
+      distance * 1.5 + 4,
+      settings.density,
+      nearbyRegions,
+    );
+    regionCandidates.length = 0;
+    insideRegion = null;
+    insidePresence = 0;
+    for (const region of nearbyRegions) {
+      const candidate = (regionPool[regionCandidates.length] ??= {
+        region,
+        position: new THREE.Vector3(),
+        pixels: 0,
+        inside: 0,
+        focused: false,
+      });
+      candidate.region = region;
+      candidate.focused = region === regionFocus;
+      galacticShear(
+        region.center[0],
+        region.center[1],
+        region.center[2],
+        rotation,
+        candidate.position,
+      );
+      projected.copy(candidate.position).applyMatrix4(group.matrixWorld);
+      viewPosition.copy(projected).applyMatrix4(camera.matrixWorldInverse);
+      const depth = -viewPosition.z;
+      candidate.pixels =
+        depth > camera.near ? (region.envelope * projectionScale) / depth : 0;
+      candidate.inside = regionPresence(
+        Math.hypot(
+          cameraBase.x - region.center[0],
+          cameraBase.y - region.center[1],
+          cameraBase.z - region.center[2],
+        ),
+        region.radius,
+      );
+      regionCandidates.push(candidate);
+      if (candidate.inside > insidePresence) {
+        insidePresence = candidate.inside;
+        insideRegion = region;
+      }
+    }
+    regions.update(
+      regionCandidates,
+      wallTime,
+      reduced.matches ? 0 : activityTime,
+      rotation,
+      reduced.matches,
+    );
+    host.dataset.regions = String(regions.stats().cached);
+    // Reached by marker or by the menu, never by ray: a transparent volume must
+    // not steal a click from the stars behind it.
+    markedRegions.length = 0;
+    for (const candidate of regionCandidates)
+      if (candidate.inside === 0 && candidate.pixels > 8)
+        markedRegions.push(candidate);
+    markedRegions.sort((a, b) => b.pixels - a.pixels);
+    markedRegions.length = Math.min(markedRegions.length, REGION_DETAIL_LIMIT);
+    for (const [id, node] of regionMarkers)
+      if (!markedRegions.some((c) => c.region.regionId === id)) {
+        node.remove();
+        regionMarkers.delete(id);
+      }
+    for (const candidate of markedRegions) {
+      const region = candidate.region;
+      let node = regionMarkers.get(region.regionId);
+      if (!node) {
+        node = document.createElement('button');
+        node.className = 'system-marker';
+        node.dataset.label = region.name;
+        node.dataset.central = 'false';
+        const label = messages.regionLabel(region.type);
+        node.title = label;
+        node.setAttribute(
+          'aria-label',
+          messages.exploreBodyAria(region.name, label),
+        );
+        node.addEventListener('click', (event) => {
+          event.stopPropagation();
+          frameRegion(region.regionId);
+        });
+        host.appendChild(node);
+        regionMarkers.set(region.regionId, node);
+      }
+      projected
+        .copy(candidate.position)
+        .applyMatrix4(group.matrixWorld)
+        .project(camera);
+      node.style.display =
+        projected.z > -1 &&
+        projected.z < 1 &&
+        Math.abs(projected.x) < 1 &&
+        Math.abs(projected.y) < 1
+          ? 'block'
+          : 'none';
+      node.style.left = `${(projected.x * 0.5 + 0.5) * host.clientWidth}px`;
+      node.style.top = `${(-projected.y * 0.5 + 0.5) * renderHeight}px`;
+    }
+    const activeRegion = regionFocus ?? insideRegion;
+    if ((activeRegion?.regionId ?? null) !== reportedRegion) {
+      reportedRegion = activeRegion?.regionId ?? null;
+      onRegion(
+        activeRegion
+          ? {
+              region: activeRegion,
+              framed: activeRegion === regionFocus,
+              inside: insidePresence,
+            }
+          : null,
+      );
+    }
     host.dataset.phenomena = String(phenomena.stats().cached);
     host.dataset.catalogueVersion = 'v2';
     host.dataset.activeBodies = String(settings.density);
@@ -1656,6 +1864,9 @@ export function createGalaxy(
       selectedBinary
         ? selectedBinary.phase + rotation * selectedBinary.speed
         : null,
+      insideRegion
+        ? { presence: insidePresence, type: insideRegion.type }
+        : null,
     );
     if (process.env.NODE_ENV !== 'production') {
       host.dataset.lenses = String(lensing.stats().active);
@@ -1714,6 +1925,7 @@ export function createGalaxy(
     zoom: changeZoom,
     approach,
     frameSystem,
+    frameRegion,
     inspectBody(id) {
       if (id >= 0 && id < settings.density) {
         select(id);
@@ -1746,6 +1958,9 @@ export function createGalaxy(
       clearFrame();
       bodyLOD.dispose();
       phenomena.dispose();
+      regions.dispose();
+      regionMarkers.forEach((marker) => marker.remove());
+      regionMarkers.clear();
       lensing.dispose();
       pointDepthMaterial.dispose();
       debris.dispose();

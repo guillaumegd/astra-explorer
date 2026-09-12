@@ -18,6 +18,16 @@ La caméra cadre l’enveloppe des faisceaux, respecte une exclusion de trois ra
 
 L’activation conserve les identités, rayons et orbites existants. Les pulsars ne créent aucune lentille, cible de rendu ou texture supplémentaire.
 
+## Nébuleuses et vestiges de supernova
+
+Le lot 7 ajoute des régions : des volumes que la caméra traverse, sans centre solide, qui couvrent plusieurs systèmes. Elles ne sont ni des astres ni des systèmes, ne comptent pas dans la densité affichée et n'interceptent jamais un clic destiné à une étoile. On les atteint depuis **Options → Phénomènes rares** ou par leur repère à l'écran.
+
+Neuf nébuleuses sont réparties dans une partition fixe du disque, la même quelle que soit la densité choisie. Chacune a une palette restreinte, des poches sombres et des filaments qui dérivent lentement. Leur opacité est bornée pour que les étoiles restent lisibles au travers, y compris depuis l'intérieur du nuage.
+
+Un vestige de supernova entoure environ un système à pulsar sur sept : une coque fragmentée autour d'une cavité creuse, avec son pulsar en son centre. Sa luminosité respire lentement ; la coque ne s'étend jamais. Sa fiche mène directement au pulsar, et celle du pulsar revient au vestige. Il apparaît et disparaît avec son système hôte.
+
+Le nuage est dessiné comme un vrai volume traversé pas à pas, de seize à quatre pas selon la charge, après que la résolution a atteint son plancher. Deux régions au plus sont détaillées à la fois, la région cadrée gardant toujours sa place. L'ambiance sonore de la région se mélange à celle de l'astre observé, sans jamais la remplacer : on peut être dans une nébuleuse tout en regardant une planète. Fiches et catégories sont traduites dans les quatre langues.
+
 ## Étoiles doubles
 
 Le lot 5 active la seconde source réservée en V2, sur 5 % des systèmes. Les deux composantes partagent un barycentre invisible, une vitesse angulaire et une inclinaison, et tournent en phases opposées sur des rayons pondérés par des masses artistiques. Leur séparation est donc constante, et le compagnon contraste en couleur avec l’étoile principale trois fois sur quatre.

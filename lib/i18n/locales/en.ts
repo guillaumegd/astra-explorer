@@ -175,6 +175,19 @@ export const en: Dictionary = {
     description:
       'Two stars turn around an invisible barycentre, in opposite phases. Artistic masses, separation and period; planets orbit the pair as a whole.',
   },
+  regions: {
+    nebula: 'Nebula',
+    remnant: 'Supernova remnant',
+    nebulae: 'Nebulae',
+    remnants: 'Supernova remnants',
+    nebulaDescription:
+      'A cloud of gas and dust spanning several systems, with dark pockets and drifting filaments. You can fly through it. Palette and density are artistic.',
+    remnantDescription:
+      'The fragmented shell left behind by a star, around a hollow cavity holding its pulsar. Its brightness breathes slowly; the shell itself does not expand.',
+    inside: 'You are inside this region',
+    toPulsar: 'View the pulsar',
+    toRemnant: 'View the remnant',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explore ${name}, ${kind}`,
   },

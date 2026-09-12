@@ -175,6 +175,19 @@ export const fr: Dictionary = {
     description:
       'Deux étoiles tournent autour d’un barycentre invisible, en phases opposées. Masses, séparation et période artistiques ; les planètes tournent autour de la paire entière.',
   },
+  regions: {
+    nebula: 'Nébuleuse',
+    remnant: 'Vestige de supernova',
+    nebulae: 'Nébuleuses',
+    remnants: 'Vestiges de supernova',
+    nebulaDescription:
+      'Un nuage de gaz et de poussière qui couvre plusieurs systèmes, avec des poches sombres et des filaments lents. On peut le traverser. Palette et densité artistiques.',
+    remnantDescription:
+      'La coque fragmentée laissée par une étoile, autour d’une cavité creuse qui abrite son pulsar. Sa luminosité respire lentement ; la coque, elle, ne s’étend pas.',
+    inside: 'Vous êtes à l’intérieur de cette région',
+    toPulsar: 'Voir le pulsar',
+    toRemnant: 'Voir le vestige',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explorer ${name}, ${kind}`,
   },

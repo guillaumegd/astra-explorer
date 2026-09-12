@@ -34,6 +34,7 @@ import {
 import { Slider } from '@/components/ui/slider';
 import { type BodyIdentity } from '@/lib/stellar-lod';
 import { catalogue } from '@/lib/catalogue/runtime';
+import type { RegionDefinition } from '@/lib/catalogue/types';
 import { localSystemRoot } from '@/lib/system-framing';
 import {
   createGalaxy,
@@ -42,6 +43,7 @@ import {
   type GalaxyMessages,
   type SkyPointing,
   type SystemView,
+  type RegionView,
 } from '@/lib/galaxy';
 import { formatNumber, locales, localeNames } from '@/lib/i18n';
 import { useLocale } from '@/lib/i18n/use-locale';
@@ -53,6 +55,8 @@ function buildGalaxyMessages(t: Dictionary): GalaxyMessages {
     contextLost: t.canvas.contextLost,
     bodyKindLabel: (kind) => t.bodyKinds[kind],
     exploreBodyAria: t.system.exploreBodyAria,
+    regionLabel: (type) =>
+      type === 'nebula' ? t.regions.nebula : t.regions.remnant,
   };
 }
 
@@ -147,6 +151,7 @@ export default function Home() {
   const [error, setError] = useState('');
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
+  const [regionView, setRegionView] = useState<RegionView | null>(null);
   const [pointing, setPointing] = useState<SkyPointing>({ ra: 0, dec: 0.62 });
   const galaxyMessages = useMemo(() => buildGalaxyMessages(t), [t]);
   // The mount effect below runs once; it reads translations through this ref
@@ -193,14 +198,21 @@ export default function Home() {
         (body) => {
           setSelected(body);
         },
-        (value, kind, pulse, binaryAngle) =>
-          soundtrack.current?.setProximity(value, kind, pulse, binaryAngle),
+        (value, kind, pulse, binaryAngle, region) =>
+          soundtrack.current?.setProximity(
+            value,
+            kind,
+            pulse,
+            binaryAngle,
+            region,
+          ),
         (view) => {
           setSystemView(view);
         },
         setPointing,
         () => setReady(true),
         setCameraView,
+        setRegionView,
       );
       queueMicrotask(() => {
         setMusicBusy(false);
@@ -383,6 +395,70 @@ export default function Home() {
     soundtrack.current?.setVolume(0, 0.6);
     engine.current?.overview();
   };
+  // Bodies and regions are different kinds of destination, so each entry
+  // carries its own label and its own way of opening.
+  const rareDestinations = useMemo(() => {
+    const fromBody = (body: BodyIdentity) => ({
+      id: body.bodyId,
+      name: body.name,
+      kindLabel: t.bodyKinds[body.kind],
+      open: () => engine.current?.inspectBody(body.id),
+    });
+    const fromRegion = (region: RegionDefinition, kindLabel: string) => ({
+      id: region.regionId,
+      name: region.name,
+      kindLabel,
+      open: () => engine.current?.frameRegion(region.regionId),
+    });
+    const phenomena = catalogue.getPhenomena(density);
+    return [
+      {
+        key: 'black-hole',
+        label: t.bodyKinds['black-hole'],
+        all: phenomena.filter((b) => b.kind === 'black-hole').map(fromBody),
+        limit: Infinity,
+      },
+      {
+        key: 'pulsar',
+        label: t.bodyKinds.pulsar,
+        all: phenomena.filter((b) => b.kind === 'pulsar').map(fromBody),
+        limit: Infinity,
+      },
+      {
+        key: 'binary',
+        label: t.binary.label,
+        all: catalogue.getBinaries(density).map(fromBody),
+        limit: 24,
+      },
+      {
+        key: 'nebula',
+        label: t.regions.nebulae,
+        all: catalogue
+          .listNebulae()
+          .map((r) => fromRegion(r, t.regions.nebula)),
+        limit: Infinity,
+      },
+      {
+        key: 'remnant',
+        label: t.regions.remnants,
+        all: catalogue
+          .getRemnants(density)
+          .map((r) => fromRegion(r, t.regions.remnant)),
+        limit: Infinity,
+      },
+    ];
+  }, [density, t]);
+  // A pulsar reaches its own remnant, and the remnant reaches back.
+  const selectedRemnant = useMemo(
+    () =>
+      selected?.pulsar
+        ? (catalogue
+            .getRemnants(density)
+            .find((r) => r.hostSystem === selected.systemId) ?? null)
+        : null,
+    [selected, density],
+  );
+
   const localRoot = useMemo(() => {
     if (!selected) return null;
     const members = catalogue.getSystemMembers(selected.systemId);
@@ -416,6 +492,25 @@ export default function Home() {
         inert={hidden || openingVisible}
       >
         <div className="context-line">
+          {!selected && regionView && (
+            <div className="body-navigation">
+              <Button
+                variant="ghost"
+                className="context-details"
+                onClick={() => openPanel('details')}
+                aria-label={t.controls.details}
+                aria-haspopup="dialog"
+                aria-expanded={panel === 'details'}
+              >
+                <span>
+                  {regionView.region.type === 'nebula'
+                    ? t.regions.nebula
+                    : t.regions.remnant}
+                </span>
+                <Info size={14} />
+              </Button>
+            </div>
+          )}
           {selected && (
             <div className="body-navigation">
               <IconButton
@@ -693,30 +788,7 @@ export default function Home() {
               )}
               {panel === 'phenomena' && (
                 <div className="option-list">
-                  {[
-                    {
-                      key: 'black-hole',
-                      label: t.bodyKinds['black-hole'],
-                      all: catalogue
-                        .getPhenomena(density)
-                        .filter((body) => body.kind === 'black-hole'),
-                      limit: Infinity,
-                    },
-                    {
-                      key: 'pulsar',
-                      label: t.bodyKinds.pulsar,
-                      all: catalogue
-                        .getPhenomena(density)
-                        .filter((body) => body.kind === 'pulsar'),
-                      limit: Infinity,
-                    },
-                    {
-                      key: 'binary',
-                      label: t.binary.label,
-                      all: catalogue.getBinaries(density),
-                      limit: 24,
-                    },
-                  ].map(({ key, label, all, limit }) => {
+                  {rareDestinations.map(({ key, label, all, limit }) => {
                     const destinations = all.slice(0, limit);
                     if (!destinations.length) return null;
                     return (
@@ -725,20 +797,20 @@ export default function Home() {
                           {label} · {all.length}
                         </summary>
                         <div className="option-list">
-                          {destinations.map((body) => (
+                          {destinations.map((entry) => (
                             <Button
-                              key={body.bodyId}
+                              key={entry.id}
                               variant="ghost"
                               aria-label={t.system.exploreBodyAria(
-                                body.name,
-                                t.bodyKinds[body.kind],
+                                entry.name,
+                                entry.kindLabel,
                               )}
                               onClick={() => {
-                                engine.current?.inspectBody(body.id);
+                                entry.open();
                                 setPanel(null);
                               }}
                             >
-                              <span>{body.name}</span>
+                              <span>{entry.name}</span>
                               <ArrowUpRight />
                             </Button>
                           ))}
@@ -746,10 +818,9 @@ export default function Home() {
                       </details>
                     );
                   })}
-                  {catalogue.getPhenomena(density).length === 0 &&
-                    catalogue.getBinaries(density).length === 0 && (
-                      <p>{t.phenomena.empty}</p>
-                    )}
+                  {rareDestinations.every(({ all }) => !all.length) && (
+                    <p>{t.phenomena.empty}</p>
+                  )}
                 </div>
               )}
               {panel === 'advanced' && (
@@ -914,6 +985,43 @@ export default function Home() {
                   )}
                 </dl>
               )}
+              {panel === 'details' && !selected && regionView && (
+                <>
+                  <div className="body-identity">
+                    <span>
+                      {regionView.region.type === 'nebula'
+                        ? t.regions.nebula
+                        : t.regions.remnant}
+                    </span>
+                    <strong>{regionView.region.name}</strong>
+                    {regionView.inside > 0 && <p>{t.regions.inside}</p>}
+                  </div>
+                  <p className="reading-copy">
+                    {regionView.region.type === 'nebula'
+                      ? t.regions.nebulaDescription
+                      : t.regions.remnantDescription}
+                  </p>
+                  {regionView.region.hostBodyId !== undefined && (
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        engine.current?.inspectBody(
+                          regionView.region.hostBodyId!,
+                        )
+                      }
+                    >
+                      <Orbit />
+                      {t.regions.toPulsar}
+                      <ArrowUpRight />
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={() => setPanel('phenomena')}>
+                    <Orbit />
+                    {t.controls.phenomena}
+                    <ChevronRight />
+                  </Button>
+                </>
+              )}
               {panel === 'details' && selected && (
                 <>
                   <div className="body-identity">
@@ -950,6 +1058,18 @@ export default function Home() {
                         ? t.phenomena.pulsarDescription
                         : t.phenomena.description}
                     </p>
+                  )}
+                  {selectedRemnant && (
+                    <Button
+                      variant="ghost"
+                      onClick={() =>
+                        engine.current?.frameRegion(selectedRemnant.regionId)
+                      }
+                    >
+                      <Orbit />
+                      {t.regions.toRemnant}
+                      <ArrowUpRight />
+                    </Button>
                   )}
                   {selected.binary && (
                     <>

@@ -134,6 +134,17 @@ export type Dictionary = {
     barycentre: string;
     description: string;
   };
+  regions: {
+    nebula: string;
+    remnant: string;
+    nebulae: string;
+    remnants: string;
+    nebulaDescription: string;
+    remnantDescription: string;
+    inside: string;
+    toPulsar: string;
+    toRemnant: string;
+  };
   system: { exploreBodyAria: (name: string, kind: string) => string };
   language: { label: string };
 };

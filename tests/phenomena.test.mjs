@@ -7,6 +7,10 @@ import {
   createPhenomenaManager,
   phenomenonVisibility,
 } from '../lib/phenomena/manager.ts';
+import {
+  createRegionManager,
+  regionVisibility,
+} from '../lib/phenomena/region-manager.ts';
 import { minimumOrbitRatio, createBodyLOD } from '../lib/stellar-lod.ts';
 import { systemBounds } from '../lib/system-framing.ts';
 const catalogue = new RuntimeCatalogue();
@@ -132,4 +136,73 @@ test('finite disk is selectable edge-on away from the shadow and stays inside it
       body.phenomenon.envelope * 1.001,
   );
   effect.dispose();
+});
+
+test('region cache is bounded to two, expires, and releases everything', () => {
+  const cat = new RuntimeCatalogue();
+  const list = [...cat.listNebulae(), ...cat.getRemnants(120000)];
+  assert.ok(list.length >= 6);
+  const parent = new THREE.Group(),
+    manager = createRegionManager(parent);
+  const c = (region, pixels = 200, inside = 0, focused = false) => ({
+    region,
+    position: new THREE.Vector3(),
+    pixels,
+    inside,
+    focused,
+  });
+  // Inside the volume a region is fully present however small it projects.
+  assert.equal(regionVisibility(0, 1), 1);
+  assert.equal(regionVisibility(4, 0), 0);
+  assert.equal(regionVisibility(200, 0), 1);
+  for (let i = 0; i < list.length; i++) {
+    manager.update([c(list[i])], i * 0.2, 5, 0);
+    manager.update([c(list[i])], i * 0.2 + 0.1, 5, 0);
+    assert.ok(manager.stats().cached <= 2);
+  }
+  // Presence outranks coverage when the budget has to choose.
+  manager.update([c(list[0], 5, 1), c(list[1], 400, 0)], 20, 5, 0);
+  assert.equal(manager.stats().cached, 2);
+  // The framed region keeps its slot even when two larger ones compete.
+  manager.update(
+    [c(list[0], 400), c(list[1], 300), c(list[2], 1, 0, true)],
+    21,
+    5,
+    0,
+  );
+  assert.equal(manager.stats().cached, 2);
+  // Past the four-second release the two evicted ones are gone, it remains.
+  manager.update([c(list[2], 1, 0, true)], 27, 5, 0);
+  assert.equal(manager.stats().cached, 1);
+  const materials = [],
+    geometries = [];
+  parent.traverse((obj) => {
+    if (obj.isMesh) {
+      materials.push(obj.material);
+      geometries.push(obj.geometry);
+    }
+  });
+  const resources = new Set([...materials, ...geometries]);
+  let disposed = 0;
+  for (const resource of resources)
+    resource.addEventListener('dispose', () => disposed++);
+  // Four seconds out of sight and the entries are gone, meshes included.
+  manager.update([], 32, 5, 0);
+  assert.equal(manager.stats().cached, 0);
+  assert.equal(parent.children.length, 0);
+  assert.equal(disposed, resources.size);
+  manager.dispose();
+});
+
+test('volumetric samples degrade only down the declared ladder', () => {
+  const parent = new THREE.Group(),
+    manager = createRegionManager(parent);
+  assert.equal(manager.steps(), 16);
+  manager.setSteps(8);
+  assert.equal(manager.steps(), 8);
+  manager.setSteps(4);
+  assert.equal(manager.steps(), 4);
+  manager.setSteps(16);
+  assert.equal(manager.steps(), 16);
+  manager.dispose();
 });

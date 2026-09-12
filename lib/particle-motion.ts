@@ -1,6 +1,45 @@
 import { orbitalOffset, ORBIT_STRIDE } from './orbits.ts';
 import type { Vector3 } from 'three';
 
+/**
+ * Differential shear: the rotation angle depends on the radius, so anything
+ * wider than a point cannot be turned as a rigid block. Shared by bodies and
+ * by regions, which undo it per sample to stay locked to their stars.
+ */
+export function shearAngle(x: number, z: number, rotation: number) {
+  return rotation * (0.35 + 0.65 / (Math.hypot(x, z) * 0.15 + 1));
+}
+export function galacticShear(
+  x: number,
+  y: number,
+  z: number,
+  rotation: number,
+  out: Vector3,
+) {
+  const angle = shearAngle(x, z, rotation);
+  return out.set(
+    Math.cos(angle) * x + Math.sin(angle) * z,
+    y,
+    -Math.sin(angle) * x + Math.cos(angle) * z,
+  );
+}
+
+/** Exact inverse: shear is a rotation about the axis, so the radius is invariant. */
+export function galacticUnshear(
+  x: number,
+  y: number,
+  z: number,
+  rotation: number,
+  out: Vector3,
+) {
+  const angle = shearAngle(x, z, rotation);
+  return out.set(
+    Math.cos(angle) * x - Math.sin(angle) * z,
+    y,
+    Math.sin(angle) * x + Math.cos(angle) * z,
+  );
+}
+
 // CPU mirror of the vertex shader, used only for the focused body and its local neighbours.
 export function particlePosition(
   positions: Float32Array,
@@ -16,12 +55,7 @@ export function particlePosition(
     y = positions[id * 3 + 1],
     z = positions[id * 3 + 2];
   const radius = Math.hypot(x, z);
-  const angle = rotation * (0.35 + 0.65 / (radius * 0.15 + 1));
-  out.set(
-    Math.cos(angle) * x + Math.sin(angle) * z,
-    y,
-    -Math.sin(angle) * x + Math.cos(angle) * z,
-  );
+  galacticShear(x, y, z, rotation, out);
   out.y += Math.sin(time * 0.25 + radius * 1.3 + seeds[id] * 12) * 0.035;
   if (orbits) orbitalOffset(orbits, id * ORBIT_STRIDE, rotation, out);
   else if (offsets) {

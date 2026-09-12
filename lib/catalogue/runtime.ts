@@ -1,6 +1,11 @@
 import { CATALOGUE_SEED, MAX_BODIES } from './config.ts';
 import { generateSystem } from './generate.ts';
-import type { BodyIdentity, SystemDefinition } from './types.ts';
+import { listNebulae, remnantFor } from './regions.ts';
+import type {
+  BodyIdentity,
+  RegionDefinition,
+  SystemDefinition,
+} from './types.ts';
 
 export class RuntimeCatalogue {
   readonly bodies: BodyIdentity[] = [];
@@ -11,6 +16,10 @@ export class RuntimeCatalogue {
     'phenomena' | 'binaries',
     { count: number; list: BodyIdentity[] }
   >();
+  // Nebulae come from a fixed spatial partition, so density never changes them
+  // and this list is memoised once, with no key to invalidate.
+  private nebulae: RegionDefinition[] | null = null;
+  private remnants: { count: number; list: RegionDefinition[] } | null = null;
   readonly seed: number;
   constructor(seed = CATALOGUE_SEED) {
     this.seed = seed;
@@ -97,6 +106,52 @@ export class RuntimeCatalogue {
       budget,
       (system) => system.architecture === 'binary',
     );
+  }
+  listNebulae() {
+    if (!this.nebulae) this.nebulae = listNebulae(this.seed);
+    return this.nebulae;
+  }
+  /** Remnants live and die with their pulsar host, so they follow the budget. */
+  getRemnants(budget: number) {
+    const count = this.activeCount(budget);
+    if (this.remnants?.count === count) return this.remnants.list;
+    const list: RegionDefinition[] = [];
+    for (const system of this.systems) {
+      if (system.rootId >= count) break;
+      const remnant = remnantFor(system);
+      if (remnant) list.push(remnant);
+    }
+    this.remnants = { count, list };
+    return list;
+  }
+  resolveRegion(regionId: string, budget: number): RegionDefinition | null {
+    return (
+      this.listNebulae().find((r) => r.regionId === regionId) ??
+      this.getRemnants(budget).find((r) => r.regionId === regionId) ??
+      null
+    );
+  }
+  /**
+   * Base-space query: shear the camera back before calling. Both lists are
+   * bounded to a few dozen entries by construction, so a linear sweep beats
+   * windowing the grid and allocates nothing when given an output array.
+   */
+  regionsNear(
+    x: number,
+    y: number,
+    z: number,
+    reach: number,
+    budget: number,
+    out: RegionDefinition[] = [],
+  ) {
+    out.length = 0;
+    for (const list of [this.listNebulae(), this.getRemnants(budget)])
+      for (const region of list) {
+        const c = region.center;
+        if (Math.hypot(x - c[0], y - c[1], z - c[2]) <= region.envelope + reach)
+          out.push(region);
+      }
+    return out;
   }
   resolvePick(index: number, budget: number) {
     return Number.isInteger(index) &&

@@ -2,6 +2,7 @@ import type { BodyKind } from './stellar-lod';
 import {
   ambienceMix,
   binaryColour,
+  regionAmbience,
   soundProfiles,
 } from './ambience-parameters.ts';
 
@@ -131,6 +132,35 @@ export function buildAmbientGraph(context: BaseAudioContext) {
     return { kind, output, lfo, drone, profile, pulseGain, colourPan };
   });
 
+  // A region is a place, not a body kind, so it cannot live in the atmospheres
+  // record above: it gets its own layer, mixed on top of whatever is selected.
+  const regionLayer = (() => {
+    const output = track(context.createGain());
+    output.gain.value = 0;
+    output.connect(highpass);
+    const send = track(context.createGain());
+    send.gain.value = 0;
+    output.connect(send);
+    send.connect(reverb);
+    const band = track(context.createBiquadFilter());
+    band.type = 'bandpass';
+    band.frequency.value = 400;
+    band.Q.value = 0.55;
+    noise.connect(band);
+    const breath = track(context.createGain());
+    breath.gain.value = 0.09;
+    band.connect(breath);
+    breath.connect(output);
+    const lfo = track(context.createOscillator());
+    lfo.frequency.value = 0.045;
+    const depth = track(context.createGain());
+    depth.gain.value = 0.05;
+    lfo.connect(depth);
+    depth.connect(breath.gain);
+    lfo.start();
+    return { output, send, band };
+  })();
+
   const harmonics = context.createPeriodicWave(
     new Float32Array(5),
     new Float32Array([0, 1, 0.16, 0.055, 0.018]),
@@ -161,6 +191,8 @@ export function buildAmbientGraph(context: BaseAudioContext) {
   let proximity = 0;
   let bodyKind: BodyKind | null = null;
   let lastPulse: number | null = null;
+  let regionPresence = -1;
+  let regionKind: 'nebula' | 'remnant' | null = null;
   const pulsarLayer = atmospheres.find((entry) => entry.kind === 'pulsar');
   const smooth = (param: AudioParam, value: number, seconds: number) =>
     param.setTargetAtTime(value, context.currentTime, seconds);
@@ -177,6 +209,15 @@ export function buildAmbientGraph(context: BaseAudioContext) {
       lastPulse = bounded;
       if (pulsarLayer)
         smooth(pulsarLayer.pulseGain.gain, 0.88 + 0.12 * bounded, 0.08);
+    },
+    setRegion(presence: number, type: 'nebula' | 'remnant' | null) {
+      if (presence === regionPresence && type === regionKind) return;
+      regionPresence = presence;
+      regionKind = type;
+      const region = regionAmbience(presence, type);
+      smooth(regionLayer.output.gain, region.gain, 2);
+      smooth(regionLayer.send.gain, region.wet, 2);
+      smooth(regionLayer.band.frequency, region.cutoff, 2);
     },
     setBinaryColour(angle: number | null) {
       const close = bodyKind === null ? 0 : ambienceMix(proximity).local;
@@ -292,6 +333,8 @@ export function createAmbientSoundtrack(onFailure: () => void) {
     proximity = 0;
   let bodyKind: BodyKind | null = null;
   let pulse = 0.5;
+  let regionPresence = 0;
+  let regionType: 'nebula' | 'remnant' | null = null;
   let nextChord = 0,
     nextNote = 0,
     chord = 0,
@@ -358,6 +401,7 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         if (disposed || version !== request || !enabled) return false;
         graph!.setProximity(proximity, bodyKind);
         graph!.setPulse(pulse);
+        graph!.setRegion(regionPresence, regionType);
         graph!.setVolume(volume);
         startTimer();
         return true;
@@ -381,11 +425,16 @@ export function createAmbientSoundtrack(onFailure: () => void) {
       kind: BodyKind | null = null,
       modulation = 0.5,
       binaryAngle: number | null = null,
+      region: { presence: number; type: 'nebula' | 'remnant' } | null = null,
     ) {
       pulse = modulation;
       if (enabled) graph?.setPulse(pulse);
       // The angle moves continuously, so colour it before the early return.
       if (enabled) graph?.setBinaryColour(binaryAngle);
+      // So does presence in a volume, and it is independent of the selection.
+      regionPresence = region?.presence ?? 0;
+      regionType = region?.type ?? null;
+      if (enabled) graph?.setRegion(regionPresence, regionType);
       value = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
       if (Math.abs(value - proximity) < 0.01 && kind === bodyKind) return;
       proximity = value;

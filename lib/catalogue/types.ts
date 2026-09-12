@@ -94,3 +94,26 @@ export type SystemDefinition = {
   motionSeed: number;
   envelope: number;
 };
+
+/**
+ * A region is not a body: no orbit, no capabilities, no particle index. That is
+ * what keeps it out of the density budget and out of ray picking entirely.
+ */
+export type RegionId = string;
+export type RegionDefinition = {
+  regionId: RegionId;
+  type: 'nebula' | 'remnant';
+  seed: number;
+  name: string;
+  /** Base position, before galactic shear is applied. */
+  center: [number, number, number];
+  radius: number;
+  /** Conservative bound covering the sheared, stretched volume. */
+  envelope: number;
+  /** Glow, filament and dark pocket. */
+  palette: [string, string, string];
+  density: number;
+  /** Remnants only: the pulsar system that anchors and activates them. */
+  hostSystem?: number;
+  hostBodyId?: number;
+};

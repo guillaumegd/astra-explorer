@@ -21,6 +21,33 @@ export const STELLAR_LUMINOSITY = {
 } as const;
 export const CATALOGUE_SEED = 91724;
 export const MAX_BODIES = 120000;
+// The shape the anchors already produce; naming it moves no system. The disc
+// radius mirrors `0.65 + placement ** 0.72 * 12` in generate.ts.
+export const GALAXY_ENVELOPE = { radius: 12.8, halfHeight: 0.95 } as const;
+/** One tenth of the disc diameter, as the phenomena guide prescribes. */
+export const NEBULA_CELL = (GALAXY_ENVELOPE.radius * 2) / 10;
+// The guide writes 1%, which over the ~79 eligible cells of this galaxy yields
+// 0.79 nebulae in total. The method is kept; only this rate is raised.
+export const NEBULA_PROBABILITY = 0.15;
+export const NEBULA_RADIUS_SPAN = [0.35, 0.65] as const;
+export const NEBULA_OFFSET_LIMIT = 0.15;
+/** Of pulsar systems, so roughly 0.105% of all systems. */
+export const REMNANT_PROBABILITY = 0.15;
+export const REMNANT_SIZE_SPAN = [2, 4] as const;
+/** Rigid rotation preserves the sphere; the margin only covers the edge fade. */
+export const REGION_ENVELOPE_MARGIN = 1.08;
+export const REGION_DETAIL_LIMIT = 2;
+/** Restrained palettes: glow, filament, dark pocket. Illustrative, not spectra. */
+export const NEBULA_PALETTES = [
+  ['#4a6fd8', '#9f5fd8', '#10102a'],
+  ['#d8653a', '#d8a63a', '#2a1410'],
+  ['#2fa89a', '#5fd0a8', '#0b2422'],
+  ['#c74f7a', '#6a5fd8', '#1e1028'],
+] as const;
+export const REMNANT_PALETTES = [
+  ['#7fb7ff', '#dce9ff', '#0b1a2c'],
+  ['#ff9a5a', '#ffd8a8', '#2a1408'],
+] as const;
 export const PLANET_WEIGHTS = [5, 8, 12, 16, 18, 16, 11, 7, 4, 2, 1] as const;
 export const COMPACT_PLANET_WEIGHTS = [40, 30, 18, 9, 3] as const;
 export const SOLID_MOON_WEIGHTS = [80, 17, 3] as const;

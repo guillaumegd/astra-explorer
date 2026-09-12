@@ -176,6 +176,19 @@ export const es: Dictionary = {
     description:
       'Dos estrellas giran alrededor de un baricentro invisible, en fases opuestas. Masas, separación y período artísticos; los planetas orbitan el par completo.',
   },
+  regions: {
+    nebula: 'Nebulosa',
+    remnant: 'Remanente de supernova',
+    nebulae: 'Nebulosas',
+    remnants: 'Remanentes de supernova',
+    nebulaDescription:
+      'Una nube de gas y polvo que abarca varios sistemas, con bolsas oscuras y filamentos lentos. Se puede atravesar. Paleta y densidad artísticas.',
+    remnantDescription:
+      'La cáscara fragmentada que deja una estrella, alrededor de una cavidad hueca que alberga su púlsar. Su brillo respira lentamente; la cáscara no se expande.',
+    inside: 'Estás dentro de esta región',
+    toPulsar: 'Ver el púlsar',
+    toRemnant: 'Ver el remanente',
+  },
   system: {
     exploreBodyAria: (name, kind) => `Explorar ${name}, ${kind}`,
   },

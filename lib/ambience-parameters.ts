@@ -45,6 +45,37 @@ export function binaryColour(angle: number, local: number) {
   };
 }
 
+export const REGION_DEPTH = 0.3;
+/**
+ * Presence of the camera inside a region volume: 1 at the core, 0 beyond the
+ * envelope, continuous in between. A region is a place, not a target, so this
+ * is a function of position alone and never of what is selected.
+ */
+export function regionPresence(distance: number, radius: number) {
+  if (!Number.isFinite(distance) || !Number.isFinite(radius) || radius <= 0)
+    return 0;
+  return 1 - ease((distance / radius - 0.35) / 0.75);
+}
+/**
+ * A secondary layer, mixed on top of whatever body is being observed, as the
+ * guide requires. Capped well under the score so it colours without covering.
+ */
+export function regionAmbience(
+  presence: number,
+  type: 'nebula' | 'remnant' | null,
+) {
+  const p = Number.isFinite(presence) ? Math.min(1, Math.max(0, presence)) : 0;
+  // Only the absence of a region short-circuits: cutting out at zero presence
+  // as well would put a step in the filter right where the layer fades in.
+  if (!type) return { gain: 0, wet: 0, cutoff: 400 };
+  const airy = type === 'nebula';
+  return {
+    gain: REGION_DEPTH * p * (airy ? 1 : 0.72),
+    wet: 0.25 * p * (airy ? 1 : 0.68),
+    cutoff: airy ? 320 + p * 260 : 520 + p * 380,
+  };
+}
+
 // Noise band, breath speed, drone and resonant detail share the score's A root.
 export const soundProfiles: Record<
   BodyKind,

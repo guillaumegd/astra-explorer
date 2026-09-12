@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
 import {
   generateSystem,
@@ -166,4 +167,49 @@ test('100000 generated systems obey the population bounds and invisible-node gra
       );
     });
   }
+});
+
+// Lot 7 adds regions, which are not bodies and draw from their own streams.
+// This digest, captured at ba4739d, proves no body moved.
+test('regions leave every existing body bit-identical', () => {
+  const cat = new RuntimeCatalogue();
+  cat.ensure(20000);
+  const hash = createHash('sha256');
+  let hashed = 0;
+  for (let index = 0; index < 512; index++) {
+    const s = cat.getSystem(index);
+    hash.update(
+      JSON.stringify({
+        id: s.id,
+        anchor: s.anchor,
+        architecture: s.architecture,
+        reserved: s.reservedBodyIds,
+        motionSeed: s.motionSeed,
+        envelope: s.envelope,
+        nodes: s.nodes.map((n) => ({
+          id: n.id,
+          parentId: n.parentId,
+          bodyId: n.bodyId,
+        })),
+        bodies: s.bodies.map((b) => ({
+          bodyId: b.bodyId,
+          radius: b.radius,
+          seed: b.seed,
+          kind: b.kind,
+          orbit: b.orbit && {
+            radius: b.orbit.radius,
+            phase: b.orbit.phase,
+            speed: b.orbit.speed,
+            inclination: b.orbit.inclination,
+          },
+        })),
+      }),
+    );
+    hashed++;
+  }
+  assert.equal(hashed, 512);
+  assert.equal(
+    hash.digest('hex'),
+    'a1a4631ab534ca7e51e98f0f898bf3aeb9dd427add65a3c30edae53818c31220',
+  );
 });
