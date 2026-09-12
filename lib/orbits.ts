@@ -12,9 +12,11 @@ export type Orbit = {
   phase: number;
   speed: number;
   inclination: number;
+  /** Semi-major axis is radius; absent eccentricity preserves circular V2 orbits. */
+  eccentricity?: number;
 };
 export const ORBIT_DEPTH = 3;
-export const ORBIT_STRIDE = ORBIT_DEPTH * 4;
+export const ORBIT_STRIDE = ORBIT_DEPTH * 5;
 
 export function orbitFor(body: OrbitalBody, parent: OrbitalBody | null): Orbit {
   if (body.parentId !== (parent?.id ?? null))
@@ -40,6 +42,7 @@ export function compileOrbitChain(
     seen.add(body.id);
     const parent = body.parentId === null ? null : lookup(body.parentId),
       orbit = orbitFor(body, parent);
+    data[ORBIT_DEPTH * 4 + depth] = orbit.eccentricity ?? 0;
     data.set(
       [orbit.radius, orbit.phase, orbit.speed, orbit.inclination],
       depth++ * 4,
@@ -48,6 +51,17 @@ export function compileOrbitChain(
     body = parent;
   }
   return data;
+}
+
+/** Fixed eight Newton steps, shared with GLSL, for 0 <= e <= 0.8. */
+export function eccentricAnomaly(mean: number, eccentricity: number) {
+  const tau = Math.PI * 2;
+  const m = ((((mean + Math.PI) % tau) + tau) % tau) - Math.PI;
+  let e = m;
+  for (let i = 0; i < 8; i++)
+    e -=
+      (e - eccentricity * Math.sin(e) - m) / (1 - eccentricity * Math.cos(e));
+  return e;
 }
 
 export function orbitalOffset(
@@ -61,17 +75,28 @@ export function orbitalOffset(
       r = data[i],
       angle = data[i + 1] + time * data[i + 2],
       tilt = data[i + 3];
-    out.x += Math.cos(angle) * r;
-    out.y += Math.sin(angle) * r * Math.sin(tilt);
-    out.z += Math.sin(angle) * r * Math.cos(tilt);
+    const eccentricity = data[start + ORBIT_DEPTH * 4 + level] ?? 0;
+    const anomaly = eccentricity
+      ? eccentricAnomaly(angle, eccentricity)
+      : angle;
+    const minor = Math.sqrt(1 - eccentricity * eccentricity);
+    out.x += (Math.cos(anomaly) - eccentricity) * r;
+    out.y += Math.sin(anomaly) * r * minor * Math.sin(tilt);
+    out.z += Math.sin(anomaly) * r * minor * Math.cos(tilt);
   }
   return out;
 }
 
 export const orbitalGLSL = `
- vec3 orbitPosition(vec4 orbit,float clock){
+ vec3 orbitPosition(vec4 orbit,float clock,float eccentricity){
    if(orbit.x==0.0)return vec3(0.0);
    float a=orbit.y+clock*orbit.z;
-   return orbit.x*vec3(cos(a),sin(a)*sin(orbit.w),sin(a)*cos(orbit.w));
+   if(eccentricity>0.){
+     float m=mod(a+3.141592653589793,6.283185307179586)-3.141592653589793;
+     a=m;
+     for(int i=0;i<8;i++)a-=(a-eccentricity*sin(a)-m)/(1.-eccentricity*cos(a));
+   }
+   float minor=sqrt(1.-eccentricity*eccentricity);
+   return orbit.x*vec3(cos(a)-eccentricity,sin(a)*minor*sin(orbit.w),sin(a)*minor*cos(orbit.w));
  }
 `;

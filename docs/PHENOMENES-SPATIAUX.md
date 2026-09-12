@@ -38,6 +38,14 @@ Les planètes détaillées sont éclairées par deux sources dont les poids somm
 
 L’activation conserve les identités, rayons et orbites existants : la séparation est bornée pour tenir dans la première orbite planétaire, si bien qu’aucune orbite n’a été déplacée.
 
+## Comètes
+
+Le lot 6 active les identifiants réservés dans 2 % des systèmes ordinaires, sans modifier les identités ni les orbites des corps existants. L’ellipse utilise une excentricité entre 0,45 et 0,8, avec huit itérations de Kepler partagées entre CPU et GLSL. Le cadrage inclut l’apoastre et l’enveloppe maximale des queues.
+
+La chevelure et les queues s’intensifient à proximité de l’étoile. La queue ionique bleue pointe à l’opposé de la source principale, y compris quand celle-ci tourne dans une binaire ; la queue de poussière dorée est courbée. Seul le noyau est sélectionnable, avec une cible minimale de douze pixels CSS. La pause conserve position, activité et orientation ; le zoom approche le noyau jusqu’à son rayon d’exclusion.
+
+Les quatre langues et une légère coloration sonore sont intégrées. La recette visuelle et la mesure GPU restent à exécuter : [lot 6](local/phenomenes/LOT-6-COMETES.md).
+
 ## Rendu et ressources
 
 Huit candidats détaillés sont partagés entre les corps ordinaires et les phénomènes. Le cache réserve huit entrées ordinaires et quatre phénomènes, soit douze au maximum. Le détail apparaît à six pixels de rayon projeté, avec conservation jusqu’à 4,8 pixels et fondu de 0,4 seconde.

@@ -42,16 +42,23 @@ test('binary activation moves nothing else in the V2 baseline', () => {
       JSON.stringify({
         id: s.id,
         anchor: s.anchor,
-        reserved: s.reservedBodyIds.filter((r) => r !== companion),
+        reserved: [
+          ...s.reservedBodyIds,
+          ...s.bodies.filter((b) => b.comet).map((b) => b.bodyId),
+        ].filter((r) => r !== companion),
         nodes: companion
           ? null
-          : s.nodes.map((n) => ({
-              id: n.id,
-              parentId: n.parentId,
-              bodyId: n.bodyId,
-            })),
+          : s.nodes
+              .filter(
+                (n) => !s.bodies.some((b) => b.comet && b.bodyId === n.bodyId),
+              )
+              .map((n) => ({
+                id: n.id,
+                parentId: n.parentId,
+                bodyId: n.bodyId,
+              })),
         bodies: s.bodies
-          .filter((b) => b.bodyId !== companion)
+          .filter((b) => b.bodyId !== companion && !b.comet)
           .map((b) => ({
             bodyId: b.bodyId,
             radius: b.radius,

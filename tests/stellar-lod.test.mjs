@@ -30,7 +30,7 @@ test('every particle has a stable and varied identity independent of generation 
   assert.deepEqual(describeBody(51923), original);
   assert.equal(
     new Set(Array.from({ length: 1000 }, (_, i) => describeBody(i).kind)).size,
-    13,
+    14,
   );
   assert.equal(
     new Set(Array.from({ length: 100 }, (_, i) => describeBody(i).seed)).size,

@@ -142,6 +142,7 @@ export const ptPT: Dictionary = {
   },
   loading: 'A acender as estrelas…',
   bodyKinds: {
+    comet: 'Cometa',
     pulsar: 'Pulsar',
     'black-hole': 'Buraco negro',
     'red-dwarf': 'Anã vermelha',
@@ -158,6 +159,8 @@ export const ptPT: Dictionary = {
     asteroid: 'Asteroide',
   },
   phenomena: {
+    cometDescription:
+      'Um núcleo gelado numa órbita elíptica. A cabeleira e as caudas intensificam-se perto da estrela; a cauda azul aponta no sentido oposto.',
     pulsarDescription:
       'Uma pequena estrela branco-azulada com dois feixes em rotação que modulam suavemente a sua luz. Período artístico de 4 a 10 segundos; observação exterior sem acesso à superfície.',
     pulsarOrbit: 'Órbita em torno do pulsar',

@@ -15,20 +15,21 @@ export type BodyKind =
   | 'rocky-moon'
   | 'asteroid'
   | 'black-hole'
-  | 'pulsar';
+  | 'pulsar'
+  | 'comet';
 export type BodyIdentity = {
   /** Compact picking index; never persist this number. */
   id: number;
   bodyId: string;
   rootId: number;
-  role: 'central' | 'planet' | 'moon' | 'asteroid';
+  role: 'central' | 'planet' | 'moon' | 'asteroid' | 'comet';
   orbit: Orbit | null;
   capabilities: {
     hasSolidSurface: boolean;
     canSurfaceExplore: boolean;
     emitsLight: boolean;
     observationProfile: 'surface' | 'stellar' | 'gas' | 'black-hole' | 'pulsar';
-    renderClass: 'ordinary' | 'black-hole' | 'pulsar';
+    renderClass: 'ordinary' | 'black-hole' | 'pulsar' | 'comet';
   };
   systemId: number;
   systemName: string;
@@ -40,6 +41,12 @@ export type BodyIdentity = {
   radius: number;
   color: string;
   rings: boolean;
+  comet?: {
+    exclusion: number;
+    envelope: number;
+    periapsis: number;
+    tailLength: number;
+  };
   pulsar?: {
     period: number;
     phase: number;

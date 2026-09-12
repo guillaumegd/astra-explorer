@@ -419,6 +419,11 @@ export default function Home() {
         limit: Infinity,
       },
       {
+        key: 'comet',
+        label: t.bodyKinds.comet,
+        all: phenomena.filter((b) => b.kind === 'comet').map(fromBody),
+      },
+      {
         key: 'pulsar',
         label: t.bodyKinds.pulsar,
         all: phenomena.filter((b) => b.kind === 'pulsar').map(fromBody),
@@ -1057,11 +1062,15 @@ export default function Home() {
                                 : t.inspector.orbitsTheStar}
                     </p>
                   </div>
-                  {(selected.phenomenon || selected.pulsar) && (
+                  {(selected.phenomenon ||
+                    selected.pulsar ||
+                    selected.comet) && (
                     <p className="reading-copy">
-                      {selected.pulsar
-                        ? t.phenomena.pulsarDescription
-                        : t.phenomena.description}
+                      {selected.comet
+                        ? t.phenomena.cometDescription
+                        : selected.pulsar
+                          ? t.phenomena.pulsarDescription
+                          : t.phenomena.description}
                     </p>
                   )}
                   {selectedRemnant && (

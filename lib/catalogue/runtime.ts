@@ -93,12 +93,16 @@ export class RuntimeCatalogue {
     return list;
   }
   getPhenomena(budget: number) {
-    return this.listDestinations(
-      'phenomena',
-      budget,
-      (system) => system.bodies[0].capabilities.renderClass !== 'ordinary',
-    );
+    const count = this.activeCount(budget);
+    const cached = this.destinations.get('phenomena');
+    if (cached?.count === count) return cached.list;
+    const list = this.bodies
+      .slice(0, count)
+      .filter((b) => b.capabilities.renderClass !== 'ordinary');
+    this.destinations.set('phenomena', { count, list });
+    return list;
   }
+
   /** Primary components only; the companion is reached from the system card. */
   getBinaries(budget: number) {
     return this.listDestinations(

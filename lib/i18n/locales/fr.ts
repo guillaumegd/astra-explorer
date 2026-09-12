@@ -141,6 +141,7 @@ export const fr: Dictionary = {
   },
   loading: 'Allumage des étoiles…',
   bodyKinds: {
+    comet: 'Comète',
     pulsar: 'Pulsar',
     'black-hole': 'Trou noir',
     'red-dwarf': 'Naine rouge',
@@ -157,6 +158,8 @@ export const fr: Dictionary = {
     asteroid: 'Astéroïde',
   },
   phenomena: {
+    cometDescription:
+      'Un noyau glacé sur une orbite elliptique. Sa chevelure et ses queues s’intensifient près de l’étoile ; la queue bleue pointe à l’opposé de celle-ci.',
     pulsarDescription:
       'Une petite étoile blanc bleuté dont les deux faisceaux tournants rythment doucement la lumière. Période artistique de 4 à 10 secondes ; observation extérieure, sans accès au sol.',
     pulsarOrbit: 'Orbite autour du pulsar',

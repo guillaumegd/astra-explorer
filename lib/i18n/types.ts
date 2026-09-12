@@ -119,6 +119,7 @@ export type Dictionary = {
   loading: string;
   bodyKinds: Record<BodyKind, string>;
   phenomena: {
+    cometDescription: string;
     pulsarDescription: string;
     pulsarOrbit: string;
     description: string;

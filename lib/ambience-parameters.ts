@@ -206,6 +206,15 @@ export const soundProfiles: Record<
     tone: 0.005,
     sparkle: 0.04,
   },
+  comet: {
+    band: 1900,
+    q: 2,
+    breath: 0.028,
+    noise: 0.018,
+    drone: 220,
+    tone: 0.003,
+    sparkle: 0.04,
+  },
   asteroid: {
     band: 2100,
     q: 4,

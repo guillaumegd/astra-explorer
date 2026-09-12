@@ -107,6 +107,7 @@ export type GalaxyEngine = {
 };
 
 const vertexShader = `
+  attribute vec3 aEccentricity;
   attribute vec4 aOrbit0;
   attribute vec4 aOrbit1;
   attribute vec4 aOrbit2;
@@ -142,7 +143,7 @@ const vertexShader = `
     float angle = uRotation * (0.35 + 0.65 / (radius * 0.15 + 1.0));
     p.xz = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * p.xz;
     p.y += sin(uTime * 0.25 + radius * 1.3 + aSeed * 12.0) * 0.035;
-    vec3 orbitalDelta=orbitPosition(aOrbit0,uRotation)+orbitPosition(aOrbit1,uRotation)+orbitPosition(aOrbit2,uRotation);
+    vec3 orbitalDelta=orbitPosition(aOrbit0,uRotation,aEccentricity.x)+orbitPosition(aOrbit1,uRotation,aEccentricity.y)+orbitPosition(aOrbit2,uRotation,aEccentricity.z);
     p += orbitalDelta;
     vLightDirection=mat3(modelViewMatrix)*(length(orbitalDelta)>0.?-orbitalDelta:vec3(1.,0.,0.));
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -194,13 +195,13 @@ const impostorFragment = `
  void main(){
    if(vSurface<0.001 || vFade<0.001) discard;
    vec2 p=(gl_PointCoord-0.5)*2.0/max(vDiscScale,0.001); float r=dot(p,p); if(r>1.0)discard;
-   if(vPhenomenon>1.5){
+   if(vPhenomenon>1.5 && vPhenomenon<2.5){
      float core=1.-smoothstep(.006,.018,r);
      float halo=exp(-r*32.)*.24;
      gl_FragColor=vec4(mix(vBodyColor,vec3(1.),core*.35),
        max(core,halo)*vSurface*vFade);return;
    }
-   if(vPhenomenon>.5){
+   if(vPhenomenon>.5 && vPhenomenon<1.5){
      float ring=smoothstep(.05,.12,r)*(1.-smoothstep(.5,1.,r));
      gl_FragColor=vec4(vBodyColor*ring*.8,vSurface*vFade);return;
    }
@@ -292,6 +293,10 @@ export function createGalaxy(
       `aOrbit${level}`,
       new THREE.InterleavedBufferAttribute(orbitalBuffer, 4, level * 4),
     );
+  geometry.setAttribute(
+    'aEccentricity',
+    new THREE.InterleavedBufferAttribute(orbitalBuffer, 3, ORBIT_DEPTH * 4),
+  );
   geometry.setAttribute('aBodyRadius', new THREE.BufferAttribute(bodyRadii, 1));
   geometry.setAttribute('aBodyType', new THREE.BufferAttribute(bodyTypes, 1));
   geometry.setAttribute('aBodyColor', new THREE.BufferAttribute(bodyColors, 3));
@@ -299,11 +304,13 @@ export function createGalaxy(
     'aPhenomenon',
     new THREE.BufferAttribute(
       Float32Array.from({ length: max }, (_, id) =>
-        catalogue.getBody(id).pulsar
-          ? 2
-          : catalogue.getBody(id).phenomenon
-            ? 1
-            : 0,
+        catalogue.getBody(id).comet
+          ? 3
+          : catalogue.getBody(id).pulsar
+            ? 2
+            : catalogue.getBody(id).phenomenon
+              ? 1
+              : 0,
       ),
       1,
     ),
@@ -365,6 +372,10 @@ export function createGalaxy(
       `aOrbit${level}`,
       new THREE.BufferAttribute(new Float32Array(dustCount * 4), 4),
     );
+  dustGeometry.setAttribute(
+    'aEccentricity',
+    new THREE.BufferAttribute(new Float32Array(dustCount * 3), 3),
+  );
   const dustPositions = new Float32Array(dustCount * 3);
   const dustSizes = new Float32Array(dustCount);
   for (let i = 0; i < dustCount; i++) {
@@ -478,7 +489,7 @@ export function createGalaxy(
     uniforms,
     fragmentShader: `varying float vSurface,vFade,vDiscScale,vPhenomenon;
       void main(){if((vPhenomenon>.5 && vPhenomenon<1.5) || vSurface<.5 || vFade<.5 ||
-        length((gl_PointCoord-.5)*2.)>vDiscScale*(vPhenomenon>1.5?.098:.98))discard;gl_FragColor=vec4(0.);}`,
+        length((gl_PointCoord-.5)*2.)>vDiscScale*(vPhenomenon>1.5 && vPhenomenon<2.5?.098:.98))discard;gl_FragColor=vec4(0.);}`,
     colorWrite: false,
     depthWrite: true,
     depthTest: true,
@@ -541,7 +552,7 @@ export function createGalaxy(
   const pickMaterial = new THREE.ShaderMaterial({
     vertexShader: vertexShader.replace(
       'vId = aId;',
-      'gl_PointSize = max(aPhenomenon>1.5 ? min(diameter*.1,uMaxPointSize) : gl_PointSize, (aPhenomenon>.5 ? 12.0 : 7.0) * uPixelRatio); vId = aId;',
+      'gl_PointSize = max(aPhenomenon>1.5 && aPhenomenon<2.5 ? min(diameter*.1,uMaxPointSize) : gl_PointSize, (aPhenomenon>.5 ? 12.0 : 7.0) * uPixelRatio); vId = aId;',
     ),
     fragmentShader: `
     varying float vId;
@@ -562,7 +573,7 @@ export function createGalaxy(
       void main(){float d=length(gl_PointCoord-.5)*2.;
         if(vFade<.01 || d>1.)discard;
         float alpha=vSurface>.5 ? (d<vDiscScale?1.:0.) : exp(-d*d*5.)*.42+exp(-d*d*35.)*.58;
-        if(vPhenomenon>1.5 && vSurface>.5){
+        if(vPhenomenon>1.5 && vPhenomenon<2.5 && vSurface>.5){
           float r=pow(d/max(vDiscScale,.001),2.);
           alpha=max(1.-smoothstep(.006,.018,r),exp(-r*32.)*.24)*vSurface;
         }
@@ -763,9 +774,10 @@ export function createGalaxy(
   ) => {
     if (!selected) return;
     targetDistance =
-      (selected.phenomenon ?? selected.pulsar)
+      (selected.phenomenon ?? selected.pulsar ?? selected.comet)
         ? framingDistance(
-            (selected.phenomenon ?? selected.pulsar)!.envelope,
+            (selected.phenomenon ?? selected.pulsar ?? selected.comet)!
+              .envelope,
             camera.aspect,
           )
         : selected.radius * 4.2;
@@ -820,7 +832,7 @@ export function createGalaxy(
     surfaceAnchor = null;
     regionFocus = null;
     selected = describeBody(id);
-    if (selected.phenomenon || selected.pulsar) {
+    if (selected.phenomenon || selected.pulsar || selected.comet) {
       elevation = (25 * Math.PI) / 180;
       azimuth = 0.6;
     }
@@ -854,15 +866,16 @@ export function createGalaxy(
     clearFrame();
     if (!selected) select(0);
     targetDistance =
-      (selected!.phenomenon ?? selected!.pulsar)
+      (selected!.phenomenon ?? selected!.pulsar ?? selected!.comet)
         ? framingDistance(
-            (selected!.phenomenon ?? selected!.pulsar)!.envelope,
+            (selected!.phenomenon ?? selected!.pulsar ?? selected!.comet)!
+              .envelope,
             camera.aspect,
           )
         : selected!.radius * 4.2;
     if (!travel && distance > targetDistance * 1.1)
       startTravel(focus.clone(), selected);
-    if (selected!.phenomenon || selected!.pulsar) {
+    if (selected!.phenomenon || selected!.pulsar || selected!.comet) {
       elevation = (25 * Math.PI) / 180;
       azimuth = 0.6;
     }
@@ -1025,11 +1038,14 @@ export function createGalaxy(
         previousAspect,
         camera.aspect,
       );
-    } else if (selected && (selected.phenomenon || selected.pulsar)) {
+    } else if (
+      selected &&
+      (selected.phenomenon || selected.pulsar || selected.comet)
+    ) {
       const scale =
         framingDistance(1, camera.aspect) / framingDistance(1, previousAspect);
       targetDistance = Math.max(
-        (selected.phenomenon ?? selected.pulsar)!.exclusion,
+        (selected.phenomenon ?? selected.pulsar ?? selected.comet)!.exclusion,
         targetDistance * scale,
       );
     }
@@ -1557,7 +1573,9 @@ export function createGalaxy(
       const depth = -viewPosition.z;
       projected.project(camera);
       const pixels =
-        (bodyRadii[id] * projectionScale) / Math.max(depth, 0.000001);
+        ((catalogue.getBody(id).comet?.envelope ?? bodyRadii[id]) *
+          projectionScale) /
+        Math.max(depth, 0.000001);
       return {
         d,
         pixels,
@@ -1680,6 +1698,7 @@ export function createGalaxy(
       wallTime,
       reduced.matches ? 0 : activityTime,
       reduced.matches,
+      rotation,
     );
     fades.push(...specialFades);
     // A small sweep is exact for rigid moving regions; differential unshear is not.
@@ -1846,9 +1865,10 @@ export function createGalaxy(
     }
     // Report discrete UI changes only, including wheel and keyboard navigation.
     const viewRadius =
-      selected && (selected.phenomenon ?? selected.pulsar)
+      selected && (selected.phenomenon ?? selected.pulsar ?? selected.comet)
         ? framingDistance(
-            (selected.phenomenon ?? selected.pulsar)!.envelope,
+            (selected.phenomenon ?? selected.pulsar ?? selected.comet)!
+              .envelope,
             camera.aspect,
           ) / 4.2
         : (selected?.radius ?? 1);

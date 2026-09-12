@@ -291,8 +291,39 @@ export function generateSystem(
     envelope = Math.max(envelope, orbitalRadius + body.radius);
     orbitalRadius *= spacing;
   }
-  if (!compact && stream(seed, 'comet')() < COMET_PROBABILITY)
-    reservedBodyIds.push(persistentId(slot++));
+  if (!compact && stream(seed, 'comet')() < COMET_PROBABILITY) {
+    const draw = stream(seed, 'orbits:comet');
+    const eccentricity = 0.45 + draw() * 0.35;
+    const periapsis = Math.max(
+      0.025,
+      central.radius * 8,
+      (binary?.separation ?? 0) * 3,
+    );
+    const radius = periapsis / (1 - eccentricity);
+    const comet = add(11, 'comet', orbitParent, {
+      parentId: orbitParent?.id ?? null,
+      radius,
+      eccentricity,
+      phase: draw() * Math.PI * 2,
+      speed: 0.04 * (0.1 / radius) ** 1.5,
+      inclination: 0.3 + draw() * 0.7,
+    });
+    comet.kind = 'comet';
+    comet.color = '#b8dfed';
+    comet.capabilities.renderClass = 'comet';
+    comet.capabilities.canSurfaceExplore = false;
+    const tailLength = comet.radius * 120;
+    comet.comet = {
+      exclusion: comet.radius * 1.5,
+      periapsis,
+      tailLength,
+      envelope: tailLength + comet.radius * 8,
+    };
+    envelope = Math.max(
+      envelope,
+      radius * (1 + eccentricity) + comet.comet.envelope,
+    );
+  }
   const gaussian = () =>
     Math.sqrt(-2 * Math.log(Math.max(placement(), 0.0001))) *
     Math.cos(placement() * Math.PI * 2);

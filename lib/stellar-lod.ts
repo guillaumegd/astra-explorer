@@ -32,6 +32,7 @@ export function surfaceLevel(ratio: number, current = 2): number {
 }
 
 export function minimumOrbitRatio(body: BodyIdentity): number {
+  if (body.comet) return body.comet.exclusion / body.radius;
   if (body.pulsar) return body.pulsar.exclusion / body.radius;
   if (body.phenomenon) return body.phenomenon.exclusion / body.radius;
   return body.type === 8

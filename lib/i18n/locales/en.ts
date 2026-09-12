@@ -141,6 +141,7 @@ export const en: Dictionary = {
   },
   loading: 'Lighting the stars…',
   bodyKinds: {
+    comet: 'Comet',
     pulsar: 'Pulsar',
     'black-hole': 'Black hole',
     'red-dwarf': 'Red dwarf',
@@ -157,6 +158,8 @@ export const en: Dictionary = {
     asteroid: 'Asteroid',
   },
   phenomena: {
+    cometDescription:
+      'An icy nucleus on an elliptical orbit. Its coma and tails grow stronger near the star; the blue tail points away from it.',
     pulsarDescription:
       'A small blue-white star with two rotating beams that gently modulate its light. Artistic period of 4 to 10 seconds; external observation with no surface landing.',
     pulsarOrbit: 'Orbiting the pulsar',

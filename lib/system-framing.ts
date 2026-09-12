@@ -10,9 +10,14 @@ export function systemBounds(rootId: number | null, catalogue: OrbitalBody[]) {
   const visualRadius = (
     body: OrbitalBody & {
       phenomenon?: { envelope: number };
+      comet?: { envelope: number };
       pulsar?: { envelope: number };
     },
-  ) => body.phenomenon?.envelope ?? body.pulsar?.envelope ?? body.radius;
+  ) =>
+    body.phenomenon?.envelope ??
+    body.pulsar?.envelope ??
+    body.comet?.envelope ??
+    body.radius;
   const root = rootId === null ? undefined : byId.get(rootId);
   let radius = root ? visualRadius(root) : 0;
   for (const body of catalogue) {
@@ -23,13 +28,15 @@ export function systemBounds(rootId: number | null, catalogue: OrbitalBody[]) {
     while (node.id !== rootId && !seen.has(node.id)) {
       seen.add(node.id);
       if (node.parentId === null) {
-        if (node.orbit) extent += node.orbit.radius;
+        if (node.orbit)
+          extent += node.orbit.radius * (1 + (node.orbit.eccentricity ?? 0));
         atBarycentre = true;
         break;
       }
       const parent = byId.get(node.parentId);
       if (!parent) break;
-      extent += orbitFor(node, parent).radius;
+      extent +=
+        orbitFor(node, parent).radius * (1 + (node.orbit?.eccentricity ?? 0));
       node = parent;
     }
     if (node.id === rootId || (rootId === null && atBarycentre)) {

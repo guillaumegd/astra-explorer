@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createComet } from './comet.ts';
 import { createPulsar } from './pulsar.ts';
 import { createBlackHole } from './black-hole.ts';
 import type { LensSubject } from './lensing.ts';
@@ -14,7 +15,8 @@ export function createPhenomenaManager(parent: THREE.Group) {
     {
       renderer:
         | ReturnType<typeof createBlackHole>
-        | ReturnType<typeof createPulsar>;
+        | ReturnType<typeof createPulsar>
+        | ReturnType<typeof createComet>;
       fade: number;
       seen: number;
     }
@@ -27,6 +29,7 @@ export function createPhenomenaManager(parent: THREE.Group) {
       time: number,
       simulationTime: number,
       reducedMotion = false,
+      orbitTime = simulationTime,
     ) {
       const dt =
         previous === null ? 0 : Math.min(0.1, Math.max(0, time - previous));
@@ -50,9 +53,11 @@ export function createPhenomenaManager(parent: THREE.Group) {
             entries.delete(stale[0]);
           }
           entry = {
-            renderer: c.identity.pulsar
-              ? createPulsar(c.identity)
-              : createBlackHole(c.identity),
+            renderer: c.identity.comet
+              ? createComet(c.identity)
+              : c.identity.pulsar
+                ? createPulsar(c.identity)
+                : createBlackHole(c.identity),
             fade: 0,
             seen: time,
           };
@@ -68,7 +73,12 @@ export function createPhenomenaManager(parent: THREE.Group) {
       const fades: { id: number; fade: number }[] = [];
       for (const [id, entry] of entries) {
         if (!ids.has(id)) entry.fade *= Math.exp(-dt / 0.4);
-        entry.renderer.update(simulationTime, entry.fade, reducedMotion);
+        entry.renderer.update(
+          simulationTime,
+          entry.fade,
+          reducedMotion,
+          orbitTime,
+        );
         if (time - entry.seen > 4) {
           entry.renderer.dispose();
           entries.delete(id);
