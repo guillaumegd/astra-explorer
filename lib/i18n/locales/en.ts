@@ -161,7 +161,7 @@ export const en: Dictionary = {
     cometDescription:
       'An icy nucleus on an elliptical orbit. Its coma and tails grow stronger near the star; the blue tail points away from it.',
     pulsarDescription:
-      'A small blue-white star with two rotating beams that gently modulate its light. Artistic period of 4 to 10 seconds; external observation with no surface landing.',
+      'A neutron star surrounded by a particle wind, diffuse rings and polar jets. Magnetic beams sweep the sky. Inspired by a young pulsar; rotation slowed to 4–10 seconds.',
     pulsarOrbit: 'Orbiting the pulsar',
     description:
       'A deep shadow surrounded by a luminous disk of matter. Artistic dimensions and colors; exterior observation only.',
@@ -186,7 +186,7 @@ export const en: Dictionary = {
     nebulaDescription:
       'A cloud of gas and dust spanning several systems, with dark pockets and drifting filaments. You can fly through it. Palette and density are artistic.',
     remnantDescription:
-      'The fragmented shell left behind by a star, around a hollow cavity holding its pulsar. Its brightness breathes slowly; the shell itself does not expand.',
+      'The fragmented shell left behind by a star, around a hollow cavity holding its pulsar. Its filaments remain steady during a visit; the shell does not expand.',
     inside: 'You are inside this region',
     toPulsar: 'View the pulsar',
     toRemnant: 'View the remnant',

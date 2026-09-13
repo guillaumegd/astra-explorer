@@ -40,40 +40,75 @@ export function createNebula(region: RegionDefinition, steps = 16) {
     blendDst: THREE.OneMinusSrcAlphaFactor,
     fragmentShader: `
       ${volumeChunk}
+      // Three asymmetric morphologies, all strictly inside the integration bound.
+      float morphology(vec3 q) {
+        float angle = uSeed * 2.39996;
+        q.xy = mat2(cos(angle), -sin(angle), sin(angle), cos(angle)) * q.xy;
+        float kind = mod(floor(uSeed), 3.0);
+        float field;
+        if (kind < 1.0) {
+          // A folded ribbon with two unequal branches and a dark cleft.
+          float spine = q.y - .24 * sin(q.x * 4.3 + uSeed);
+          float spineGas = exp(-pow(spine / .22, 2.) - pow(q.z / .27, 2.));
+          float branch = exp(-pow((q.y + .34 + q.x * .35) / .16, 2.) - pow((q.z - .15) / .2, 2.));
+          field = max(spineGas, branch * .68) * (1. - smoothstep(.48, 1., abs(q.x)));
+        } else if (kind < 2.0) {
+          // Unequal lobes, with a pinched waist rather than a filled ball.
+          float left = exp(-dot((q-vec3(-.38,.12,0.))/vec3(.36,.28,.25), (q-vec3(-.38,.12,0.))/vec3(.36,.28,.25)));
+          float right = exp(-dot((q-vec3(.3,-.13,.1))/vec3(.5,.23,.3), (q-vec3(.3,-.13,.1))/vec3(.5,.23,.3)));
+          field = max(left, right) * (1.-.65*exp(-q.x*q.x/.014));
+        } else {
+          // Broken wind-blown arc, offset cavity and trailing gas.
+          float r = length(q.xy-vec2(-.14,.05));
+          field = exp(-pow((r-.48)/.17,2.)-pow(q.z/.22,2.));
+          field *= smoothstep(-.5,.15,q.x+q.y*.45);
+        }
+        return field * (1.-smoothstep(.86,1.04,length(q)));
+      }
       void main() {
         vec3 rd = normalize(vLocal - uEye);
         float t0, t1;
         if (!volumeSpan(rd, t0, t1)) discard;
         float dt = (t1 - t0) / float(STEPS);
-        float jitter = hash13(vec3(gl_FragCoord.xy, uTime)) * dt;
+        float jitter = hash13(vec3(gl_FragCoord.xy, uSeed)) * dt;
         vec3 colour = vec3(0.0);
         float transmittance = 1.0;
         for (int i = 0; i < STEPS; i++) {
           vec3 base = basePoint(uEye + rd * (t0 + jitter + float(i) * dt));
-          float r = length(base) / uRadius;
-          // The silhouette follows a low frequency of the same field, so the
-          // cloud is never the clean ball its bounding sphere would give.
-          float shape = valueNoise(base * (0.9 / uRadius) + uSeed);
-          float falloff =
-            1.0 - smoothstep(0.28 + shape * 0.3, 0.72 + shape * 0.42, r);
-          if (falloff <= 0.0) continue;
-          float n = fbm(base * (3.4 / uRadius) + uSeed +
-                        vec3(0.0, uTime * 0.015, uTime * 0.01));
-          // Dark pockets: a soft threshold on the field, never a hard cut.
-          float pocket = smoothstep(0.3, 0.62, n);
-          float density = uDensity * falloff * pocket;
-          if (density <= 0.002) continue;
-          vec3 tint = mix(uPocket,
-                          mix(uFilament, uGlow, smoothstep(0.46, 0.86, n)),
-                          pocket);
-          colour += tint * density * dt * transmittance * 0.42;
-          transmittance *= exp(-density * dt * 0.3);
+          vec3 q = base / uRadius;
+          // Slow differential stirring, bounded well inside the region envelope.
+          q += .025 * sin(vec3(q.y,q.z,q.x)*3. + uSeed + uTime*.035);
+          float shape = valueNoise(q * 2.3 + uSeed);
+          vec3 distorted = q + (vec3(shape, valueNoise(q*3.1+uSeed+9.), valueNoise(q*2.7+uSeed+23.))-.5)*.22;
+          float falloff = morphology(distorted) * (1.-smoothstep(.9,1.04,length(q)));
+          if (falloff <= 0.002) continue;
+          // Coherent folds, rather than a spherical cloud of independent blobs.
+          vec3 warp = vec3(shape, valueNoise(q * 2.1 + uSeed + 17.0),
+                           valueNoise(q * 2.1 + uSeed + 39.0)) - 0.5;
+          float n = fbm(q * vec3(3.4, 5.8, 3.4) + warp * 2.4 + uSeed +
+                       vec3(0.0, uTime * 0.0015, uTime * 0.001));
+          float dust = smoothstep(0.59, 0.82, n);
+          float ridge = 1.0 - smoothstep(0.035, 0.15, abs(n - 0.48));
+          float gas = smoothstep(0.25, 0.52, n) * (1.0 - dust * 0.8);
+          float density = uDensity * falloff * (gas * 0.55 + dust * 1.2);
+          float coverage = 1.0 - exp(-density * dt * 4.8 / uRadius);
+          float excitation = smoothstep(.3,.7,valueNoise(q*2.8+uSeed+51.));
+          vec3 tint = mix(uGlow, uFilament, excitation);
+          // Dust removes background light; it is not a dark luminous gas.
+          tint = mix(tint * (0.85 + ridge * 1.2), uPocket * 0.12, dust);
+          colour += tint * coverage * transmittance;
+          transmittance *= 1.0 - coverage;
         }
         // Seen from the core the cloud fills the whole field, so it has to stay
         // a veil: stars must remain readable and this must never be a wall.
-        float alpha = min(0.55, 1.0 - transmittance) * uFade;
+        float rawAlpha = 1.0 - transmittance;
+        float alpha = min(0.55, rawAlpha) * uFade;
         if (alpha < 0.004) discard;
-        gl_FragColor = vec4(colour * uFade, alpha);
+        // Convert straight emitted colour, then premultiply for the custom blend.
+        gl_FragColor = vec4(colour / max(rawAlpha, 0.0001), alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        gl_FragColor.rgb *= alpha;
       }`,
   });
   const mesh = new THREE.Mesh(

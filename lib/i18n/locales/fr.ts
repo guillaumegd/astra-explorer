@@ -161,7 +161,7 @@ export const fr: Dictionary = {
     cometDescription:
       'Un noyau glacé sur une orbite elliptique. Sa chevelure et ses queues s’intensifient près de l’étoile ; la queue bleue pointe à l’opposé de celle-ci.',
     pulsarDescription:
-      'Une petite étoile blanc bleuté dont les deux faisceaux tournants rythment doucement la lumière. Période artistique de 4 à 10 secondes ; observation extérieure, sans accès au sol.',
+      'Une étoile à neutrons entourée d’un vent de particules, d’anneaux diffus et de jets polaires. Les faisceaux magnétiques balayent le ciel. Vue inspirée d’un jeune pulsar ; rotation ralentie à 4–10 secondes.',
     pulsarOrbit: 'Orbite autour du pulsar',
     description:
       'Une ombre profonde entourée d’un disque de matière lumineux. Dimensions et couleurs artistiques ; observation extérieure uniquement.',
@@ -186,7 +186,7 @@ export const fr: Dictionary = {
     nebulaDescription:
       'Un nuage de gaz et de poussière qui couvre plusieurs systèmes, avec des poches sombres et des filaments lents. On peut le traverser. Palette et densité artistiques.',
     remnantDescription:
-      'La coque fragmentée laissée par une étoile, autour d’une cavité creuse qui abrite son pulsar. Sa luminosité respire lentement ; la coque, elle, ne s’étend pas.',
+      'La coque fragmentée laissée par une étoile, autour d’une cavité creuse qui abrite son pulsar. Ses filaments restent stables à l’échelle de la visite ; la coque ne s’étend pas.',
     inside: 'Vous êtes à l’intérieur de cette région',
     toPulsar: 'Voir le pulsar',
     toRemnant: 'Voir le vestige',

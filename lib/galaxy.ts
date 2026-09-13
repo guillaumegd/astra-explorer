@@ -44,7 +44,7 @@ import {
   mixLocalLights,
   type LocalLight,
 } from './body-lighting';
-import { REGION_DETAIL_LIMIT, STELLAR_LUMINOSITY } from './catalogue/config';
+import { STELLAR_LUMINOSITY } from './catalogue/config';
 import type { RegionDefinition } from './catalogue/types';
 
 export type GalaxySettings = {
@@ -477,7 +477,7 @@ export function createGalaxy(
     uniforms.uPixelRatio.value = cube.renderTarget.width / 512;
     uniforms.uContextStrength.value = 0;
     try {
-      cube.update(renderer, skyScene);
+      regions.captureSky(skyGroup, () => cube.update(renderer, skyScene));
     } finally {
       uniforms.uProjectionScale.value = projection;
       uniforms.uPixelRatio.value = ratio;
@@ -959,9 +959,15 @@ export function createGalaxy(
       const points = Array.from({ length: 96 }, (_, i) => {
         const a = (i / 96) * Math.PI * 2;
         return new THREE.Vector3(
-          Math.cos(a) * orbit.radius,
-          Math.sin(a) * orbit.radius * Math.sin(orbit.inclination),
-          Math.sin(a) * orbit.radius * Math.cos(orbit.inclination),
+          (Math.cos(a) - (orbit.eccentricity ?? 0)) * orbit.radius,
+          Math.sin(a) *
+            orbit.radius *
+            Math.sqrt(1 - (orbit.eccentricity ?? 0) ** 2) *
+            Math.sin(orbit.inclination),
+          Math.sin(a) *
+            orbit.radius *
+            Math.sqrt(1 - (orbit.eccentricity ?? 0) ** 2) *
+            Math.cos(orbit.inclination),
         );
       });
       const line = new THREE.LineLoop(
@@ -1381,9 +1387,9 @@ export function createGalaxy(
     surfaceTilt += (desired - surfaceTilt) * (1 - Math.exp(-dt * 4));
     if (selected && terrainView && ratio < 1.8) {
       surfaceEuler.set(
-        0.12,
+        selected.binary ? -(selected.orbit?.inclination ?? 0) : 0.12,
         rotation * (0.2 + selected.seed * 0.004),
-        selected.seed * 0.01,
+        selected.binary ? 0 : selected.seed * 0.01,
       );
       group.getWorldQuaternion(surfaceOrientation);
       surfaceOrientation.multiply(
@@ -1760,15 +1766,22 @@ export function createGalaxy(
       rotation,
       reduced.matches,
     );
-    host.dataset.regions = String(regions.stats().cached);
+    host.dataset.regions = String(
+      regions.stats().cached + regions.stats().persistent,
+    );
     // Reached by marker or by the menu, never by ray: a transparent volume must
     // not steal a click from the stars behind it.
     markedRegions.length = 0;
     for (const candidate of regionCandidates)
-      if (candidate.inside === 0 && candidate.pixels > 8)
+      if (
+        candidate.focused &&
+        candidate.inside === 0 &&
+        candidate.pixels > 8 &&
+        regions.isVisible(candidate.region.regionId)
+      )
         markedRegions.push(candidate);
     markedRegions.sort((a, b) => b.pixels - a.pixels);
-    markedRegions.length = Math.min(markedRegions.length, REGION_DETAIL_LIMIT);
+
     for (const [id, node] of regionMarkers)
       if (!markedRegions.some((c) => c.region.regionId === id)) {
         node.remove();
@@ -1779,7 +1792,25 @@ export function createGalaxy(
       let node = regionMarkers.get(region.regionId);
       if (!node) {
         node = document.createElement('button');
-        node.className = 'system-marker';
+        node.className = 'region-outline';
+        const svg = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'svg',
+        );
+        svg.setAttribute('viewBox', '0 0 100 100');
+        svg.setAttribute('aria-hidden', 'true');
+        const ring = document.createElementNS(
+          'http://www.w3.org/2000/svg',
+          'circle',
+        );
+        ring.setAttribute('cx', '50');
+        ring.setAttribute('cy', '50');
+        ring.setAttribute('r', '48');
+        const hitRing = ring.cloneNode() as SVGCircleElement;
+        hitRing.classList.add('region-hit');
+        svg.appendChild(hitRing);
+        svg.appendChild(ring);
+        node.appendChild(svg);
         node.dataset.label = region.name;
         node.dataset.central = 'false';
         const label = messages.regionLabel(region.type);
@@ -1799,11 +1830,15 @@ export function createGalaxy(
         .copy(candidate.position)
         .applyMatrix4(group.matrixWorld)
         .project(camera);
+      const diameter = Math.max(40, candidate.pixels * 2);
+      node.style.width = `${diameter}px`;
+      node.style.height = `${diameter}px`;
+      node.dataset.focused = String(candidate.focused);
       node.style.display =
         projected.z > -1 &&
         projected.z < 1 &&
-        Math.abs(projected.x) < 1 &&
-        Math.abs(projected.y) < 1
+        Math.abs(projected.x) < 1 + diameter / host.clientWidth &&
+        Math.abs(projected.y) < 1 + diameter / renderHeight
           ? 'block'
           : 'none';
       node.style.left = `${(projected.x * 0.5 + 0.5) * host.clientWidth}px`;

@@ -2,7 +2,6 @@ import {
   CATALOGUE_SEED,
   GALAXY_ENVELOPE,
   NEBULA_CELL,
-  NEBULA_OFFSET_LIMIT,
   NEBULA_PALETTES,
   NEBULA_PROBABILITY,
   NEBULA_RADIUS_SPAN,
@@ -15,9 +14,8 @@ import { stream, subSeed } from './random.ts';
 import type { RegionDefinition, SystemDefinition } from './types.ts';
 
 /**
- * Regions are generated from a fixed spatial partition, never from the system
- * list, so density can never add or remove one. The grid is the spatial index:
- * there is no structure to build, keep in sync or invalidate.
+ * Persistent slots determine presence independently of the system list.
+ * Separate clustered placement removes any spatial lattice without renaming IDs.
  */
 export const CELL_SPAN = Math.ceil(GALAXY_ENVELOPE.radius / NEBULA_CELL);
 export const cellCentre = (i: number) => (i + 0.5) * NEBULA_CELL;
@@ -40,7 +38,28 @@ export function nebulaFor(
   if (draw() >= NEBULA_PROBABILITY) return null;
   const span = NEBULA_RADIUS_SPAN[1] - NEBULA_RADIUS_SPAN[0];
   const radius = (NEBULA_RADIUS_SPAN[0] + draw() * span) * NEBULA_CELL;
-  const offset = NEBULA_OFFSET_LIMIT * NEBULA_CELL;
+  // IDs keep their original slots; placement is a separate clustered stream.
+  const location = stream(
+    subSeed(globalSeed, 'nebula:placement'),
+    `slot:${i}:${k}`,
+  );
+  const complex = Math.floor(location() * 5);
+  const cluster = stream(
+    subSeed(globalSeed, 'nebula:complex'),
+    String(complex),
+  );
+  const angle = cluster() * Math.PI * 2;
+  const distance = 0.6 + cluster() ** 1.35 * (GALAXY_ENVELOPE.radius - 3.6);
+  const scatter = 0.7 + cluster() * 1.5;
+  const gaussian = () =>
+    Math.sqrt(-2 * Math.log(Math.max(location(), 0.0001))) *
+    Math.cos(location() * Math.PI * 2);
+  let x = Math.cos(angle) * distance + gaussian() * scatter;
+  let z = Math.sin(angle) * distance + gaussian() * scatter;
+  const limit = GALAXY_ENVELOPE.radius - radius * REGION_ENVELOPE_MARGIN;
+  const clamp = Math.min(1, limit / Math.max(Math.hypot(x, z), 0.001));
+  x *= clamp;
+  z *= clamp;
   const index = cellIndex(i, k);
   const palette = NEBULA_PALETTES[Math.floor(draw() * NEBULA_PALETTES.length)];
   return {
@@ -48,11 +67,7 @@ export function nebulaFor(
     type: 'nebula',
     seed: draw() * 100,
     name: `NEB-V2-${pad(index, 5)}`,
-    center: [
-      cellCentre(i) + (draw() * 2 - 1) * offset,
-      (draw() * 2 - 1) * GALAXY_ENVELOPE.halfHeight * 0.5,
-      cellCentre(k) + (draw() * 2 - 1) * offset,
-    ],
+    center: [x, (draw() * 2 - 1) * GALAXY_ENVELOPE.halfHeight * 0.5, z],
     radius,
     envelope: radius * REGION_ENVELOPE_MARGIN,
     palette: [palette[0], palette[1], palette[2]],

@@ -138,9 +138,9 @@ test('finite disk is selectable edge-on away from the shadow and stays inside it
   effect.dispose();
 });
 
-test('region cache is bounded to two, expires, and releases everything', () => {
+test('remnant cache is bounded to two, expires, and releases everything', () => {
   const cat = new RuntimeCatalogue();
-  const list = [...cat.listNebulae(), ...cat.getRemnants(120000)];
+  const list = cat.getRemnants(120000);
   assert.ok(list.length >= 6);
   const parent = new THREE.Group(),
     manager = createRegionManager(parent);

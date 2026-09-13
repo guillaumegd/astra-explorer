@@ -111,10 +111,13 @@ const fragmentShader = `
      plasma=mix(plasma,plasma*.75+cells*.25,smoothstep(0.,1.,uDetail));
      float spotField=noise(p*7.0+offset+vec3(uTime*.008,0.,uTime*.005));
      float spots=smoothstep(0.67,0.80,spotField);
-     color=mix(uColor*0.25,mix(uColor,vec3(1.0),0.45),smoothstep(0.3,0.72,plasma));
-     float stream=pow(.5+.5*sin(p.y*160.+convection.x*16.+noise(p*20.+offset)*9.-uTime*.8),9.);
-     color+=uColor*stream*.22*smoothstep(0.,2.,uDetail);
-     color*=(1.0-spots*0.7)*(0.5+0.7*pow(facing,0.35));
+     // Photospheric granules have modest contrast; avoid luminous latitude rings.
+     float resolved=1.-smoothstep(.015,.045,length(fwidth(p)));
+     float granules=mix(.5,plasma,resolved);
+     color=mix(uColor,vec3(1.0),0.3)*(0.82+0.36*granules);
+     float mu=facing;
+     float limb=1.-.48*(1.-mu)-.12*(1.-mu)*(1.-mu);
+     color*=(1.0-spots*0.58)*limb;
    } else if(uType<1.5) {
      float coast=smoothstep(0.485,0.495,land);
      vec3 ocean=mix(vec3(0.018,0.045,0.12),vec3(0.04,0.23,0.4),land*1.3);
@@ -585,9 +588,9 @@ export function createBodyLOD(
         entry.mesh.material.uniforms.uNormalStep.value =
           Math.PI / [20, 48, 96][entry.level];
         entry.mesh.rotation.set(
-          0.12,
+          body.binary ? -(body.orbit?.inclination ?? 0) : 0.12,
           spin * (0.2 + body.seed * 0.004),
-          body.seed * 0.01,
+          body.binary ? 0 : body.seed * 0.01,
         );
         if (entry.ocean) entry.ocean.rotation.copy(entry.mesh.rotation);
         const target = surfaceVisibility(

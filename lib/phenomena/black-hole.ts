@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { accretionFlow } from './accretion-flow.ts';
 import type { BodyIdentity } from '../catalogue/types.ts';
 
 /** Artistic disk in a fixed world plane; shadow remains opaque against the sky. */
@@ -50,6 +51,7 @@ export function createBlackHole(body: BodyIdentity) {
       vertexShader: `varying vec3 vP;varying vec3 vN;
       void main(){vP=position;vN=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
       fragmentShader: `
+      ${accretionFlow}
       varying vec3 vP,vN;
       uniform float uTime,uFade,uOuter,uInner,uSeed;
       uniform vec3 uColor,uEye;
@@ -72,7 +74,7 @@ export function createBlackHole(body: BodyIdentity) {
         // Reset each advected field while it is invisible: shear never accumulates.
         float age=mod(uTime,24.);
         float blend=.5-.5*cos(age*6.28318530718/24.);
-        float cloud=mix(flowField(a,r,mod(uTime+12.,24.)),flowField(a,r,age),blend);
+        float cloud=mix(flowField(-a,r,mod(uTime+12.,24.)),flowField(-a,r,age),blend);
         float filament=smoothstep(.2,.8,cloud);
         float edge=1.-smoothstep(uOuter*.72,uOuter,r);
         float innerEdge=smoothstep(uInner,uInner+.25,r);
@@ -84,12 +86,13 @@ export function createBlackHole(body: BodyIdentity) {
         float density=max(edge*innerEdge,profile*.65)*faceVisibility;
         float heat=pow(uInner/r,.75)*pow(max(0.,1.-sqrt(uInner/r)),.25);
         heat=clamp(heat*2.3,0.,1.);
-        vec3 thermal=mix(uColor*.32,vec3(1.,.89,.7),heat*heat);
-        vec3 velocity=vec3(-vP.y,vP.x,0.)/max(r,.001);
+        vec3 thermal=mix(uColor*.48,vec3(1.,.93,.82),heat*heat);
+        vec3 velocity=vec3(vP.y,-vP.x,0.)/max(r,.001);
         float beta=.32*sqrt(uInner/r);
         float doppler=sqrt(1.-beta*beta)/(1.-beta*dot(velocity,normalize(uEye-vP)));
         float boost=clamp(pow(doppler,3.),.35,2.4);
-        vec3 emission=thermal*(.35+1.8*heat)*(.4+1.1*filament)*boost;
+        vec3 emission=thermal*(.35+1.8*heat)*(.65+.75*filament)*boost;
+        emission += thermal * accretionInflow(r,-a,uInner,uOuter,uTime,uSeed) * boost * 1.1;
         emission=emission/(vec3(1.)+emission);
         gl_FragColor=vec4(emission,density*uFade*(.5+.45*filament));
         #include <tonemapping_fragment>
@@ -111,7 +114,7 @@ export function createBlackHole(body: BodyIdentity) {
     side: THREE.DoubleSide,
     uniforms,
     vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-    fragmentShader: `varying vec2 vUv;uniform float uFade,uTime;uniform vec3 uColor;void main(){float a=sin(vUv.y*3.14159)*(.7+.3*sin(vUv.y*20.-uTime*.4));gl_FragColor=vec4(mix(uColor,vec3(.6,.75,1.),.6),a*uFade*.11);}`,
+    fragmentShader: `varying vec2 vUv;uniform float uFade,uTime;uniform vec3 uColor;void main(){float a=smoothstep(0.,.12,vUv.y)*(1.-smoothstep(.25,1.,vUv.y));gl_FragColor=vec4(mix(uColor,vec3(.6,.75,1.),.6),a*uFade*.11);}`,
   });
   const jets: THREE.Mesh[] = [];
   if (p.jets)
@@ -127,8 +130,8 @@ export function createBlackHole(body: BodyIdentity) {
     }
   return {
     group,
-    update(time: number, fade: number) {
-      uniforms.uTime.value = time;
+    update(time: number, fade: number, reducedMotion = false) {
+      uniforms.uTime.value = reducedMotion ? 0 : time;
       uniforms.uFade.value = fade;
       shadow.material.opacity = fade;
       shadow.material.depthWrite = fade > 0.99;

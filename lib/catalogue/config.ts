@@ -29,8 +29,9 @@ export const NEBULA_CELL = (GALAXY_ENVELOPE.radius * 2) / 10;
 // The guide writes 1%, which over the ~79 eligible cells of this galaxy yields
 // 0.79 nebulae in total. The method is kept; only this rate is raised.
 export const NEBULA_PROBABILITY = 0.15;
-export const NEBULA_RADIUS_SPAN = [0.35, 0.65] as const;
-export const NEBULA_OFFSET_LIMIT = 0.15;
+// 0.5–1.4% of the galactic diameter: still enlarged for navigation, but
+// no longer galaxy-sized clouds (the former range occupied 7–13%).
+export const NEBULA_RADIUS_SPAN = [0.025, 0.07] as const;
 /** Of pulsar systems, so roughly 0.105% of all systems. */
 export const REMNANT_PROBABILITY = 0.15;
 export const REMNANT_SIZE_SPAN = [2, 4] as const;
@@ -39,10 +40,14 @@ export const REGION_ENVELOPE_MARGIN = 1.08;
 export const REGION_DETAIL_LIMIT = 2;
 /** Restrained palettes: glow, filament, dark pocket. Illustrative, not spectra. */
 export const NEBULA_PALETTES = [
-  ['#4a6fd8', '#9f5fd8', '#10102a'],
-  ['#d8653a', '#d8a63a', '#2a1410'],
-  ['#2fa89a', '#5fd0a8', '#0b2422'],
-  ['#c74f7a', '#6a5fd8', '#1e1028'],
+  ['#e86296', '#75c9f5', '#180d24'],
+  ['#ed784b', '#ffe2a4', '#25100b'],
+  ['#4ab7cc', '#edf0f5', '#091926'],
+  ['#b068dd', '#ef92b1', '#180d28'],
+  ['#deaa59', '#72bce8', '#20170f'],
+  ['#5894eb', '#bbb7ff', '#0a1328'],
+  ['#e34d64', '#fac4ab', '#260d15'],
+  ['#62cbb6', '#d3d8f1', '#0a201f'],
 ] as const;
 export const REMNANT_PALETTES = [
   ['#7fb7ff', '#dce9ff', '#0b1a2c'],

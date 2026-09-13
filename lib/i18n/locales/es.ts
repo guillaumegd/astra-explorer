@@ -162,7 +162,7 @@ export const es: Dictionary = {
     cometDescription:
       'Un núcleo helado en una órbita elíptica. Su coma y sus colas se intensifican cerca de la estrella; la cola azul apunta en sentido opuesto.',
     pulsarDescription:
-      'Una pequeña estrella blanco azulada con dos haces giratorios que modulan suavemente su luz. Periodo artístico de 4 a 10 segundos; observación exterior sin acceso al suelo.',
+      'Una estrella de neutrones rodeada de un viento de partículas, anillos difusos y chorros polares. Los haces magnéticos barren el cielo. Inspirado en un púlsar joven; rotación ralentizada a 4–10 segundos.',
     pulsarOrbit: 'Órbita alrededor del púlsar',
     description:
       'Una sombra profunda rodeada por un disco de materia luminoso. Dimensiones y colores artísticos; observación exterior únicamente.',
@@ -187,7 +187,7 @@ export const es: Dictionary = {
     nebulaDescription:
       'Una nube de gas y polvo que abarca varios sistemas, con bolsas oscuras y filamentos lentos. Se puede atravesar. Paleta y densidad artísticas.',
     remnantDescription:
-      'La cáscara fragmentada que deja una estrella, alrededor de una cavidad hueca que alberga su púlsar. Su brillo respira lentamente; la cáscara no se expande.',
+      'La cáscara fragmentada que deja una estrella, alrededor de una cavidad hueca que alberga su púlsar. Sus filamentos permanecen estables durante la visita; la cáscara no se expande.',
     inside: 'Estás dentro de esta región',
     toPulsar: 'Ver el púlsar',
     toRemnant: 'Ver el remanente',

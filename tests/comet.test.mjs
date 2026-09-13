@@ -143,3 +143,31 @@ test('a binary comet follows the moving primary for its antisolar direction', ()
   }
   effect.dispose();
 });
+
+test('dust trails orbital motion and the dark nucleus faces its illuminating star', () => {
+  for (const body of comets.slice(0, 12)) {
+    const effect = createComet(body);
+    const star = catalogue.getBody(body.rootId);
+    for (const time of [0, 17, 431]) {
+      effect.update(0, 1, false, time);
+      const relative = position(body, time).sub(position(star, time));
+      const velocity = position(body, time + 0.001)
+        .sub(position(star, time + 0.001))
+        .sub(relative);
+      const tail = effect.group.children[2];
+      const dust = new THREE.Vector3(1, 0, 0).applyQuaternion(tail.quaternion);
+      assert.ok(Math.abs(dust.dot(relative.clone().normalize())) < 1e-8);
+      assert.ok(dust.dot(velocity) < 0, 'dust curves behind orbital motion');
+      const sun = effect.group.children[0].material.uniforms.uSun.value;
+      assert.ok(sun.dot(relative.clone().normalize()) < -1 + 1e-8);
+      const orientation = tail.quaternion.clone();
+      effect.update(500, 0.5, true, time);
+      assert.ok(
+        orientation.equals(tail.quaternion),
+        'orientation has no frame history',
+      );
+      assert.equal(effect.group.children[0].material.uniforms.uFade.value, 0.5);
+    }
+    effect.dispose();
+  }
+});

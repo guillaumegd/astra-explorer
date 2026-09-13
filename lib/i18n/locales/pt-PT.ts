@@ -162,7 +162,7 @@ export const ptPT: Dictionary = {
     cometDescription:
       'Um núcleo gelado numa órbita elíptica. A cabeleira e as caudas intensificam-se perto da estrela; a cauda azul aponta no sentido oposto.',
     pulsarDescription:
-      'Uma pequena estrela branco-azulada com dois feixes em rotação que modulam suavemente a sua luz. Período artístico de 4 a 10 segundos; observação exterior sem acesso à superfície.',
+      'Uma estrela de neutrões rodeada por um vento de partículas, anéis difusos e jatos polares. Os feixes magnéticos varrem o céu. Inspirado num pulsar jovem; rotação abrandada para 4–10 segundos.',
     pulsarOrbit: 'Órbita em torno do pulsar',
     description:
       'Uma sombra profunda rodeada por um disco luminoso de matéria. Dimensões e cores artísticas; apenas observação exterior.',
@@ -187,7 +187,7 @@ export const ptPT: Dictionary = {
     nebulaDescription:
       'Uma nuvem de gás e poeira que abrange vários sistemas, com bolsas escuras e filamentos lentos. É possível atravessá-la. Paleta e densidade artísticas.',
     remnantDescription:
-      'A casca fragmentada deixada por uma estrela, em torno de uma cavidade oca que abriga o seu pulsar. O brilho respira lentamente; a casca não se expande.',
+      'A casca fragmentada deixada por uma estrela, em torno de uma cavidade oca que abriga o seu pulsar. Os filamentos mantêm-se estáveis durante a visita; a casca não se expande.',
     inside: 'Está dentro desta região',
     toPulsar: 'Ver o pulsar',
     toRemnant: 'Ver o remanescente',

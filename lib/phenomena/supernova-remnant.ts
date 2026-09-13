@@ -7,7 +7,7 @@ const inverse = new THREE.Matrix4();
 
 /**
  * A fragmented shell around a hollow cavity, sized from its pulsar host. The
- * brightness breathes slowly; the envelope never expands, so the catalogue and
+ * shock filaments stay steady; the envelope never expands, so the catalogue and
  * the framing stay fixed.
  */
 export function createRemnant(region: RegionDefinition, steps = 16) {
@@ -43,30 +43,40 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
         float t0, t1;
         if (!volumeSpan(rd, t0, t1)) discard;
         float dt = (t1 - t0) / float(STEPS);
-        float jitter = hash13(vec3(gl_FragCoord.xy, uTime)) * dt;
+        float jitter = hash13(vec3(gl_FragCoord.xy, uSeed)) * dt;
         vec3 colour = vec3(0.0);
         float transmittance = 1.0;
-        // Luminosity breathes; the shell itself never moves.
-        float breath = 0.86 + 0.14 * sin(uTime * 0.11);
+        // Expansion is imperceptible on the viewing timescale.
         for (int i = 0; i < STEPS; i++) {
           vec3 base = basePoint(uEye + rd * (t0 + jitter + float(i) * dt));
           float r = length(base) / uRadius;
-          // Narrow radial window: a hollow shell, not a filled cloud.
-          float shell = exp(-pow((r - 0.76) / 0.17, 2.0));
-          shell *= smoothstep(0.34, 0.56, r) * (1.0 - smoothstep(0.86, 1.0, r));
+          vec3 q = base / uRadius;
+          float folds = valueNoise(q * 4.2 + uSeed);
+          float front = 0.72 + (folds - 0.5) * 0.22;
+          // Corrugated shock sheets; integration naturally brightens the limb.
+          float width = max(0.055, dt / uRadius * 0.32);
+          float shell = exp(-pow((r - front) / width, 2.0));
+          shell *= smoothstep(0.35, 0.55, r) * (1.0 - smoothstep(0.87, 1.0, r));
           if (shell <= 0.002) continue;
-          // Higher frequency and harder contrast than a nebula: thin filaments.
-          float n = fbm(base * (7.4 / uRadius) + uSeed);
-          float filament = smoothstep(0.42, 0.72, n);
-          float density = uDensity * shell * filament * breath;
-          if (density <= 0.002) continue;
-          vec3 tint = mix(uPocket, mix(uFilament, uGlow, filament), filament);
-          colour += tint * density * dt * transmittance * 2.0 / uRadius;
-          transmittance *= exp(-density * dt * 1.4 / uRadius);
+          float n = fbm(q * 9.4 + folds * 2.0 + uSeed);
+          float filament = 1.0 - smoothstep(0.025, 0.17, abs(n - 0.52));
+          float fragments = smoothstep(0.26, 0.58, n);
+          float density = uDensity * shell * (0.12 + filament * fragments * 1.8);
+          float coverage = 1.0 - exp(-density * dt * 3.2 / uRadius);
+          // Distinct line-emission layers; palette is an illustrative mapping.
+          float outerShock = smoothstep(front - width, front + width, r);
+          vec3 tint = mix(uFilament, uGlow, outerShock);
+          colour += tint * (0.6 + filament * 0.75) * coverage * transmittance;
+          transmittance *= 1.0 - coverage;
         }
-        float alpha = min(0.7, 1.0 - transmittance) * uFade;
+        float rawAlpha = 1.0 - transmittance;
+        float alpha = min(0.7, rawAlpha) * uFade;
         if (alpha < 0.004) discard;
-        gl_FragColor = vec4(colour * uFade, alpha);
+        // Convert straight emitted colour, then premultiply for the custom blend.
+        gl_FragColor = vec4(colour / max(rawAlpha, 0.0001), alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        gl_FragColor.rgb *= alpha;
       }`,
   });
   const mesh = new THREE.Mesh(

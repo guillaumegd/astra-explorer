@@ -305,7 +305,9 @@ export function generateSystem(
       radius,
       eccentricity,
       phase: draw() * Math.PI * 2,
-      speed: 0.04 * (0.1 / radius) ** 1.5,
+      // One observable revolution in ~80–180 seconds at normal speed.
+      // The engine advances the shared orbit clock by .065 per real second.
+      speed: (Math.PI * 2) / (0.065 * (80 + radius * 180)),
       inclination: 0.3 + draw() * 0.7,
     });
     comet.kind = 'comet';

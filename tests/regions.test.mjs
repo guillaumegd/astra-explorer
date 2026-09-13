@@ -5,7 +5,6 @@ import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
 import { generateSystem } from '../lib/catalogue/generate.ts';
 import {
   CELL_SPAN,
-  cellCentre,
   cellEligible,
   listNebulae,
   nebulaFor,
@@ -15,7 +14,6 @@ import {
   CATALOGUE_SEED,
   GALAXY_ENVELOPE,
   NEBULA_CELL,
-  NEBULA_OFFSET_LIMIT,
   NEBULA_PROBABILITY,
   NEBULA_RADIUS_SPAN,
   REMNANT_PROBABILITY,
@@ -41,7 +39,7 @@ test('regions are identical whatever the order or the density', () => {
   assert.deepEqual(low.listNebulae(), a);
 });
 
-test('one region per cell at most, within the stated bounds', () => {
+test('persistent slots generate clustered regions bounded by the galaxy', () => {
   let eligible = 0,
     drawn = 0;
   for (let i = -CELL_SPAN; i < CELL_SPAN; i++)
@@ -58,9 +56,10 @@ test('one region per cell at most, within the stated bounds', () => {
       drawn++;
       assert.ok(region.radius >= NEBULA_RADIUS_SPAN[0] * NEBULA_CELL);
       assert.ok(region.radius <= NEBULA_RADIUS_SPAN[1] * NEBULA_CELL);
-      const limit = NEBULA_OFFSET_LIMIT * NEBULA_CELL;
-      assert.ok(Math.abs(region.center[0] - cellCentre(i)) <= limit);
-      assert.ok(Math.abs(region.center[2] - cellCentre(k)) <= limit);
+      assert.ok(
+        Math.hypot(region.center[0], region.center[2]) + region.envelope <=
+          GALAXY_ENVELOPE.radius + 1e-10,
+      );
       assert.ok(Math.abs(region.center[1]) <= GALAXY_ENVELOPE.halfHeight);
       assert.ok(region.envelope > region.radius);
       assert.equal(region.palette.length, 3);

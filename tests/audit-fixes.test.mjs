@@ -96,7 +96,8 @@ test('quality descends resolution then steps and recovers steps then all resolut
   for (let i = 0; i < 1000; i++) q.update(i % 2 ? 35 : 40);
   assert.equal(q.dpr, 1.75);
 });
-test('replacing a visible region waits for fade-out and never exceeds two slots', () => {
+test('replacing a visible remnant waits for fade-out and never exceeds two slots', () => {
+  const list = cat.getRemnants(120000);
   const parent = new THREE.Group(),
     manager = createRegionManager(parent);
   const c = (r) => ({

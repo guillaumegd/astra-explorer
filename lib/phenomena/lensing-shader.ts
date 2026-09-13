@@ -1,3 +1,4 @@
+import { accretionFlow } from './accretion-flow.ts';
 import { RAY_STEP, RAY_STEPS } from './geodesic.ts';
 
 export const lensingFragment = `
@@ -29,6 +30,7 @@ float flow(float a,float r,float age){
   vec3 p=vec3(cos(phase)*3.,sin(phase)*3.,r*.6+uSeed+uTime*.01);
   return .64*noise(p)+.26*noise(p*2.03)+.1*noise(p*4.07);
 }
+${accretionFlow}
 vec3 diskLight(vec3 p,vec3 direction,float observerU){
   float r=length(p),a=atan(p.z,p.x),age=mod(uTime,24.);
   float cloud=mix(flow(a,r,mod(uTime+12.,24.)),flow(a,r,age),.5-.5*cos(age*6.28318530718/24.));
@@ -37,8 +39,9 @@ vec3 diskLight(vec3 p,vec3 direction,float observerU){
   // Circular Schwarzschild orbit measured by a local static observer.
   float beta=sqrt(1./(2.*(r-1.)));
   float g=sqrt((1.-1./r)/(1.-observerU))*sqrt(1.-beta*beta)/(1.-beta*dot(tangent,-direction));
-  vec3 thermal=mix(uTint*.45,vec3(1.,.9,.73),clamp(temperature*g,0.,1.));
-  vec3 emission=thermal*(.5+2.*temperature)*(.35+1.25*cloud)*pow(g,4.);
+  vec3 thermal=mix(uTint*.45,vec3(1.,.93,.82),clamp(temperature*g,0.,1.));
+  vec3 emission=thermal*(.5+2.*temperature)*(.6+.8*cloud)*pow(g,4.);
+  emission += thermal*accretionInflow(r,a,uInner,uOuter,uTime,uSeed)*pow(g,4.)*1.1;
   return emission/(vec3(1.)+emission);
 }
 vec3 lens(vec2 uv,vec3 original){
