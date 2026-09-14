@@ -1,5 +1,9 @@
 # Performance — lot 0, instrumentation et parcours
 
+Lot suivant : [ordonnanceur de cadence et politique de qualité commune](LOT-1-ORDONNANCEUR.md).
+Ce document décrit l'instrumentation du lot 0 ; le limiteur à 45 images/s et la
+politique par comptage d'images qu'il mesurait n'existent plus depuis le lot 1.
+
 ## Capture locale
 
 Ouvrir le build statique avec `?diagnostics=1`, puis « Diagnostic local ».
@@ -77,6 +81,7 @@ La reprise de cette validation Chrome a été refusée par le contrôle automati
 pour quota d'utilisation atteint le 14 septembre 2026.
 
 L'issue #2 reste ouverte jusqu'à :
+
 - validation navigateur des nouveaux chronomètres et exécution/export des trois
   passages et de l'endurance ; seuils de régression de rendu comparables en CI ;
 - couverture complète : introduction/cache vide/audio, trou noir dans nébuleuse,

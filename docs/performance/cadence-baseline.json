@@ -1,0 +1,319 @@
+{
+  "date": "2026-09-14T10:21:32.141Z",
+  "scope": "Controller simulation only: perfectly regular or jittered callbacks and constant frame costs. No browser, no GPU, no device. A real drop in quality usually changes the frame cost, which this cannot show.",
+  "seconds": 10,
+  "cadence": [
+    {
+      "hz": 60,
+      "before": {
+        "fps": 30,
+        "intervalsMs": [33.333]
+      },
+      "after30": {
+        "fps": 30,
+        "intervalsMs": [33.333]
+      },
+      "after60": {
+        "fps": 60,
+        "intervalsMs": [16.667]
+      },
+      "after30Jittered": {
+        "fps": 30,
+        "intervalsMs": [27.681, 27.776, 28.097, 28.134, 28.138, 28.253]
+      },
+      "after60Jittered": {
+        "fps": 59.9,
+        "intervalsMs": [10.823, 11.04, 11.13, 11.191, 11.401, 11.508]
+      },
+      "freezeRecovery60": {
+        "rendersInFirstSecond": 60,
+        "target": 60,
+        "burst": false
+      }
+    },
+    {
+      "hz": 90,
+      "before": {
+        "fps": 45,
+        "intervalsMs": [22.222]
+      },
+      "after30": {
+        "fps": 30,
+        "intervalsMs": [33.333]
+      },
+      "after60": {
+        "fps": 60,
+        "intervalsMs": [11.111, 22.222]
+      },
+      "after30Jittered": {
+        "fps": 30,
+        "intervalsMs": [27.865, 27.948, 28.148, 28.515, 28.738, 28.778]
+      },
+      "after60Jittered": {
+        "fps": 60,
+        "intervalsMs": [6.147, 6.321, 6.324, 6.647, 6.673, 6.973]
+      },
+      "freezeRecovery60": {
+        "rendersInFirstSecond": 60,
+        "target": 60,
+        "burst": false
+      }
+    },
+    {
+      "hz": 120,
+      "before": {
+        "fps": 40,
+        "intervalsMs": [25]
+      },
+      "after30": {
+        "fps": 30,
+        "intervalsMs": [33.333]
+      },
+      "after60": {
+        "fps": 60,
+        "intervalsMs": [16.667]
+      },
+      "after30Jittered": {
+        "fps": 30,
+        "intervalsMs": [24.575, 24.899, 25.05, 25.371, 25.595, 25.885]
+      },
+      "after60Jittered": {
+        "fps": 60,
+        "intervalsMs": [8.24, 8.337, 8.71, 9.214, 9.249, 9.279]
+      },
+      "freezeRecovery60": {
+        "rendersInFirstSecond": 60,
+        "target": 60,
+        "burst": false
+      }
+    },
+    {
+      "hz": 144,
+      "before": {
+        "fps": 36,
+        "intervalsMs": [27.778]
+      },
+      "after30": {
+        "fps": 30,
+        "intervalsMs": [27.778, 34.722]
+      },
+      "after60": {
+        "fps": 60,
+        "intervalsMs": [13.889, 20.833]
+      },
+      "after30Jittered": {
+        "fps": 30,
+        "intervalsMs": [23.305, 24.437, 24.463, 24.858, 24.929, 25.161]
+      },
+      "after60Jittered": {
+        "fps": 60,
+        "intervalsMs": [6.403, 6.711, 6.804, 6.882, 7.528, 7.632]
+      },
+      "freezeRecovery60": {
+        "rendersInFirstSecond": 60,
+        "target": 60,
+        "burst": false
+      }
+    }
+  ],
+  "adaptation": [
+    {
+      "frameMs": 40,
+      "before": {
+        "firstDropSeconds": 3.6,
+        "floorSeconds": 25.2,
+        "changes": [
+          {
+            "atSeconds": 3.6,
+            "dpr": 1.55,
+            "steps": 16
+          },
+          {
+            "atSeconds": 7.2,
+            "dpr": 1.35,
+            "steps": 16
+          },
+          {
+            "atSeconds": 10.8,
+            "dpr": 1.15,
+            "steps": 16
+          },
+          {
+            "atSeconds": 14.4,
+            "dpr": 0.95,
+            "steps": 16
+          },
+          {
+            "atSeconds": 18,
+            "dpr": 0.8,
+            "steps": 16
+          },
+          {
+            "atSeconds": 21.6,
+            "dpr": 0.8,
+            "steps": 8
+          },
+          {
+            "atSeconds": 25.2,
+            "dpr": 0.8,
+            "steps": 4
+          }
+        ]
+      },
+      "after": {
+        "firstDropSeconds": 0.6,
+        "floorSeconds": 1.2,
+        "changes": [
+          {
+            "atSeconds": 0.6,
+            "tier": "economy-30",
+            "targetFps": 30,
+            "dpr": 1,
+            "volumeSteps": 4,
+            "detailBodies": 2
+          },
+          {
+            "atSeconds": 1.2,
+            "tier": "economy-floor",
+            "targetFps": 30,
+            "dpr": 0.8,
+            "volumeSteps": 4,
+            "detailBodies": 2
+          }
+        ]
+      }
+    },
+    {
+      "frameMs": 50,
+      "before": {
+        "firstDropSeconds": 4.5,
+        "floorSeconds": 31.5,
+        "changes": [
+          {
+            "atSeconds": 4.5,
+            "dpr": 1.55,
+            "steps": 16
+          },
+          {
+            "atSeconds": 9,
+            "dpr": 1.35,
+            "steps": 16
+          },
+          {
+            "atSeconds": 13.5,
+            "dpr": 1.15,
+            "steps": 16
+          },
+          {
+            "atSeconds": 18,
+            "dpr": 0.95,
+            "steps": 16
+          },
+          {
+            "atSeconds": 22.5,
+            "dpr": 0.8,
+            "steps": 16
+          },
+          {
+            "atSeconds": 27,
+            "dpr": 0.8,
+            "steps": 8
+          },
+          {
+            "atSeconds": 31.5,
+            "dpr": 0.8,
+            "steps": 4
+          }
+        ]
+      },
+      "after": {
+        "firstDropSeconds": 0.6,
+        "floorSeconds": 1.2,
+        "changes": [
+          {
+            "atSeconds": 0.6,
+            "tier": "economy-30",
+            "targetFps": 30,
+            "dpr": 1,
+            "volumeSteps": 4,
+            "detailBodies": 2
+          },
+          {
+            "atSeconds": 1.2,
+            "tier": "economy-floor",
+            "targetFps": 30,
+            "dpr": 0.8,
+            "volumeSteps": 4,
+            "detailBodies": 2
+          }
+        ]
+      }
+    },
+    {
+      "frameMs": 100,
+      "before": {
+        "firstDropSeconds": 9,
+        "floorSeconds": 63,
+        "changes": [
+          {
+            "atSeconds": 9,
+            "dpr": 1.55,
+            "steps": 16
+          },
+          {
+            "atSeconds": 18,
+            "dpr": 1.35,
+            "steps": 16
+          },
+          {
+            "atSeconds": 27,
+            "dpr": 1.15,
+            "steps": 16
+          },
+          {
+            "atSeconds": 36,
+            "dpr": 0.95,
+            "steps": 16
+          },
+          {
+            "atSeconds": 45,
+            "dpr": 0.8,
+            "steps": 16
+          },
+          {
+            "atSeconds": 54,
+            "dpr": 0.8,
+            "steps": 8
+          },
+          {
+            "atSeconds": 63,
+            "dpr": 0.8,
+            "steps": 4
+          }
+        ]
+      },
+      "after": {
+        "firstDropSeconds": 0.6,
+        "floorSeconds": 1.2,
+        "changes": [
+          {
+            "atSeconds": 0.6,
+            "tier": "economy-floor",
+            "targetFps": 30,
+            "dpr": 0.8,
+            "volumeSteps": 4,
+            "detailBodies": 2
+          },
+          {
+            "atSeconds": 1.2,
+            "tier": "rescue",
+            "targetFps": 30,
+            "dpr": 0.7,
+            "volumeSteps": 2,
+            "detailBodies": 1
+          }
+        ]
+      }
+    }
+  ]
+}

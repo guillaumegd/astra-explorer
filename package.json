@@ -15,6 +15,7 @@
     "format": "oxfmt",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "benchmark:catalogue": "node --experimental-strip-types scripts/benchmark-catalogue.mjs",
+    "benchmark:cadence": "node --experimental-strip-types scripts/benchmark-cadence.mjs",
     "check:build-budget": "node scripts/check-build-budget.mjs"
   },
   "dependencies": {

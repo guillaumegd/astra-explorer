@@ -39,6 +39,12 @@ export const fr: Dictionary = {
       'Cliquez ou touchez une étoile pour la sélectionner. Double-cliquez ou utilisez Approcher pour la rejoindre. Glissez pour tourner ; utilisez la molette, le pincement ou −/+ pour zoomer. Au clavier, placez le focus sur la scène : les flèches changent d’astre, Entrée rapproche, Début revient à la galaxie. Échap ferme les options ou quitte l’immersion.',
     system: 'Système',
   },
+  quality: {
+    label: 'Qualité',
+    automatic: 'Automatique',
+    economy: 'Économie',
+    hint: 'Automatique ajuste la qualité à la fluidité mesurée. Économie fixe un plafond plus bas et une cadence de 30 images par seconde.',
+  },
   meta: {
     title: 'ASTRA — Un univers à portée de main',
     description:

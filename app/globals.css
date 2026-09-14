@@ -374,6 +374,12 @@ summary:focus-visible {
   display: flex;
   gap: 2px;
 }
+.quality-hint {
+  padding: 0 4px 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #8a9bb2;
+}
 .swatch {
   width: 44px !important;
   height: 44px !important;

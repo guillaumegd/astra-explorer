@@ -15,7 +15,12 @@ import {
   regionZoomDistance,
   resizeRegionDistance,
 } from './region-navigation';
-import { createQualityPolicy } from './quality-policy';
+import {
+  createQualityController,
+  effectivePixelRatio,
+  type QualityMode,
+} from './quality-policy';
+import { createFrameScheduler } from './frame-scheduler';
 import { asteroidRadius } from './asteroid-shape';
 import { sampleBodyTravel } from './body-travel';
 import { desiredSurfaceTilt, surfaceCameraPose } from './surface-camera';
@@ -58,6 +63,8 @@ export type GalaxySettings = {
   tilt: number | null;
   paused: boolean;
   palette: number;
+  /** Automatic adapts on its own; economy is an explicit, capped choice. */
+  quality: QualityMode;
 };
 // Localized strings the engine needs for text it renders itself (canvas
 // aria-label, error messages, system-marker labels), decoupled from React so
@@ -243,10 +250,13 @@ export function createGalaxy(
     new URLSearchParams(window.location.search).get('diagnostics') === '1'
       ? createDiagnostics()
       : null;
-  let lastRaf: number | null = null;
   let lastRendered: number | null = null;
   let messages = initialMessages;
   let firstFrameRendered = false;
+  // One calendar and one budget for the whole engine: the scheduler owns the
+  // cadence, the controller owns every knob the cadence alone cannot fix.
+  const quality = createQualityController('auto', diagnosticStart);
+  const scheduler = createFrameScheduler(quality.budget.targetFps);
   let openingProgress: number | null = null;
   const renderer = new THREE.WebGLRenderer({
     antialias: false,
@@ -260,6 +270,12 @@ export function createGalaxy(
         renderer.getContext() as WebGL2RenderingContext,
         (kind, at, values) => {
           diagnostics.record(kind, at, values);
+          if (
+            kind === 'gpu-frame' &&
+            values.complete &&
+            typeof values.gpuMs === 'number'
+          )
+            quality.acceptGpu(values.gpuMs, at);
           if (
             kind === 'gpu-frame' &&
             values.complete &&
@@ -329,7 +345,7 @@ export function createGalaxy(
   }
   if (diagnostics) renderer.info.autoReset = false;
   renderer.setClearColor(0x04060b);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.budget.dpr));
   host.appendChild(renderer.domElement);
   renderer.domElement.tabIndex = 0;
   renderer.domElement.setAttribute('role', 'button');
@@ -532,6 +548,7 @@ export function createGalaxy(
     tilt: null,
     paused: false,
     palette: 0,
+    quality: 'auto',
   };
   const bodyLOD = createBodyLOD(group, 8);
   const phenomena = createPhenomenaManager(group);
@@ -1110,16 +1127,44 @@ export function createGalaxy(
   let surfaceAnchor: THREE.Vector3 | null = null;
   const surfaceOrientation = new THREE.Quaternion();
   const surfaceEuler = new THREE.Euler();
-  const quality = createQualityPolicy(renderer.getPixelRatio());
-  let lastFrame = performance.now();
+  // Pixels are billed on the drawing buffer, so the ratio is recomputed on
+  // every resize as well as on every budget change.
+  const applyPixelRatio = () => {
+    const { width, height } = host.getBoundingClientRect();
+    const ratio = effectivePixelRatio(
+      quality.budget,
+      width || window.innerWidth,
+      height || window.innerHeight,
+      window.devicePixelRatio,
+    );
+    if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
+    uniforms.uPixelRatio.value = ratio;
+    host.dataset.pixelRatio = String(ratio);
+  };
+  const applyBudget = (reason: string) => {
+    const budget = quality.budget;
+    scheduler.setTarget(budget.targetFps);
+    applyPixelRatio();
+    regions.setSteps(budget.volumeSteps);
+    host.dataset.volumeSteps = String(budget.volumeSteps);
+    host.dataset.qualityTier = budget.label;
+    host.dataset.targetFps = String(budget.targetFps);
+    diagnostics?.record('quality', performance.now(), {
+      trigger: reason,
+      ...budget,
+      ...quality.stats(),
+      pixelRatio: renderer.getPixelRatio(),
+      refreshHz: scheduler.stats().refreshHz,
+    });
+  };
   let lastPointingReport = 0;
   let reportedCameraView: CameraView = 'overview';
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   let wallTime = 0;
   let elapsed = 0,
     rotation = 0,
-    frame = 0,
-    previous = performance.now();
+    frame = 0;
+  let running = false;
   let lost = false;
   const pointer = new THREE.Vector2();
   const raycaster = new THREE.Raycaster();
@@ -1131,12 +1176,22 @@ export function createGalaxy(
   const targetInner = new THREE.Color(palettes[0][0]),
     targetOuter = new THREE.Color(palettes[0][1]);
   let mobile = false;
+  let sizedWidth = 0,
+    sizedHeight = 0;
   const resize = () => {
     const { width, height } = host.getBoundingClientRect();
     if (width <= 0 || height <= 0) return;
     const previousAspect = camera.aspect;
     mobile = width < 600;
     renderer.setSize(width, height);
+    // Mobile browsers fire this while scrolling; only a real size change
+    // invalidates the pixel ceiling and the measurement windows.
+    if (width !== sizedWidth || height !== sizedHeight) {
+      sizedWidth = width;
+      sizedHeight = height;
+      applyPixelRatio();
+      quality.reset(performance.now(), 'resize');
+    }
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderHeight = height;
@@ -1255,10 +1310,10 @@ export function createGalaxy(
   const contextLost = (e: Event) => {
     e.preventDefault();
     lost = true;
-    lastRaf = lastRendered = null;
+    lastRendered = null;
     gpuDiagnostics?.reset();
     diagnostics?.record('context-lost', performance.now(), {});
-    cancelAnimationFrame(frame);
+    stopLoop();
     onError(messages.contextLost);
   };
   const contextRestored = () => {
@@ -1267,8 +1322,8 @@ export function createGalaxy(
     lensing.invalidate();
     lost = false;
     onError('');
-    previous = lastFrame = performance.now();
-    frame = requestAnimationFrame(animate);
+    quality.reset(performance.now(), 'context-restored');
+    startLoop();
   };
   // A tap selects only on release; a pinch must never trigger an accidental selection.
   const touches = new Map<number, THREE.Vector2>();
@@ -1380,11 +1435,14 @@ export function createGalaxy(
     } else if (definition.regionId) frameRegion(definition.regionId);
     travel = null;
     focusOffset.set(0, 0, 0);
-    renderer.setPixelRatio(1);
-    uniforms.uPixelRatio.value = 1;
-    regions.setSteps(16);
-    quality.dpr = 1;
-    quality.steps = 16;
+    quality.freeze({
+      dpr: 1,
+      pixelCap: Infinity,
+      targetFps: 60,
+      volumeSteps: 16,
+      opticalResolution: 512,
+    });
+    applyBudget('replay');
     lensing.invalidate();
     detailShortlist.clear();
     scanCursor = 0;
@@ -1425,6 +1483,8 @@ export function createGalaxy(
       elapsedMs: performance.now() - replay.start,
     };
     diagnostics?.record('replay-end', performance.now(), replayStatus);
+    quality.release(performance.now());
+    applyBudget('replay-end');
     replay = null;
     replayFirstFrame = Infinity;
     overview();
@@ -1445,55 +1505,34 @@ export function createGalaxy(
     applyReferenceScene();
   };
 
-  const diagnosticVisibility = () => {
-    lastRaf = lastRendered = null;
-    // rAF may stop entirely in a hidden tab, so reset on the event itself.
-    previous = lastFrame = performance.now();
+  const visibility = () => {
+    // rAF may stop entirely in a hidden tab, so act on the event itself.
+    if (document.hidden) stopLoop();
+    else startLoop();
+    quality.reset(performance.now(), 'visibility');
     diagnostics?.record('visibility', performance.now(), {
       hidden: document.hidden,
       renderedFrames: diagnostics.snapshot().renderedFrames,
       simulationTime: elapsed,
     });
   };
-  document.addEventListener('visibilitychange', diagnosticVisibility);
+  document.addEventListener('visibilitychange', visibility);
   const animate = (now: number) => {
-    if (lost) return;
-    frame = requestAnimationFrame(animate);
-    if (diagnostics && !document.hidden) {
-      diagnostics.record('raf', now, {
-        intervalMs: lastRaf === null ? null : now - lastRaf,
-      });
-      lastRaf = now;
-    }
-    if (document.hidden) {
-      lastRaf = lastRendered = null;
-      previous = now;
-      lastFrame = now;
+    if (lost || document.hidden) {
+      stopLoop();
       return;
     }
-    // Cap rendering at 45 fps, even on 120/144 Hz displays.
-    if (now - previous < 1000 / 45 - 1) return;
+    frame = requestAnimationFrame(animate);
+    const tick = scheduler.frame(now);
+    diagnostics?.record('raf', now, { intervalMs: tick.rafIntervalMs });
+    if (!tick.render) return;
     gpuDiagnostics?.poll();
     gpuDiagnostics?.startFrame(++diagnosticFrame);
-    const cpuStart = diagnostics ? performance.now() : 0;
+    const cpuStart = performance.now();
     if (diagnostics) renderer.info.reset();
-    const frameTime = now - lastFrame;
-    lastFrame = now;
-    const dt = Math.min((now - previous) / 1000, 0.1);
-    previous = now;
-    if (!replay && quality.update(frameTime)) {
-      diagnostics?.record('quality', now, {
-        dpr: quality.dpr,
-        steps: quality.steps,
-      });
-      renderer.setPixelRatio(quality.dpr);
-      uniforms.uPixelRatio.value = quality.dpr;
-      regions.setSteps(quality.steps);
-    }
-    if (replay) quality.frames++;
-    host.dataset.pixelRatio = String(quality.dpr);
-    host.dataset.volumeSteps = String(quality.steps);
-    host.dataset.renderedFrames = String(quality.frames);
+    const frameTime = tick.renderIntervalMs ?? tick.scheduledMs;
+    const dt = tick.deltaSeconds;
+    host.dataset.renderedFrames = String(scheduler.renderedFrames());
     wallTime += dt;
     if (!settings.paused) {
       elapsed += dt * settings.speed;
@@ -1961,16 +2000,18 @@ export function createGalaxy(
       cpuMs: detailsStart - searchStart,
       frameId: diagnosticFrame,
     });
+    // How many bodies may hold a full surface at once is a budget decision.
+    const detailBodies = quality.budget.detailBodies;
     const fades = bodyLOD.update(
       visibleCandidates
-        .slice(0, 8)
+        .slice(0, detailBodies)
         .filter((c) => c.identity.capabilities.renderClass === 'ordinary'),
       wallTime,
       rotation,
       activityTime,
     );
     const specialFades = phenomena.update(
-      visibleCandidates.slice(0, 8),
+      visibleCandidates.slice(0, detailBodies),
       wallTime,
       reduced.matches ? 0 : activityTime,
       reduced.matches,
@@ -2208,7 +2249,13 @@ export function createGalaxy(
       renderPointDepth,
       activityTime,
       gpuDiagnostics ?? undefined,
-      replay ? 512 : undefined,
+      // The budget is a ceiling over the lens's own measured adaptation.
+      replay
+        ? 512
+        : Math.min(
+            quality.budget.opticalResolution,
+            lensing.captureStats().resolution,
+          ),
     );
     gpuDiagnostics?.endFrame();
     const renderEnd = diagnostics ? performance.now() : 0;
@@ -2315,6 +2362,16 @@ export function createGalaxy(
         }
       }
     }
+    // Judged on the whole engine frame, not only the render passes.
+    const cpuEnd = performance.now();
+    if (
+      quality.sample({
+        now: cpuEnd,
+        cpuMs: cpuEnd - cpuStart,
+        scheduledMs: tick.scheduledMs,
+      })
+    )
+      applyBudget(quality.stats().reason);
     if (!firstFrameRendered) {
       diagnostics?.record('first-frame', performance.now(), {
         engineStartupMs: performance.now() - diagnosticStart,
@@ -2323,13 +2380,32 @@ export function createGalaxy(
       onFirstFrame();
     }
   };
-  frame = requestAnimationFrame(animate);
+  function startLoop() {
+    if (running || lost || document.hidden) return;
+    running = true;
+    // Nothing is owed for the time spent stopped: the world resumes where it
+    // was, without a burst of catch-up frames.
+    scheduler.resume();
+    lastRendered = null;
+    frame = requestAnimationFrame(animate);
+  }
+  function stopLoop() {
+    if (!running) return;
+    running = false;
+    cancelAnimationFrame(frame);
+    scheduler.suspend();
+    lastRendered = null;
+  }
+  applyBudget('start');
+  startLoop();
   return {
     catalogue,
     configure(next) {
       const densityChanged =
         settings.density !== catalogue.activeCount(next.density);
       settings = { ...next, density: catalogue.activeCount(next.density) };
+      if (quality.setMode(settings.quality, performance.now()))
+        applyBudget(`mode:${settings.quality}`);
       if (selected && densityChanged) {
         if (selected.id >= settings.density) overview();
         else if (framed) frameSystem(framed.scope);
@@ -2407,12 +2483,12 @@ export function createGalaxy(
       pointer.set(0, 0);
     },
     dispose() {
-      document.removeEventListener('visibilitychange', diagnosticVisibility);
+      document.removeEventListener('visibilitychange', visibility);
       for (const observer of diagnosticObservers) observer.disconnect();
       gpuDiagnostics?.dispose();
       removeDiagnosticControls?.();
       clearTimeout(restoreTimer);
-      cancelAnimationFrame(frame);
+      stopLoop();
       observer.disconnect();
       window.removeEventListener('pointermove', move);
       renderer.domElement.removeEventListener('wheel', wheel);

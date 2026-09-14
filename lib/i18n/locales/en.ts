@@ -39,6 +39,12 @@ export const en: Dictionary = {
       'Click or tap a star to select it. Double-click or choose Approach to get closer. Drag to orbit; scroll, pinch or use −/+ to zoom. With keyboard focus on the scene, arrow keys change bodies, Enter approaches and Home returns to the galaxy. Escape closes options or exits immersive mode.',
     system: 'System',
   },
+  quality: {
+    label: 'Quality',
+    automatic: 'Automatic',
+    economy: 'Economy',
+    hint: 'Automatic adapts quality to the measured smoothness. Economy holds a lower ceiling and a 30 frames per second cadence.',
+  },
   meta: {
     title: 'ASTRA — A universe within reach',
     description:

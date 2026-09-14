@@ -39,6 +39,12 @@ export const ptPT: Dictionary = {
       'Clique ou toque numa estrela para a selecionar. Faça duplo clique ou escolha Aproximar para se aproximar. Arraste para rodar; use a roda, o gesto de pinça ou −/+ para o zoom. Com o foco do teclado na cena, as setas mudam de astro, Enter aproxima e Home regressa à galáxia. Escape fecha as opções ou sai do modo imersivo.',
     system: 'Sistema',
   },
+  quality: {
+    label: 'Qualidade',
+    automatic: 'Automática',
+    economy: 'Poupança',
+    hint: 'Automática adapta a qualidade à fluidez medida. Poupança fixa um limite mais baixo e uma cadência de 30 imagens por segundo.',
+  },
   meta: {
     title: 'ASTRA — Um universo ao alcance da mão',
     description:

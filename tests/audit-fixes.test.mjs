@@ -11,7 +11,6 @@ import {
 import { particlePosition } from '../lib/particle-motion.ts';
 import { regionPresence } from '../lib/ambience-parameters.ts';
 import { framingDistance } from '../lib/system-framing.ts';
-import { createQualityPolicy } from '../lib/quality-policy.ts';
 import { createRegionManager } from '../lib/phenomena/region-manager.ts';
 
 const cat = new RuntimeCatalogue();
@@ -72,30 +71,6 @@ test('all regions zoom monotonically inside and back outside in portrait and lan
       assert.ok(distance > r.envelope);
     }
 });
-test('quality descends resolution then steps and recovers steps then all resolution', () => {
-  const q = createQualityPolicy(1.75),
-    changes = [];
-  for (let i = 0; i < 900; i++)
-    if (q.update(50)) changes.push([q.dpr, q.steps]);
-  assert.deepEqual(changes, [
-    [1.55, 16],
-    [1.35, 16],
-    [1.15, 16],
-    [0.95, 16],
-    [0.8, 16],
-    [0.8, 8],
-    [0.8, 4],
-  ]);
-  for (let i = 0; i < 179; i++) q.update(25);
-  assert.equal(q.steps, 4);
-  q.update(25);
-  assert.equal(q.steps, 8);
-  for (let i = 0; i < 180 * 6; i++) q.update(25);
-  assert.equal(q.steps, 16);
-  assert.equal(q.dpr, 1.75);
-  for (let i = 0; i < 1000; i++) q.update(i % 2 ? 35 : 40);
-  assert.equal(q.dpr, 1.75);
-});
 test('replacing a visible remnant waits for fade-out and never exceeds two slots', () => {
   const list = cat.getRemnants(120000);
   const parent = new THREE.Group(),
@@ -147,6 +122,8 @@ const configure = new Function(
   'targetInner',
   'targetOuter',
   'palettes',
+  'quality',
+  'applyBudget',
   `let calls=[]; const overview=()=>calls.push('overview'); const frameSystem=s=>calls.push(s); ${configureCode.replace(/\n    },\s*$/, '')} return {calls,regionFocus};`,
 );
 const stubs = [
@@ -157,6 +134,8 @@ const stubs = [
   { set() {} },
   { set() {} },
   [['', '']],
+  { setMode: () => false },
+  () => {},
 ];
 test('configure preserves binary scope and ignores equivalent normalized budgets', () => {
   const binary = cat.getBinaries(65000)[0];

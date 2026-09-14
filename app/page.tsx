@@ -45,6 +45,7 @@ import {
   type SystemView,
   type RegionView,
 } from '@/lib/galaxy';
+import type { QualityMode } from '@/lib/quality-policy';
 import { formatNumber, locales, localeNames } from '@/lib/i18n';
 import { useLocale } from '@/lib/i18n/use-locale';
 import type { Dictionary } from '@/lib/i18n/types';
@@ -145,6 +146,7 @@ export default function Home() {
   const returnFocus = useRef<HTMLElement | null>(null);
   const dock = useRef<HTMLDivElement>(null);
   const [palette, setPalette] = useState(0);
+  const [quality, setQuality] = useState<QualityMode>('auto');
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(() => !hasSeenOpening());
   const [openingRun, setOpeningRun] = useState(0);
@@ -245,8 +247,15 @@ export default function Home() {
     };
   }, []);
   useEffect(() => {
-    engine.current?.configure({ density, speed, tilt, paused, palette });
-  }, [density, speed, tilt, paused, palette]);
+    engine.current?.configure({
+      density,
+      speed,
+      tilt,
+      paused,
+      palette,
+      quality,
+    });
+  }, [density, speed, tilt, paused, palette, quality]);
   useEffect(() => {
     engine.current?.setMessages(galaxyMessages);
   }, [galaxyMessages]);
@@ -310,6 +319,7 @@ export default function Home() {
     setPaused(false);
     setPalette(0);
     setTilt(null);
+    setQuality('auto');
   };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -875,6 +885,29 @@ export default function Home() {
                       <span>{t.panel.fast}</span>
                     </div>
                   </div>
+                  <div className="palette-row">
+                    <span>{t.quality.label}</span>
+                    <div className="palettes">
+                      {(
+                        [
+                          ['auto', t.quality.automatic],
+                          ['economy', t.quality.economy],
+                        ] as const
+                      ).map(([mode, label]) => (
+                        <Button
+                          key={mode}
+                          variant="ghost"
+                          className="scale-control"
+                          aria-label={`${t.quality.label} : ${label}`}
+                          aria-pressed={quality === mode}
+                          onClick={() => setQuality(mode)}
+                        >
+                          {label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="quality-hint">{t.quality.hint}</p>
                   <div className="palette-row">
                     <span>{t.controls.color}</span>
                     <div className="palettes">

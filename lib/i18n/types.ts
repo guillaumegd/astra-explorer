@@ -116,6 +116,12 @@ export type Dictionary = {
     helpText: string;
     system: string;
   };
+  quality: {
+    label: string;
+    automatic: string;
+    economy: string;
+    hint: string;
+  };
   loading: string;
   bodyKinds: Record<BodyKind, string>;
   phenomena: {
