@@ -59,6 +59,20 @@ fichiers cachés de l'artefact GitHub et envoyé dans `astra-explorer/.htaccess`
 Il force HTTPS : le certificat SSL du sous-domaine doit être actif avant la
 publication. Le fichier `www/.htaccess` du site principal reste indépendant.
 
+Après chaque première publication ou changement d'hébergement, vérifier sur
+l'URL réelle (et non dans le build local) :
+
+```sh
+curl -I --compressed https://astra.guillaumegirard.fr/
+curl -I --compressed https://astra.guillaumegirard.fr/assets/NOM-HACHE.js
+```
+
+Le document HTML doit annoncer une revalidation courte ; l'asset au nom haché
+doit annoncer `Cache-Control: public, max-age=31536000, immutable`. Vérifier
+aussi son `Content-Type` JavaScript et noter si `Content-Encoding` est fourni
+par OVH (gzip ou br) : cette compression dépend de la plate-forme et n'est pas
+déduite du contenu de `.htaccess`.
+
 À chaque push sur `main`, `.github/workflows/ci.yml` :
 
 1. installe les dépendances, vérifie le lint et les tests ;
@@ -67,8 +81,10 @@ publication. Le fichier `www/.htaccess` du site principal reste indépendant.
 4. envoie cet artefact sur OVH par **SFTP sur le port 22**, avec
    vérification de la clé SSH et chiffrement des données ;
 5. transfère les assets avant de remplacer `index.html` par renommage du fichier
-   temporaire. Les anciens assets restent disponibles ; aucun nettoyage distant
-   automatique n'est effectué.
+   temporaire. Les anciens assets restent disponibles pendant la transition ;
+   aucun nettoyage distant automatique n'est effectué. Les supprimer seulement
+   après vérification de la nouvelle version et expiration des onglets déjà
+   ouverts.
 
 Les pull requests sont vérifiées sans déploiement. Les publications sont
 sérialisées pour éviter deux transferts simultanés. Une configuration manquante

@@ -125,7 +125,7 @@ const configure = new Function(
   'palettes',
   'quality',
   'applyBudget',
-  `let calls=[]; const overview=()=>calls.push('overview'); const frameSystem=s=>calls.push(s); ${configureCode.replace(/\n    },\s*$/, '')} return {calls,regionFocus};`,
+  `let calls=[]; const overview=()=>calls.push('overview'); const frameSystem=s=>calls.push(s); const invalidateRender=()=>{}; const configurationChanged=true; ${configureCode.replace(/\n    },\s*$/, '')} return {calls,regionFocus};`,
 );
 const stubs = [
   { setDrawRange() {} },
@@ -188,7 +188,7 @@ test('region notifications distinguish entry, framing changes and occupied overl
   const block = source.slice(
     source.indexOf('    const activeRegion = regionFocus'),
     source.indexOf(
-      '    host.dataset.phenomena',
+      "    setHostData('phenomena'",
       source.indexOf('    const activeRegion = regionFocus'),
     ),
   );

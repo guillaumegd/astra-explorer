@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Orbit,
   ArrowUpRight,
@@ -114,6 +114,36 @@ function IconButton({
   );
 }
 
+// Coordinates are the only continuously refreshed part of the interface.
+// Keeping their state here prevents a camera report from re-rendering the
+// complete control surface.
+function PointingReadout({
+  onSubscribe,
+}: {
+  onSubscribe: (
+    listener: ((value: SkyPointing) => void) | null,
+  ) => void;
+}) {
+  const [pointing, setPointing] = useState<SkyPointing>({ ra: 0, dec: 0.62 });
+  useEffect(() => {
+    const listener = (value: SkyPointing) => setPointing(value);
+    onSubscribe(listener);
+    return () => onSubscribe(null);
+  }, [onSubscribe]);
+  return (
+    <>
+      <div>
+        <dt>RA</dt>
+        <dd>{formatRightAscension(pointing.ra)}</dd>
+      </div>
+      <div>
+        <dt>DEC</dt>
+        <dd>{formatDeclination(pointing.dec)}</dd>
+      </div>
+    </>
+  );
+}
+
 export default function Home() {
   const { locale, setLocale, t } = useLocale();
   const mount = useRef<HTMLDivElement>(null);
@@ -146,6 +176,7 @@ export default function Home() {
   const dock = useRef<HTMLDivElement>(null);
   const [palette, setPalette] = useState(0);
   const [quality, setQuality] = useState<QualityMode>('auto');
+  const [economyActive, setEconomyActive] = useState(false);
   const [ready, setReady] = useState(false);
   // Bumped as background catalogue growth advances what's drawable, purely
   // to re-render the density readout — nothing reads its value.
@@ -156,7 +187,16 @@ export default function Home() {
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
   const [regionView, setRegionView] = useState<RegionView | null>(null);
-  const [pointing, setPointing] = useState<SkyPointing>({ ra: 0, dec: 0.62 });
+  const pointingReadout = useRef<{
+    value: SkyPointing;
+    listener: ((value: SkyPointing) => void) | null;
+  }>({ value: { ra: 0, dec: 0.62 }, listener: null });
+  const subscribePointing = useCallback(
+    (listener: ((value: SkyPointing) => void) | null) => {
+      pointingReadout.current.listener = listener;
+    },
+    [],
+  );
   const galaxyMessages = useMemo(() => buildGalaxyMessages(t), [t]);
   // The mount effect below runs once; it reads translations through this ref
   // so a later locale change doesn't leave its error handlers stuck in
@@ -206,10 +246,14 @@ export default function Home() {
     Promise.all([import('@/lib/galaxy'), import('@/lib/ambient-audio')])
       .then(([{ createGalaxy }, { createAmbientSoundtrack }]) => {
         if (cancelled || !mount.current) return;
-        soundtrack.current = createAmbientSoundtrack(() => {
-          setMusicEnabled(false);
-          setMusicError(tRef.current.sound.unavailable);
-        });
+        soundtrack.current = createAmbientSoundtrack(
+          () => {
+            setMusicEnabled(false);
+            setMusicError(tRef.current.sound.unavailable);
+          },
+          ({ start, ready }) =>
+            engine.current?.recordAudioGesture(start, ready),
+        );
         if (!musicRef.current.opening) unblock();
         try {
           engine.current = createGalaxy(
@@ -230,11 +274,18 @@ export default function Home() {
             (view) => {
               setSystemView(view);
             },
-            setPointing,
+            (value) => {
+              pointingReadout.current.value = value;
+              pointingReadout.current.listener?.(value);
+            },
             () => setReady(true),
             setCameraView,
             setRegionView,
             () => bumpGrowth((n) => n + 1),
+            (economy) => {
+              soundtrack.current?.setEconomy(economy);
+              setEconomyActive(economy);
+            },
           );
           queueMicrotask(() => {
             setMusicBusy(false);
@@ -273,6 +324,10 @@ export default function Home() {
   useEffect(() => {
     engine.current?.setMessages(galaxyMessages);
   }, [galaxyMessages]);
+  useEffect(() => {
+    // This only changes the optional soundtrack graph. It never starts audio.
+    soundtrack.current?.setEconomy(quality === 'economy');
+  }, [quality]);
   // Fades the interface out after a stretch of inactivity for an uninterrupted,
   // contemplative view; any activity brings it right back.
   useEffect(() => {
@@ -501,7 +556,7 @@ export default function Home() {
     panel === 'language' ? t.language.label : panel ? t.controls[panel] : '';
   return (
     <main
-      className={`observatory ${hidden ? 'is-quiet' : ''} ${openingVisible ? 'is-opening' : ''}`}
+      className={`observatory ${hidden ? 'is-quiet' : ''} ${openingVisible ? 'is-opening' : ''} ${economyActive ? 'is-economy' : ''}`}
     >
       <div
         ref={mount}
@@ -1025,14 +1080,9 @@ export default function Home() {
               )}
               {panel === 'viewDetails' && (
                 <dl className="view-data">
-                  <div>
-                    <dt>RA</dt>
-                    <dd>{formatRightAscension(pointing.ra)}</dd>
-                  </div>
-                  <div>
-                    <dt>DEC</dt>
-                    <dd>{formatDeclination(pointing.dec)}</dd>
-                  </div>
+                  <PointingReadout
+                    onSubscribe={subscribePointing}
+                  />
                   {selected && (
                     <div>
                       <dt>{t.controls.system}</dt>

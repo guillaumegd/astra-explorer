@@ -122,7 +122,7 @@ summary:focus-visible {
   background: var(--surface);
   box-shadow: 0 8px 28px #0004;
   color: #c4d3e6;
-  backdrop-filter: blur(14px);
+  backdrop-filter: var(--panel-backdrop, blur(14px));
 }
 .command-bar button {
   height: 44px;
@@ -269,7 +269,7 @@ summary:focus-visible {
   border: 1px solid #aecaff24;
   border-radius: 12px;
   box-shadow: 0 16px 50px #0006;
-  backdrop-filter: blur(14px);
+  backdrop-filter: var(--panel-backdrop, blur(14px));
   outline: none;
 }
 .surface-heading {
@@ -532,14 +532,16 @@ summary:focus-visible {
   height: 26px;
   border: 1px solid #c3ddffbb;
   border-radius: 50%;
-  transform: translate(-50%, -50%);
+  transform: translate3d(var(--marker-x, 0px), var(--marker-y, 0px), 0)
+    translate(-50%, -50%);
   pointer-events: none;
   box-shadow: 0 0 12px #9bbaff44;
   display: none;
 }
 .system-marker {
   position: absolute;
-  transform: translate(-50%, -50%);
+  transform: translate3d(var(--marker-x, 0px), var(--marker-y, 0px), 0)
+    translate(-50%, -50%);
   z-index: 1;
   width: 24px;
   height: 24px;
@@ -660,6 +662,11 @@ summary:focus-visible {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Economy keeps controls opaque and readable without a compositor blur. */
+.observatory.is-economy {
+  --panel-backdrop: none;
 }
 
 @media (max-width: 600px) {

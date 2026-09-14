@@ -113,6 +113,7 @@ export type GalaxyEngine = {
   configure: (settings: GalaxySettings) => void;
   setMessages: (messages: GalaxyMessages) => void;
   setViewportInset: (pixels: number) => void;
+  recordAudioGesture: (startedAt: number, readyAt: number | null) => void;
   setOpeningProgress: (progress: number | null) => void;
   zoom: (factor: number) => void;
   approach: () => void;
@@ -250,6 +251,8 @@ export function createGalaxy(
   onRegion: (view: RegionView | null) => void = () => {},
   /** Fires as the background catalogue growth advances what's drawable. */
   onGrowth: (filled: number, capacity: number) => void = () => {},
+  /** The common quality controller also owns the optional audio profile. */
+  onAudioEconomy: (economy: boolean) => void = () => {},
 ): GalaxyEngine {
   const diagnosticStart = performance.now();
   const diagnostics =
@@ -353,6 +356,19 @@ export function createGalaxy(
   renderer.setClearColor(0x04060b);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.budget.dpr));
   host.appendChild(renderer.domElement);
+  // Dataset and style assignments are observable DOM work. Avoid queuing the
+  // same mutation every frame, and keep moving overlays on the compositor.
+  const setHostData = (name: string, value: string) => {
+    if (host.dataset[name] !== value) host.dataset[name] = value;
+  };
+  const setStyle = (node: HTMLElement, name: string, value: string) => {
+    if (node.style.getPropertyValue(name) !== value)
+      node.style.setProperty(name, value);
+  };
+  const setMarkerPosition = (node: HTMLElement, x: number, y: number) => {
+    setStyle(node, '--marker-x', `${x.toFixed(2)}px`);
+    setStyle(node, '--marker-y', `${y.toFixed(2)}px`);
+  };
   renderer.domElement.tabIndex = 0;
   renderer.domElement.setAttribute('role', 'button');
   renderer.domElement.setAttribute('aria-label', messages.canvasHint);
@@ -923,7 +939,7 @@ export function createGalaxy(
       return best >= 0 ? best : null;
     };
     if (typeof renderer.readRenderTargetPixelsAsync !== 'function') {
-      host.dataset.pickReadback = 'sync';
+      setHostData('pickReadback', 'sync');
       renderer.readRenderTargetPixels(
         pickTarget,
         0,
@@ -934,7 +950,7 @@ export function createGalaxy(
       );
       return decode();
     }
-    host.dataset.pickReadback = 'async';
+    setHostData('pickReadback', 'async');
     asyncPickBusy = true;
     const densityAtRequest = settings.density;
     const cameraAtRequest = camera.position.clone();
@@ -960,7 +976,7 @@ export function createGalaxy(
         }
       })
       .catch(() => {
-        host.dataset.pickReadback = 'sync-fallback';
+        setHostData('pickReadback', 'sync-fallback');
       })
       .finally(() => {
         asyncPickBusy = false;
@@ -980,6 +996,18 @@ export function createGalaxy(
   group.add(orbitGuides);
   const guideParents: (number | null)[] = [];
   const systemMarkers: HTMLButtonElement[] = [];
+  // A paused scene runs only long enough to settle camera/fade work. Every
+  // meaningful input extends this window and wakes the loop when needed.
+  const DEMAND_SETTLE_MS = 1500;
+  let demandRenderUntil = 0;
+  const invalidateRender = (reason: string) => {
+    demandRenderUntil = Math.max(
+      demandRenderUntil,
+      performance.now() + DEMAND_SETTLE_MS,
+    );
+    diagnostics?.record('render-invalidated', performance.now(), { reason });
+    startLoop();
+  };
   const clearFrame = () => {
     framed = null;
     for (const line of [...orbitGuides.children] as THREE.LineLoop<
@@ -1056,6 +1084,7 @@ export function createGalaxy(
     focusOffset.copy(focus).sub(worldFocus);
   };
   const select = (id: number) => {
+    invalidateRender('selection');
     const previous = selected;
     const switching = previous !== null && previous.id !== id;
     const origin = focus.clone();
@@ -1091,6 +1120,7 @@ export function createGalaxy(
     onSelection(selected);
   };
   const overview = () => {
+    invalidateRender('overview');
     travel = null;
     clearFrame();
     regionFocus = null;
@@ -1099,6 +1129,7 @@ export function createGalaxy(
     onSelection(null);
   };
   const approach = () => {
+    invalidateRender('approach');
     clearFrame();
     if (!selected) select(0);
     targetDistance =
@@ -1125,6 +1156,7 @@ export function createGalaxy(
   const frameRegion = (regionId: string) => {
     const region = catalogue.resolveRegion(regionId, settings.density);
     if (!region) return;
+    invalidateRender('region');
     travel = null;
     clearFrame();
     surfaceAnchor = null;
@@ -1144,6 +1176,7 @@ export function createGalaxy(
   };
 
   const frameSystem = (scope: 'stellar' | 'local') => {
+    invalidateRender('system');
     const body = selected ?? describeBody(0);
     const start = body.rootId;
     const membersInSystem = catalogue.getSystemMembers(body.systemId);
@@ -1245,25 +1278,29 @@ export function createGalaxy(
   // Pixels are billed on the drawing buffer, so the ratio is recomputed on
   // every resize as well as on every budget change.
   const applyPixelRatio = () => {
-    const { width, height } = host.getBoundingClientRect();
     const ratio = effectivePixelRatio(
       quality.budget,
-      width || window.innerWidth,
-      height || window.innerHeight,
+      sizedWidth || window.innerWidth,
+      sizedHeight || window.innerHeight,
       window.devicePixelRatio,
     );
     if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
     uniforms.uPixelRatio.value = ratio;
-    host.dataset.pixelRatio = String(ratio);
+    setHostData('pixelRatio', String(ratio));
   };
   const applyBudget = (reason: string) => {
     const budget = quality.budget;
     scheduler.setTarget(budget.targetFps);
     applyPixelRatio();
     regions.setSteps(budget.volumeSteps);
-    host.dataset.volumeSteps = String(budget.volumeSteps);
-    host.dataset.qualityTier = budget.label;
-    host.dataset.targetFps = String(budget.targetFps);
+    setHostData('volumeSteps', String(budget.volumeSteps));
+    setHostData('qualityTier', budget.label);
+    setHostData('targetFps', String(budget.targetFps));
+    const economy = budget.label.startsWith('economy') || budget.label === 'rescue';
+    if (economy !== reportedAudioEconomy) {
+      reportedAudioEconomy = economy;
+      onAudioEconomy(economy);
+    }
     diagnostics?.record('quality', performance.now(), {
       trigger: reason,
       ...budget,
@@ -1273,6 +1310,8 @@ export function createGalaxy(
     });
   };
   let lastPointingReport = 0;
+  let lastPointingKey = '';
+  let reportedAudioEconomy: boolean | null = null;
   let reportedCameraView: CameraView = 'overview';
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   let wallTime = 0;
@@ -1306,6 +1345,7 @@ export function createGalaxy(
       sizedHeight = height;
       applyPixelRatio();
       quality.reset(performance.now(), 'resize');
+      invalidateRender('resize');
     }
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
@@ -1331,6 +1371,7 @@ export function createGalaxy(
     }
   };
   const changeZoom = (factor: number) => {
+    invalidateRender('zoom');
     // Empty sky is not a destination. Falling back to body 0 sent anyone who
     // zoomed with a clear centre — five of the nine framed nebulae — to the
     // reference black hole at the other end of the galaxy. The wheel already
@@ -1360,7 +1401,7 @@ export function createGalaxy(
     e.preventDefault();
     const delta =
       e.deltaY *
-      (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? host.clientHeight : 1);
+      (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? renderHeight : 1);
     if (delta < 0 && !selected && !regionFocus) {
       const id = pickAt(e.clientX, e.clientY);
       if (id !== null) select(id);
@@ -1371,10 +1412,12 @@ export function createGalaxy(
   observer.observe(host);
   resize();
   const move = (e: PointerEvent) => {
-    pointer.set(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -((e.clientY / window.innerHeight) * 2 - 1),
-    );
+    const x = (e.clientX / window.innerWidth) * 2 - 1;
+    const y = -((e.clientY / window.innerHeight) * 2 - 1);
+    if (Math.abs(pointer.x - x) > 0.0001 || Math.abs(pointer.y - y) > 0.0001) {
+      pointer.set(x, y);
+      invalidateRender('pointer');
+    }
   };
   let lastTap = -1000,
     lastTapX = 0,
@@ -1439,7 +1482,7 @@ export function createGalaxy(
     lost = false;
     onError('');
     quality.reset(performance.now(), 'context-restored');
-    startLoop();
+    invalidateRender('context-restored');
   };
   // A tap selects only on release; a pinch must never trigger an accidental selection.
   const touches = new Map<number, THREE.Vector2>();
@@ -1636,7 +1679,7 @@ export function createGalaxy(
   const visibility = () => {
     // rAF may stop entirely in a hidden tab, so act on the event itself.
     if (document.hidden) stopLoop();
-    else startLoop();
+    else invalidateRender('visibility');
     quality.reset(performance.now(), 'visibility');
     diagnostics?.record('visibility', performance.now(), {
       hidden: document.hidden,
@@ -1660,7 +1703,7 @@ export function createGalaxy(
     if (diagnostics) renderer.info.reset();
     const frameTime = tick.renderIntervalMs ?? tick.scheduledMs;
     const dt = tick.deltaSeconds;
-    host.dataset.renderedFrames = String(scheduler.renderedFrames());
+    setHostData('renderedFrames', String(scheduler.renderedFrames()));
     wallTime += dt;
     if (!settings.paused) {
       elapsed += dt * settings.speed;
@@ -1705,15 +1748,15 @@ export function createGalaxy(
       Math.abs(insetDelta) > 0.1 ||
       (reservedBottom === 0 && currentReservedBottom !== 0) ||
       (currentReservedBottom > 0 &&
-        (insetWidth !== host.clientWidth || insetHeight !== host.clientHeight))
+        (insetWidth !== sizedWidth || insetHeight !== renderHeight))
     ) {
       currentReservedBottom =
         Math.abs(insetDelta) < 0.5
           ? reservedBottom
           : currentReservedBottom +
             insetDelta * (reduced.matches ? 1 : 1 - Math.exp(-dt * 10));
-      const width = host.clientWidth;
-      const height = host.clientHeight;
+      const width = sizedWidth;
+      const height = renderHeight;
       insetWidth = width;
       insetHeight = height;
       const oldAspect = camera.aspect;
@@ -1851,13 +1894,13 @@ export function createGalaxy(
         .normalize();
       cameraTarget.lerpVectors(travel.startTarget, focus, blend);
     }
-    host.dataset.travelPhase = travel
+    setHostData('travelPhase', travel
       ? travel.time < 1.25
         ? 'retreat'
         : travel.time < 2.25
           ? 'transfer'
           : 'approach'
-      : 'idle';
+      : 'idle');
     if (selected && terrainView && surfaceTilt > 0.001) {
       const pose = surfaceCameraPose(
         focus,
@@ -1897,7 +1940,7 @@ export function createGalaxy(
       cameraTarget.copy(pose.pivot);
       camera.up.copy(pose.up);
     }
-    host.dataset.surfaceTilt = surfaceTilt.toFixed(2);
+    setHostData('surfaceTilt', surfaceTilt.toFixed(2));
     // Galaxy-view composition only. A framed region has no selected body but is
     // very much a subject, and this offset would push it out of frame.
     if (!selected && !regionFocus) {
@@ -1921,16 +1964,19 @@ export function createGalaxy(
     camera.updateProjectionMatrix();
     camera.lookAt(cameraTarget);
     camera.updateMatrixWorld();
-    if (now - lastPointingReport > 200) {
+    if (now - lastPointingReport > (diagnostics ? 200 : 500)) {
       lastPointingReport = now;
       const r = camera.position.length();
-      onPointing({
-        ra: Math.atan2(camera.position.x, camera.position.z),
-        dec:
-          r > 1e-6
-            ? Math.asin(THREE.MathUtils.clamp(camera.position.y / r, -1, 1))
-            : 0,
-      });
+      const ra = Math.atan2(camera.position.x, camera.position.z);
+      const dec =
+        r > 1e-6
+          ? Math.asin(THREE.MathUtils.clamp(camera.position.y / r, -1, 1))
+          : 0;
+      const key = `${Math.round((ra * 12 * 3600) / Math.PI)}:${Math.round((dec * 180 * 3600) / Math.PI)}`;
+      if (key !== lastPointingKey) {
+        lastPointingKey = key;
+        onPointing({ ra, dec });
+      }
     }
     if (framed) {
       const position = new THREE.Vector3();
@@ -1962,15 +2008,18 @@ export function createGalaxy(
         );
         position.applyMatrix4(group.matrixWorld).project(camera);
         const marker = systemMarkers[i];
-        marker.style.display =
+        setStyle(marker, 'display',
           position.z > -1 &&
           position.z < 1 &&
           Math.abs(position.x) < 1 &&
           Math.abs(position.y) < 1
             ? 'block'
-            : 'none';
-        marker.style.left = `${(position.x * 0.5 + 0.5) * host.clientWidth}px`;
-        marker.style.top = `${(-position.y * 0.5 + 0.5) * renderHeight}px`;
+            : 'none');
+        setMarkerPosition(
+          marker,
+          (position.x * 0.5 + 0.5) * sizedWidth,
+          (-position.y * 0.5 + 0.5) * renderHeight,
+        );
       });
     }
     const galaxyFade = THREE.MathUtils.smoothstep(
@@ -2140,7 +2189,7 @@ export function createGalaxy(
         (b.identity.id === selected?.id ? 1 : 0) -
           (a.identity.id === selected?.id ? 1 : 0) || b.pixels - a.pixels,
     );
-    let pixelBudget = host.clientWidth * renderHeight * 1.5;
+    let pixelBudget = sizedWidth * renderHeight * 1.5;
     const visibleCandidates = candidates.filter((c) => {
       const area = Math.PI * c.pixels * c.pixels;
       if (c.identity.id === selected?.id || area < pixelBudget) {
@@ -2244,9 +2293,9 @@ export function createGalaxy(
       renderer,
       camera,
     );
-    host.dataset.regions = String(
+    setHostData('regions', String(
       regions.stats().cached + regions.stats().persistent,
-    );
+    ));
     // Reached by marker or by the menu, never by ray: a transparent volume must
     // not steal a click from the stars behind it.
     markedRegions.length = 0;
@@ -2309,18 +2358,21 @@ export function createGalaxy(
         .applyMatrix4(group.matrixWorld)
         .project(camera);
       const diameter = Math.max(40, candidate.pixels * 2);
-      node.style.width = `${diameter}px`;
-      node.style.height = `${diameter}px`;
+      setStyle(node, 'width', `${diameter}px`);
+      setStyle(node, 'height', `${diameter}px`);
       node.dataset.focused = String(candidate.focused);
-      node.style.display =
+      setStyle(node, 'display',
         projected.z > -1 &&
         projected.z < 1 &&
-        Math.abs(projected.x) < 1 + diameter / host.clientWidth &&
+        Math.abs(projected.x) < 1 + diameter / sizedWidth &&
         Math.abs(projected.y) < 1 + diameter / renderHeight
           ? 'block'
-          : 'none';
-      node.style.left = `${(projected.x * 0.5 + 0.5) * host.clientWidth}px`;
-      node.style.top = `${(-projected.y * 0.5 + 0.5) * renderHeight}px`;
+          : 'none');
+      setMarkerPosition(
+        node,
+        (projected.x * 0.5 + 0.5) * sizedWidth,
+        (-projected.y * 0.5 + 0.5) * renderHeight,
+      );
     }
     const activeRegion = regionFocus ?? insideRegion;
     const focusedPresence =
@@ -2342,20 +2394,20 @@ export function createGalaxy(
           : null,
       );
     }
-    host.dataset.phenomena = String(phenomena.stats().cached);
-    host.dataset.catalogueVersion = 'v2';
-    host.dataset.activeBodies = String(settings.density);
-    host.dataset.selectedBody = selected?.bodyId ?? '';
-    host.dataset.surfaceLevel = String(bodyLOD.stats().surfaceLevel);
-    host.dataset.surfacePatches = String(bodyLOD.stats().patches);
-    host.dataset.altitudeRatio = selected
+    setHostData('phenomena', String(phenomena.stats().cached));
+    setHostData('catalogueVersion', 'v2');
+    setHostData('activeBodies', String(settings.density));
+    setHostData('selectedBody', selected?.bodyId ?? '');
+    setHostData('surfaceLevel', String(bodyLOD.stats().surfaceLevel));
+    setHostData('surfacePatches', String(bodyLOD.stats().patches));
+    setHostData('altitudeRatio', selected
       ? String(distance / selected.radius - 1)
-      : '';
+      : '');
     replacements.forEach((v, i) => {
       const f = fades[i];
       v.set(f?.id ?? -1, f?.fade ?? 0);
     });
-    marker.style.display =
+    setStyle(marker, 'display',
       selected &&
       !framed &&
       distance >
@@ -2364,17 +2416,20 @@ export function createGalaxy(
           selected.radius) *
           20
         ? 'block'
-        : 'none';
+        : 'none');
     if (selected) {
       projected.copy(worldFocus).project(camera);
-      marker.style.left = `${(projected.x * 0.5 + 0.5) * host.clientWidth}px`;
-      marker.style.top = `${(-projected.y * 0.5 + 0.5) * host.clientHeight}px`;
+      setMarkerPosition(
+        marker,
+        (projected.x * 0.5 + 0.5) * sizedWidth,
+        (-projected.y * 0.5 + 0.5) * renderHeight,
+      );
     }
     // Read-only diagnostics for the local development preview.
     if (process.env.NODE_ENV !== 'production') {
-      host.dataset.selectedId = String(selected?.id ?? -1);
-      host.dataset.detailCount = String(bodyLOD.stats().visible);
-      host.dataset.distance = distance.toFixed(4);
+      setHostData('selectedId', String(selected?.id ?? -1));
+      setHostData('detailCount', String(bodyLOD.stats().visible));
+      setHostData('distance', distance.toFixed(4));
     }
     // Report discrete UI changes only, including wheel and keyboard navigation.
     const viewRadius =
@@ -2448,12 +2503,12 @@ export function createGalaxy(
         : null,
     );
     if (process.env.NODE_ENV !== 'production') {
-      host.dataset.lenses = String(lensing.stats().active);
-      host.dataset.lensTargets = String(lensing.stats().targets);
-      host.dataset.skyCaptureMs = lensing.captureStats().costMs.toFixed(2);
-      host.dataset.skyCaptureTiming = lensing.captureStats().source;
-      host.dataset.skyResolution = String(lensing.skyResolution());
-      host.dataset.skyCaptures = String(lensing.captureStats().captures);
+      setHostData('lenses', String(lensing.stats().active));
+      setHostData('lensTargets', String(lensing.stats().targets));
+      setHostData('skyCaptureMs', lensing.captureStats().costMs.toFixed(2));
+      setHostData('skyCaptureTiming', lensing.captureStats().source);
+      setHostData('skyResolution', String(lensing.skyResolution()));
+      setHostData('skyCaptures', String(lensing.captureStats().captures));
     }
     if (diagnostics && now - lastMemorySample >= 1000) {
       lastMemorySample = now;
@@ -2554,6 +2609,18 @@ export function createGalaxy(
       firstFrameRendered = true;
       onFirstFrame();
     }
+    const cameraSettled =
+      !travel &&
+      Math.abs(targetDistance - distance) <=
+        Math.max(0.002, targetDistance * 0.001) &&
+      Math.abs(reservedBottom - currentReservedBottom) <= 0.5;
+    if (
+      settings.paused &&
+      !replay &&
+      cameraSettled &&
+      performance.now() >= demandRenderUntil
+    )
+      stopLoop();
   };
   function startLoop() {
     if (running || lost || document.hidden) return;
@@ -2673,6 +2740,13 @@ export function createGalaxy(
       // Never forces generation past what background growth has already
       // filled into the GPU buffers: a slider jump only picks a new target,
       // it does not itself trigger a blocking catalogue burst.
+      const configurationChanged =
+        settings.paused !== next.paused ||
+        settings.speed !== next.speed ||
+        settings.tilt !== next.tilt ||
+        settings.palette !== next.palette ||
+        settings.quality !== next.quality ||
+        settings.density !== next.density;
       requestedDensity = next.density;
       const densityChanged =
         settings.density !==
@@ -2702,12 +2776,23 @@ export function createGalaxy(
       );
       targetInner.set(palettes[next.palette][0]);
       targetOuter.set(palettes[next.palette][1]);
+      if (configurationChanged) invalidateRender('configuration');
     },
     setOpeningProgress(progress) {
       openingProgress = progress;
+      invalidateRender('opening');
     },
     setViewportInset(pixels) {
-      reservedBottom = Math.max(0, Math.min(pixels, host.clientHeight * 0.65));
+      const next = Math.max(0, Math.min(pixels, renderHeight * 0.65));
+      if (next !== reservedBottom) {
+        reservedBottom = next;
+        invalidateRender('viewport-inset');
+      }
+    },
+    recordAudioGesture(startedAt, readyAt) {
+      diagnostics?.record('audio-first-gesture', readyAt ?? startedAt, {
+        latencyMs: readyAt === null ? null : Math.max(0, readyAt - startedAt),
+      });
     },
     setMessages(next) {
       messages = next;
@@ -2734,6 +2819,7 @@ export function createGalaxy(
           messages.exploreBodyAria(member.name, kindLabel),
         );
       });
+      invalidateRender('language');
     },
     zoom: changeZoom,
     approach,

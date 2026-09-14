@@ -17,7 +17,10 @@ const MOTIF = [1, 3, 2, 4, 2, 3, 1, 2];
 const frequency = (midi: number) => 440 * 2 ** ((midi - 69) / 12);
 
 // Accepts OfflineAudioContext too, so the actual graph can be rendered and verified without speakers.
-export function buildAmbientGraph(context: BaseAudioContext) {
+export function buildAmbientGraph(
+  context: BaseAudioContext,
+  { economy = false }: { economy?: boolean } = {},
+) {
   const nodes: AudioNode[] = [];
   const oscillators = new Set<OscillatorNode>();
   let disposed = false;
@@ -51,7 +54,7 @@ export function buildAmbientGraph(context: BaseAudioContext) {
   const reverb = track(context.createConvolver());
   const impulse = context.createBuffer(
     2,
-    Math.ceil(context.sampleRate * 3.8),
+    Math.ceil(context.sampleRate * (economy ? 1.1 : 3.8)),
     context.sampleRate,
   );
   let seed = 73512;
@@ -169,7 +172,9 @@ export function buildAmbientGraph(context: BaseAudioContext) {
     const envelope = track(context.createGain());
     envelope.gain.value = 0;
     envelope.connect(pads);
-    const voices = Array.from({ length: 5 }, (_, note) => {
+    // The economy profile has a shorter convolution tail and fewer sustained
+    // voices; it remains opt-in and is only built after an audio gesture.
+    const voices = Array.from({ length: economy ? 2 : 5 }, (_, note) => {
       const gain = track(context.createGain());
       gain.gain.value = note === 0 ? 0.065 : 0.045;
       gain.connect(envelope);
@@ -322,7 +327,11 @@ export function buildAmbientGraph(context: BaseAudioContext) {
 }
 
 export type AmbientSoundtrack = ReturnType<typeof createAmbientSoundtrack>;
-export function createAmbientSoundtrack(onFailure: () => void) {
+export function createAmbientSoundtrack(
+  onFailure: () => void,
+  onFirstGesture: (result: { start: number; ready: number | null }) => void =
+    () => {},
+) {
   let context: AudioContext | null = null;
   let graph: ReturnType<typeof buildAmbientGraph> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -335,6 +344,8 @@ export function createAmbientSoundtrack(onFailure: () => void) {
   let pulse = 0.5;
   let regionPresence = 0;
   let regionType: 'nebula' | 'remnant' | null = null;
+  let economy = false;
+  let measuredFirstGesture = false;
   let nextChord = 0,
     nextNote = 0,
     chord = 0,
@@ -379,6 +390,7 @@ export function createAmbientSoundtrack(onFailure: () => void) {
     async setEnabled(value: boolean) {
       if (disposed) return false;
       const version = ++request;
+      const gestureStart = performance.now();
       enabled = value;
       clearMute();
       if (!value) {
@@ -393,7 +405,7 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         // Called directly from the user's click, before any await, for browser autoplay policies.
         if (!context) {
           context = new AudioContext({ latencyHint: 0.2 });
-          graph = buildAmbientGraph(context);
+          graph = buildAmbientGraph(context, { economy });
           nextChord = context.currentTime;
           nextNote = context.currentTime + 1;
         }
@@ -404,6 +416,10 @@ export function createAmbientSoundtrack(onFailure: () => void) {
         graph!.setRegion(regionPresence, regionType);
         graph!.setVolume(volume);
         startTimer();
+        if (!measuredFirstGesture) {
+          measuredFirstGesture = true;
+          onFirstGesture({ start: gestureStart, ready: performance.now() });
+        }
         return true;
       } catch (e) {
         // Autoplay blocked pending a user gesture: stay silent, don't report a failure.
@@ -419,6 +435,20 @@ export function createAmbientSoundtrack(onFailure: () => void) {
     setVolume(value: number, seconds?: number) {
       volume = Math.min(1, Math.max(0, value));
       if (enabled) graph?.setVolume(volume, seconds);
+    },
+    setEconomy(value: boolean) {
+      if (economy === value) return;
+      economy = value;
+      if (!context || !graph) return;
+      // Recreate only an already user-authorized graph: switching quality
+      // cannot cause a sound to start on its own.
+      graph.dispose();
+      graph = buildAmbientGraph(context, { economy });
+      graph.setProximity(proximity, bodyKind);
+      graph.setPulse(pulse);
+      graph.setRegion(regionPresence, regionType);
+      graph.setVolume(enabled ? volume : 0, 0.08);
+      if (enabled) startTimer();
     },
     setProximity(
       value: number,

@@ -3,6 +3,8 @@
 Lot suivant : [ordonnanceur de cadence et politique de qualité commune](LOT-1-ORDONNANCEUR.md).
 Ce document décrit l'instrumentation du lot 0 ; le limiteur à 45 images/s et la
 politique par comptage d'images qu'il mesurait n'existent plus depuis le lot 1.
+La livraison DOM, pause, audio et HTTP est décrite dans le
+[lot 5](LOT-5-DOM-PAUSE-AUDIO-LIVRAISON.md).
 
 ## Capture locale
 

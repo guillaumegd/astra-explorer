@@ -2,3 +2,23 @@
 RewriteEngine On
 RewriteCond %{ENV:HTTPS} !on
 RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Vite names its build assets with a content hash. They may be immutable for a
+# year because a new HTML document points at a different name on every release.
+# HTML itself must be checked again on the next visit. OVH may compress these
+# responses at the platform layer; that is verified on the deployed URL, not
+# inferred from this file.
+<IfModule mod_mime.c>
+  AddType application/javascript .js .mjs
+  AddType text/css .css
+  AddType image/svg+xml .svg
+  AddType application/manifest+json .webmanifest
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(?:js|mjs|css|svg|png|jpe?g|webp|avif|ico|woff2?)$">
+    Header always set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+  <FilesMatch "\.(?:html?)$">
+    Header always set Cache-Control "no-cache, max-age=0, must-revalidate"
+  </FilesMatch>
+</IfModule>
