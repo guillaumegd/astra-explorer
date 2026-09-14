@@ -162,11 +162,25 @@ corps avec particules de surface (astéroïde/dune/volcanique/glace) :
 détail fixé au maximum (un effet borné à 768 points, qui ne justifie pas un
 branchement sur le budget qualité).
 
-Non mesuré ici, comme pour les lots précédents : gel réel >100 ms sur
-matériel modeste, profil GPU du poids exact de chaque levier (l'issue
-elle-même le demande pour affiner les constantes introduites —
-`REGION_STEP_BUDGET`, la table `creationsPerFrame`, le mapping d'octaves),
-et validation visuelle qu'aucun relief de référence ne bouge par comparaison
-d'images à chaque palier plutôt que par construction du code. Ces critères
-chiffrés, comme pour les lots précédents, sont reportés dans l'issue #2, qui
+**Parcours de référence réel** (bouton « Parcours de référence × 3 », panneau
+`?diagnostics=1`, même build statique) : capture de 120 s, budget qualité
+libre (non figé). Sur cette fenêtre, 2 des 57 créneaux scène/répétition
+prévus se sont complétés (`binary`, `galaxy-10000` — le parcours complet
+instrumente chaque scène en profondeur et n'est pas conçu pour tenir en
+120 s) : intervalles de frame plats à 16,7–16,8 ms (p50/p95/p99/max), soit un
+60 images/s régulier, **aucun intervalle supérieur à 100 ms** sur les 449
+images retenues ; coût CPU p95 par scène entre 1,1 et 2,5 ms, largement sous
+le quota du palier. Un résultat positif mais partiel — 2 scènes sur 19, sur
+un Mac M4 Max qui ne représente aucun appareil cible — pas une preuve
+d'absence de gel sur le reste du catalogue de scènes ni sur du matériel
+modeste.
+
+Non mesuré ici, comme pour les lots précédents : le parcours de référence
+complet (19 scènes × 3 répétitions) et le gel réel sur matériel modeste,
+profil GPU du poids exact de chaque levier (l'issue elle-même le demande
+pour affiner les constantes introduites — `REGION_STEP_BUDGET`, la table
+`creationsPerFrame`, le mapping d'octaves), et validation visuelle qu'aucun
+relief de référence ne bouge par comparaison d'images à chaque palier plutôt
+que par construction du code. Ces critères chiffrés, comme pour les lots
+précédents, sont reportés dans l'issue #2, qui
 porte la campagne matérielle.
