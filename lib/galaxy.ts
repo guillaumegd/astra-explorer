@@ -2360,6 +2360,13 @@ export function createGalaxy(
         points: renderer.info.render.points,
         lines: renderer.info.render.lines,
         programs: renderer.info.programs?.length ?? 0,
+        // Newly-created detailed entries this frame, throttled by
+        // quality.budget.creationsPerFrame: the basis for measuring creation
+        // spikes at first approach and after a cache expiry.
+        creations:
+          bodyLOD.stats().created +
+          phenomena.stats().created +
+          regions.stats().created,
         ...renderer.info.memory,
         pixels: renderer.domElement.width * renderer.domElement.height,
         density: settings.density,
