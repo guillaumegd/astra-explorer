@@ -51,7 +51,8 @@ import {
   type BodyCandidate,
   type BodyKind,
 } from './stellar-lod';
-import { particlePosition } from './particle-motion';
+import { galacticUnshear, particlePosition } from './particle-motion';
+import { createSystemSpatialIndex } from './system-spatial-index';
 import {
   createLocalLights,
   mixLocalLights,
@@ -448,6 +449,13 @@ export function createGalaxy(
   filled = Math.min(catalogue.bodies.length, MAX_BODIES);
   fillRange(0, filled);
   geometry.setDrawRange(0, filled);
+  // Systems are static in base space; query with the camera unsheared below.
+  // Their envelopes cover the orbital motion, so this never needs a frame-wide
+  // rebuild while stars are moving.
+  const systemIndex = createSystemSpatialIndex();
+  systemIndex.sync(catalogue.systems);
+  const nearbySystemIds: number[] = [];
+  const unshearedCamera = new THREE.Vector3();
   const replacements = Array.from(
     { length: 12 },
     () => new THREE.Vector2(-1, 0),
@@ -719,13 +727,27 @@ export function createGalaxy(
   pickPoints.frustumCulled = false;
   pickGroup.add(pickPoints);
   let pickTarget: THREE.WebGLRenderTarget | null = null;
-  const pickPixels = new Uint8Array(9 * 9 * 4);
+  // The projection is cropped to this target. A scissor on a full-window
+  // target saves fragments but still allocates and clears the whole texture.
+  const PICK_SIZE = 9;
+  const pickPixels = new Uint8Array(PICK_SIZE * PICK_SIZE * 4);
+  let asyncPickBusy = false;
+  let latestQueuedPick: { x: number; y: number; request: number } | null =
+    null;
+  let pickRequest = 0;
   const pickAt = (clientX: number, clientY: number): number | null => {
-    if (!diagnostics) return performPick(clientX, clientY);
+    const request = ++pickRequest;
+    // An asynchronous read owns the target until its promise settles. Coalesce
+    // subsequent gestures instead of issuing competing reads against it.
+    if (asyncPickBusy) {
+      latestQueuedPick = { x: clientX, y: clientY, request };
+      return null;
+    }
+    if (!diagnostics) return performPick(clientX, clientY, request);
     const started = performance.now();
     renderer.info.reset();
     try {
-      return performPick(clientX, clientY);
+      return performPick(clientX, clientY, request);
     } finally {
       diagnostics.record('picking', started, {
         cpuMs: performance.now() - started,
@@ -733,7 +755,11 @@ export function createGalaxy(
       });
     }
   };
-  const performPick = (clientX: number, clientY: number): number | null => {
+  const performPick = (
+    clientX: number,
+    clientY: number,
+    request: number,
+  ): number | null => {
     const bounds = host.getBoundingClientRect();
     const x = clientX - bounds.left,
       y = clientY - bounds.top;
@@ -799,6 +825,22 @@ export function createGalaxy(
     if (!optical && hit) return hit.object.userData.bodyId;
     // Escaping rays pick the same directional catalogue used by the cube, including
     // images whose source lies outside the user's camera frustum.
+    const sourceWidth = optical
+      ? lensing.skyResolution()
+      : Math.max(PICK_SIZE, Math.floor(bounds.width));
+    const sourceHeight = optical
+      ? lensing.skyResolution()
+      : Math.max(PICK_SIZE, Math.floor(bounds.height));
+    const sx = THREE.MathUtils.clamp(
+        Math.floor(optical ? sourceWidth / 2 : x) - 4,
+        0,
+        sourceWidth - PICK_SIZE,
+      ),
+      sy = THREE.MathUtils.clamp(
+        sourceHeight - Math.floor(optical ? sourceHeight / 2 : y) - 4,
+        0,
+        sourceHeight - PICK_SIZE,
+      );
     const pickCamera = optical
       ? new THREE.PerspectiveCamera(
           90,
@@ -806,34 +848,29 @@ export function createGalaxy(
           optical.body.phenomenon!.diskOuter * 4,
           180,
         )
-      : camera;
+      : camera.clone();
     if (optical) {
       pickCamera.position.copy(optical.origin);
       pickCamera.lookAt(optical.origin.clone().add(optical.direction));
       pickCamera.updateMatrixWorld();
     }
-    const width = optical ? lensing.skyResolution() : Math.floor(bounds.width),
-      height = optical ? lensing.skyResolution() : Math.floor(bounds.height);
+    // `setViewOffset` turns the 9×9 target into the exact screen tile that
+    // was clicked; all vertices retain their normal clipping/projection.
+    pickCamera.setViewOffset(
+      sourceWidth,
+      sourceHeight,
+      sx,
+      sourceHeight - sy - PICK_SIZE,
+      PICK_SIZE,
+      PICK_SIZE,
+    );
+    pickCamera.updateProjectionMatrix();
     if (!pickTarget)
-      pickTarget = new THREE.WebGLRenderTarget(width, height, {
+      pickTarget = new THREE.WebGLRenderTarget(PICK_SIZE, PICK_SIZE, {
         depthBuffer: true,
       });
-    else if (pickTarget.width !== width || pickTarget.height !== height)
-      pickTarget.setSize(width, height);
     pickGroup.matrix.copy(group.matrixWorld);
-    const sx = THREE.MathUtils.clamp(
-        Math.floor(optical ? width / 2 : x) - 4,
-        0,
-        width - 9,
-      ),
-      sy = THREE.MathUtils.clamp(
-        height - Math.floor(optical ? height / 2 : y) - 4,
-        0,
-        height - 9,
-      );
     const clear = renderer.getClearColor(new THREE.Color());
-    pickTarget.scissor.set(sx, sy, 9, 9);
-    pickTarget.scissorTest = true;
     renderer.setRenderTarget(pickTarget);
     renderer.setClearColor(0);
     renderer.clear();
@@ -842,7 +879,7 @@ export function createGalaxy(
     const strength = uniforms.uContextStrength.value;
     if (optical) {
       uniforms.uProjectionScale.value = 256;
-      uniforms.uPixelRatio.value = width / 512;
+      uniforms.uPixelRatio.value = sourceWidth / 512;
       uniforms.uContextStrength.value = 0;
     }
     const savedPickMaterial = pickPoints.material;
@@ -859,29 +896,79 @@ export function createGalaxy(
     uniforms.uProjectionScale.value = projection;
     uniforms.uPixelRatio.value = ratio;
     uniforms.uContextStrength.value = strength;
-    renderer.readRenderTargetPixels(pickTarget, sx, sy, 9, 9, pickPixels);
     renderer.setRenderTarget(null);
     renderer.setClearColor(clear);
-    let best = -1,
-      score = Infinity;
-    for (let i = 0; i < 81; i++) {
-      const value =
-        pickPixels[i * 4] +
-        pickPixels[i * 4 + 1] * 256 +
-        pickPixels[i * 4 + 2] * 65536 -
-        1;
-      const d = ((i % 9) - 4) ** 2 + (Math.floor(i / 9) - 4) ** 2;
-      if (
-        value >= 0 &&
-        value < settings.density &&
-        d < score &&
-        (!optical || d <= 4)
-      ) {
-        best = value;
-        score = d;
+    const decode = () => {
+      let best = -1,
+        score = Infinity;
+      for (let i = 0; i < PICK_SIZE * PICK_SIZE; i++) {
+        const value =
+          pickPixels[i * 4] +
+          pickPixels[i * 4 + 1] * 256 +
+          pickPixels[i * 4 + 2] * 65536 -
+          1;
+        const d =
+          ((i % PICK_SIZE) - 4) ** 2 +
+          (Math.floor(i / PICK_SIZE) - 4) ** 2;
+        if (
+          value >= 0 &&
+          value < settings.density &&
+          d < score &&
+          (!optical || d <= 4)
+        ) {
+          best = value;
+          score = d;
+        }
       }
+      return best >= 0 ? best : null;
+    };
+    if (typeof renderer.readRenderTargetPixelsAsync !== 'function') {
+      host.dataset.pickReadback = 'sync';
+      renderer.readRenderTargetPixels(
+        pickTarget,
+        0,
+        0,
+        PICK_SIZE,
+        PICK_SIZE,
+        pickPixels,
+      );
+      return decode();
     }
-    return best >= 0 ? best : null;
+    host.dataset.pickReadback = 'async';
+    asyncPickBusy = true;
+    const densityAtRequest = settings.density;
+    const cameraAtRequest = camera.position.clone();
+    void renderer
+      .readRenderTargetPixelsAsync(
+        pickTarget,
+        0,
+        0,
+        PICK_SIZE,
+        PICK_SIZE,
+        pickPixels,
+      )
+      .then(() => {
+        // A density change, camera move or newer gesture makes a GPU answer
+        // obsolete. Immediate CPU/mesh hits above still respond synchronously.
+        if (
+          request === pickRequest &&
+          densityAtRequest === settings.density &&
+          camera.position.distanceToSquared(cameraAtRequest) < 1e-10
+        ) {
+          const id = decode();
+          if (id !== null) select(id);
+        }
+      })
+      .catch(() => {
+        host.dataset.pickReadback = 'sync-fallback';
+      })
+      .finally(() => {
+        asyncPickBusy = false;
+        const next = latestQueuedPick;
+        latestQueuedPick = null;
+        if (next) performPick(next.x, next.y, next.request);
+      });
+    return null;
   };
   let framed: {
     radius: number;
@@ -1348,6 +1435,7 @@ export function createGalaxy(
     gpuDiagnostics?.reset();
     diagnostics?.record('context-restored', performance.now(), {});
     lensing.invalidate();
+    systemIndex.sync(catalogue.systems);
     lost = false;
     onError('');
     quality.reset(performance.now(), 'context-restored');
@@ -1466,6 +1554,7 @@ export function createGalaxy(
       filled = target;
       markFilledAttributesDirty();
     }
+    systemIndex.sync(catalogue.systems);
     geometry.setDrawRange(0, settings.density);
     dustGeometry.setDrawRange(
       0,
@@ -1479,6 +1568,7 @@ export function createGalaxy(
       targetFps: 60,
       volumeSteps: 16,
       opticalResolution: 512,
+      opticalSteps: 320,
     });
     applyBudget('replay');
     lensing.invalidate();
@@ -1901,8 +1991,10 @@ export function createGalaxy(
     const projectionScale =
       renderHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
     uniforms.uProjectionScale.value = projectionScale;
-    // Bounded rolling scan: all active IDs are considered, including moving neighbours.
-    // Their impostors grow immediately; mesh promotion can wait for this inexpensive scan.
+    // Candidates first come from conservative system bounds around the camera.
+    // A tiny rolling sweep remains as a slow-path for bodies that move beyond
+    // their nominal envelope, but it is capped by wall time rather than a
+    // fixed 2,048-ID allocation every frame.
     const measure = (id: number) => {
       particlePosition(
         positions,
@@ -1934,7 +2026,38 @@ export function createGalaxy(
       };
     };
     if (distance < 3) {
-      for (let i = 0; i < 2048; i++) {
+      unshearedCamera.copy(camera.position);
+      group.worldToLocal(unshearedCamera);
+      galacticUnshear(
+        unshearedCamera.x,
+        unshearedCamera.y,
+        unshearedCamera.z,
+        rotation,
+        unshearedCamera,
+      );
+      const neighbourReach = Math.min(3, Math.max(0.4, distance * 0.35 + 0.3));
+      systemIndex.near(
+        unshearedCamera.x,
+        unshearedCamera.y,
+        unshearedCamera.z,
+        neighbourReach,
+        settings.density,
+        nearbySystemIds,
+      );
+      for (const id of nearbySystemIds) {
+        const m = measure(id);
+        if (
+          m.visible &&
+          m.pixels >=
+            (catalogue.getBody(id).capabilities.renderClass !== 'ordinary'
+              ? phenomena.detailThreshold(id)
+              : 18)
+        )
+          detailShortlist.set(id, { pixels: m.pixels, seen: elapsed });
+      }
+      const quotaMs = settings.quality === 'economy' ? 1.5 : 2;
+      const deadline = performance.now() + quotaMs;
+      for (let i = 0; i < 2048 && performance.now() < deadline; i++) {
         const id = scanCursor % settings.density;
         scanCursor = (scanCursor + 1) % settings.density;
         const m = measure(id);
@@ -2300,6 +2423,7 @@ export function createGalaxy(
             quality.budget.opticalResolution,
             lensing.captureStats().resolution,
           ),
+      replay ? 320 : quality.budget.opticalSteps,
     );
     gpuDiagnostics?.endFrame();
     const renderEnd = diagnostics ? performance.now() : 0;
@@ -2483,6 +2607,7 @@ export function createGalaxy(
     if (growthDisposed) return;
     if (systems.length && systems[0].index === catalogue.systems.length) {
       catalogue.adopt(systems);
+      systemIndex.sync(catalogue.systems);
       // A chunk's last system can overshoot MAX_BODIES (systems are never
       // split), so clamp before touching the MAX_BODIES-sized GPU buffers.
       const target = Math.min(catalogue.bodies.length, MAX_BODIES);

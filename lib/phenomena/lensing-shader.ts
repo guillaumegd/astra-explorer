@@ -11,6 +11,7 @@ uniform vec3 uEye,uTint;
 uniform float uRadius,uInner,uOuter,uFade,uTime,uSeed,uJets;
 uniform vec2 uResolution;
 uniform float uSkySize;
+uniform float uIntegratorSteps;
 float skyFootprint;
 vec2 advance(vec2 q,float h){
   vec2 a=vec2(q.y,1.5*q.x*q.x-q.x);
@@ -63,6 +64,7 @@ vec3 lens(vec2 uv,vec3 original){
   bool escaped=false,firstHit=true;
   if(sine>1e-7){
     for(int i=0;i<${RAY_STEPS};i++){
+      if(float(i)>=uIntegratorSteps)break;
       float h=min(${RAY_STEP.toFixed(2)},.08/max(1.,abs(q.y)));
       vec2 next=advance(q,h);
       // Intersect each curved segment with the finite emitting slab. This also

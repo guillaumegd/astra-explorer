@@ -43,6 +43,7 @@ export function createLensing() {
     uFade: { value: 0 },
     uResolution: { value: size },
     uSkySize: { value: 512 },
+    uIntegratorSteps: { value: 320 },
   };
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -79,6 +80,7 @@ export function createLensing() {
       skySimulationTime = simulationTime,
       probe?: PassProbe,
       fixedSkyResolution?: number,
+      integratorSteps = 320,
     ) {
       active = subject && subject.fade > 0.002 ? subject : null;
       if (!active) {
@@ -129,6 +131,11 @@ export function createLensing() {
       uniforms.uJets.value = p.jets ? 1 : 0;
       uniforms.uTime.value = simulationTime;
       uniforms.uFade.value = fade;
+      uniforms.uIntegratorSteps.value = THREE.MathUtils.clamp(
+        Math.floor(integratorSteps),
+        32,
+        320,
+      );
       // Keep sky and scene on the same cadence. Capture cost adjusts resolution
       // with hysteresis; pausing an unchanged world still reuses the last capture.
       captureBudget.poll(renderer.getContext?.());
@@ -189,11 +196,43 @@ export function createLensing() {
         group.visible = visible;
         renderer.setRenderTarget(null);
       }
-      if (probe)
-        probe.measure('lensing-composite', () =>
-          renderer.render(composite, camera),
+      const renderComposite = () => {
+        // The shader has an early-out outside this sphere. Scissoring avoids
+        // submitting its 320-step path over pixels that cannot be influenced.
+        // Keep the full target when the camera is inside/behind the bound.
+        const influence = Math.max(
+          p.diskOuter * 2,
+          p.jets ? body.radius * 40 : 0,
         );
-      else renderer.render(composite, camera);
+        const view = center.clone().applyMatrix4(camera.matrixWorldInverse);
+        const depth = -view.z;
+        const radius =
+          (influence * size.y) /
+          Math.max(0.000001, 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * depth);
+        if (
+          depth <= camera.near ||
+          radius >= Math.max(size.x, size.y) ||
+          !renderer.setScissorTest
+        ) {
+          renderer.render(composite, camera);
+          return;
+        }
+        const projectedCenter = center.clone().project(camera);
+        const x = Math.max(0, Math.floor((projectedCenter.x * 0.5 + 0.5) * size.x - radius));
+        const y = Math.max(0, Math.floor((projectedCenter.y * 0.5 + 0.5) * size.y - radius));
+        const width = Math.min(size.x - x, Math.ceil(radius * 2));
+        const height = Math.min(size.y - y, Math.ceil(radius * 2));
+        if (width <= 0 || height <= 0) return;
+        renderer.setScissorTest(true);
+        renderer.setScissor(x, y, width, height);
+        try {
+          renderer.render(composite, camera);
+        } finally {
+          renderer.setScissorTest(false);
+        }
+      };
+      if (probe) probe.measure('lensing-composite', renderComposite);
+      else renderComposite();
     },
     trace(ray: THREE.Ray) {
       if (!active || active.fade < 0.5) return null;

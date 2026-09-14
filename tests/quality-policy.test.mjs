@@ -42,6 +42,7 @@ test('the budget contract is complete and ordered from rich to modest', () => {
     'cloudSteps',
     'volumeSteps',
     'opticalResolution',
+    'opticalSteps',
     'population',
     'creationsPerFrame',
   ];
