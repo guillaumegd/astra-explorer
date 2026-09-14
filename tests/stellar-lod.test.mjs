@@ -12,7 +12,9 @@ import {
   MAX_ACTIVE_BODIES,
   selectStellarLevel,
   surfaceVisibility,
+  surfaceDetailFor,
 } from '../lib/stellar-lod.ts';
+import { QUALITY_TIERS } from '../lib/quality-policy.ts';
 
 test('LOD uses hysteresis in both directions', () => {
   assert.equal(selectStellarLevel(79, 0), 0);
@@ -321,5 +323,132 @@ test('ocean is a separate sea-level surface sharing rotation and fade with its t
   });
   lod.update([], 6, 1);
   assert.ok(disposed);
+  lod.dispose();
+});
+
+test('surface detail keeps octave 0 always on and only fades finer octaves with the grid resolution tier', () => {
+  const rich = surfaceDetailFor(128),
+    mid = surfaceDetailFor(64),
+    low = surfaceDetailFor(32);
+  assert.equal(rich.fineNormal, 1);
+  assert.equal(mid.fineNormal, 0);
+  assert.equal(low.fineNormal, 0);
+  assert.ok(rich.landOctaves >= mid.landOctaves && mid.landOctaves >= low.landOctaves);
+  assert.ok(
+    rich.ridgeOctaves >= mid.ridgeOctaves && mid.ridgeOctaves >= low.ridgeOctaves,
+  );
+  // Never zero: the coarse octave that carries the coastline/mountain-belt
+  // shape always runs, at every tier.
+  for (const detail of [rich, mid, low]) {
+    assert.ok(detail.landOctaves >= 1);
+    assert.ok(detail.ridgeOctaves >= 1);
+  }
+  // Every published tier resolves to a valid, bounded detail set.
+  for (const tier of QUALITY_TIERS) {
+    const detail = surfaceDetailFor(tier.gridResolution);
+    assert.ok(detail.landOctaves <= 7 && detail.ridgeOctaves <= 4);
+    assert.ok([0, 1].includes(detail.fineNormal));
+  }
+});
+
+test('grid resolution caps sphere and patch geometry segment counts', () => {
+  const parent = new THREE.Group();
+  const quality = { budget: { ...QUALITY_TIERS[0], gridResolution: 32 } };
+  const lod = createBodyLOD(parent, MAX_DETAILED_BODIES, quality);
+  const body = describeBody(3);
+  const candidate = {
+    identity: body,
+    position: new THREE.Vector3(),
+    pixels: 300,
+    distanceInRadii: 1.01,
+    cameraPosition: new THREE.Vector3(0, 0, body.radius * 1.02),
+  };
+  for (let i = 0; i < 5; i++) lod.update([candidate], i / 10, 0);
+  const mesh = parent.children[0].children[0];
+  assert.ok(mesh.geometry.parameters.widthSegments <= 32);
+  const patch = parent.children[0].children.find(
+    (m) => m.material?.uniforms?.uIsPatch?.value === 1,
+  );
+  assert.ok(patch);
+  assert.ok(patch.geometry.parameters.widthSegments <= 32);
+  lod.dispose();
+});
+
+test('a ring geometry is shared across ringed bodies and freed once nothing uses it', () => {
+  let ringed;
+  for (let id = 0; id < 2000 && !ringed; id++) {
+    const body = describeBody(id);
+    if (body.rings) ringed = body;
+  }
+  assert.ok(ringed, 'fixture assumption: at least one ringed body in range');
+  const parent = new THREE.Group(),
+    lod = createBodyLOD(parent);
+  const candidate = (offset) => ({
+    identity: ringed,
+    position: new THREE.Vector3(offset, 0, 0),
+    pixels: 200,
+    distanceInRadii: 5,
+  });
+  lod.update([candidate(0)], 0, 0);
+  lod.update([candidate(0)], 0.1, 0);
+  const firstRing = parent.children[0].children.find((m) => m.userData.bodyId === undefined && m.geometry?.type === 'RingGeometry');
+  assert.ok(firstRing);
+  let disposed = false;
+  firstRing.geometry.addEventListener('dispose', () => {
+    disposed = true;
+  });
+  lod.update([], 6, 0);
+  assert.ok(disposed, 'shared ring geometry is freed once no entry uses it');
+  lod.dispose();
+});
+
+test('creationsPerFrame throttles new entries, keeping the most relevant candidates first', () => {
+  const parent = new THREE.Group();
+  const quality = { budget: { ...QUALITY_TIERS[0], creationsPerFrame: 1 } };
+  const lod = createBodyLOD(parent, MAX_DETAILED_BODIES, quality);
+  const candidate = (id, pixels) => ({
+    identity: describeBody(id),
+    position: new THREE.Vector3(id, 0, 0),
+    pixels,
+    distanceInRadii: 5,
+  });
+  // Sorted by descending relevance, as the real candidate lists already are.
+  const candidates = [candidate(1, 200), candidate(2, 150), candidate(3, 100)];
+  lod.update(candidates, 0, 0);
+  assert.equal(lod.stats().created, 1);
+  assert.equal(lod.stats().cached, 1);
+  assert.equal(
+    parent.children[0].children[0].userData.bodyId,
+    candidates[0].identity.id,
+  );
+  lod.update(candidates, 0.1, 0);
+  assert.equal(lod.stats().created, 1);
+  assert.equal(lod.stats().cached, 2);
+  lod.dispose();
+});
+
+test('cloud step budget updates every frame on already-created atmospheres', () => {
+  const parent = new THREE.Group();
+  const quality = { budget: { ...QUALITY_TIERS[0], cloudSteps: 6 } };
+  const lod = createBodyLOD(parent, MAX_DETAILED_BODIES, quality);
+  const body = Array.from({ length: 200 }, (_, i) => describeBody(i)).find(
+    (b) => atmosphereFor(b),
+  );
+  assert.ok(body, 'fixture assumption: at least one body with an atmosphere');
+  const candidate = {
+    identity: body,
+    position: new THREE.Vector3(),
+    pixels: 300,
+    distanceInRadii: 5,
+  };
+  lod.update([candidate], 0, 0);
+  const atmosphere = parent.children[0].children.find(
+    (m) => m.material?.uniforms?.uClouds,
+  );
+  assert.ok(atmosphere);
+  assert.equal(atmosphere.material.uniforms.uCloudSteps.value, 6);
+  quality.budget = { ...quality.budget, cloudSteps: 0 };
+  lod.update([candidate], 0.1, 0);
+  assert.equal(atmosphere.material.uniforms.uCloudSteps.value, 0);
   lod.dispose();
 });

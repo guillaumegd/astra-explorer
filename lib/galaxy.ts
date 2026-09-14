@@ -577,7 +577,7 @@ export function createGalaxy(
     palette: 0,
     quality: 'auto',
   };
-  const bodyLOD = createBodyLOD(group, 8);
+  const bodyLOD = createBodyLOD(group, 8, quality);
   const phenomena = createPhenomenaManager(group);
   const regions = createRegionManager(group);
   const lensing = createLensing();
@@ -2046,6 +2046,8 @@ export function createGalaxy(
       wallTime,
       rotation,
       activityTime,
+      renderer,
+      camera,
     );
     const specialFades = phenomena.update(
       visibleCandidates.slice(0, detailBodies),

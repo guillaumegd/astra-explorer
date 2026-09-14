@@ -25,6 +25,8 @@ export type QualityBudget = {
   opticalResolution: number;
   /** Bodies prepared for the first render; consumed by lot 2. */
   population: number;
+  /** New detailed entries (bodies, phenomena, regions) a manager may create per update() call. */
+  creationsPerFrame: number;
 };
 
 export type QualityMode = 'auto' | 'economy' | 'balanced' | 'high';
@@ -41,6 +43,7 @@ const tier = (
   volumeSteps: number,
   opticalResolution: number,
   population: number,
+  creationsPerFrame: number,
 ): QualityBudget => ({
   tier: 0,
   label,
@@ -54,17 +57,18 @@ const tier = (
   volumeSteps,
   opticalResolution,
   population,
+  creationsPerFrame,
 });
 
 /** Engineering starting values from the profile table of the parent issue. */
 export const QUALITY_TIERS: readonly QualityBudget[] = [
-  tier('high-60', 60, 1.75, 4e6, 8, 8, 128, 6, 16, 512, 65000),
-  tier('high-entry', 60, 1.25, 4e6, 8, 8, 128, 6, 16, 512, 65000),
-  tier('balanced-60', 60, 1.25, 2e6, 8, 4, 64, 4, 8, 512, 40000),
-  tier('balanced-30', 30, 1, 2e6, 10, 4, 64, 4, 8, 512, 20000),
-  tier('economy-30', 30, 1, 1e6, 10, 2, 64, 2, 4, 256, 20000),
-  tier('economy-floor', 30, 0.8, 1e6, 10, 2, 32, 0, 4, 256, 10000),
-  tier('rescue', 30, 0.7, 7e5, 12, 1, 32, 0, 2, 128, 10000),
+  tier('high-60', 60, 1.75, 4e6, 8, 8, 128, 6, 16, 512, 65000, 4),
+  tier('high-entry', 60, 1.25, 4e6, 8, 8, 128, 6, 16, 512, 65000, 4),
+  tier('balanced-60', 60, 1.25, 2e6, 8, 4, 64, 4, 8, 512, 40000, 3),
+  tier('balanced-30', 30, 1, 2e6, 10, 4, 64, 4, 8, 512, 20000, 2),
+  tier('economy-30', 30, 1, 1e6, 10, 2, 64, 2, 4, 256, 20000, 2),
+  tier('economy-floor', 30, 0.8, 1e6, 10, 2, 32, 0, 4, 256, 10000, 1),
+  tier('rescue', 30, 0.7, 7e5, 12, 1, 32, 0, 2, 128, 10000, 1),
 ].map((budget, index) => ({ ...budget, tier: index }));
 
 const RESCUE = QUALITY_TIERS.length - 1;
