@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { portableNumbers } from './fixtures/portable-numbers.mjs';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
 import {
   generateSystem,
@@ -171,7 +172,7 @@ test('100000 generated systems obey the population bounds and invisible-node gra
 
 // Pre-comet HEAD baseline, excluding the deliberately extended system envelope.
 // Restore the consumed reservation and omit only the newly activated comet.
-test('comet activation leaves every existing body bit-identical', () => {
+test('comet activation leaves every existing body identical', () => {
   const cat = new RuntimeCatalogue();
   cat.ensure(20000);
   const hash = createHash('sha256');
@@ -179,45 +180,50 @@ test('comet activation leaves every existing body bit-identical', () => {
   for (let index = 0; index < 512; index++) {
     const s = cat.getSystem(index);
     hash.update(
-      JSON.stringify({
-        id: s.id,
-        anchor: s.anchor,
-        architecture: s.architecture,
-        reserved: [
-          ...s.reservedBodyIds,
-          ...s.bodies.filter((b) => b.comet).map((b) => b.bodyId),
-        ],
-        motionSeed: s.motionSeed,
-        nodes: s.nodes
-          .filter(
-            (n) => !s.bodies.some((b) => b.comet && b.bodyId === n.bodyId),
-          )
-          .map((n) => ({
-            id: n.id,
-            parentId: n.parentId,
-            bodyId: n.bodyId,
-          })),
-        bodies: s.bodies
-          .filter((b) => !b.comet)
-          .map((b) => ({
-            bodyId: b.bodyId,
-            radius: b.radius,
-            seed: b.seed,
-            kind: b.kind,
-            orbit: b.orbit && {
-              radius: b.orbit.radius,
-              phase: b.orbit.phase,
-              speed: b.orbit.speed,
-              inclination: b.orbit.inclination,
-            },
-          })),
-      }),
+      JSON.stringify(
+        {
+          id: s.id,
+          anchor: s.anchor,
+          architecture: s.architecture,
+          reserved: [
+            ...s.reservedBodyIds,
+            ...s.bodies.filter((b) => b.comet).map((b) => b.bodyId),
+          ],
+          motionSeed: s.motionSeed,
+          nodes: s.nodes
+            .filter(
+              (n) => !s.bodies.some((b) => b.comet && b.bodyId === n.bodyId),
+            )
+            .map((n) => ({
+              id: n.id,
+              parentId: n.parentId,
+              bodyId: n.bodyId,
+            })),
+          bodies: s.bodies
+            .filter((b) => !b.comet)
+            .map((b) => ({
+              bodyId: b.bodyId,
+              radius: b.radius,
+              seed: b.seed,
+              kind: b.kind,
+              orbit: b.orbit && {
+                radius: b.orbit.radius,
+                phase: b.orbit.phase,
+                speed: b.orbit.speed,
+                inclination: b.orbit.inclination,
+              },
+            })),
+        },
+        portableNumbers,
+      ),
     );
     hashed++;
   }
   assert.equal(hashed, 512);
+  // Rounded to ten significant digits at 3d3c42b, identical on macOS arm64,
+  // Linux arm64 and Linux x64.
   assert.equal(
     hash.digest('hex'),
-    '8c328c4a431b741d478f68067ffc5156eb4c6912b2e0a682bab128c57f46da6f',
+    '06037128f4774747112959bd3e3cd0e2da57a2a818e3aab7ade3192c3b28104e',
   );
 });

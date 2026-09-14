@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { portableNumbers } from './fixtures/portable-numbers.mjs';
 import * as THREE from 'three';
 import { generateSystem } from '../lib/catalogue/generate.ts';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
@@ -39,41 +40,47 @@ test('binary activation moves nothing else in the V2 baseline', () => {
     const companion = s.architecture === 'binary' ? `${s.id}:body:001` : null;
     if (companion) binaries++;
     hash.update(
-      JSON.stringify({
-        id: s.id,
-        anchor: s.anchor,
-        reserved: [
-          ...s.reservedBodyIds,
-          ...s.bodies.filter((b) => b.comet).map((b) => b.bodyId),
-        ].filter((r) => r !== companion),
-        nodes: companion
-          ? null
-          : s.nodes
-              .filter(
-                (n) => !s.bodies.some((b) => b.comet && b.bodyId === n.bodyId),
-              )
-              .map((n) => ({
-                id: n.id,
-                parentId: n.parentId,
-                bodyId: n.bodyId,
-              })),
-        bodies: s.bodies
-          .filter((b) => b.bodyId !== companion && !b.comet)
-          .map((b) => ({
-            bodyId: b.bodyId,
-            radius: b.radius,
-            seed: b.seed,
-            orbit: b.role === 'central' ? null : shape(b.orbit),
-          })),
-      }),
+      JSON.stringify(
+        {
+          id: s.id,
+          anchor: s.anchor,
+          reserved: [
+            ...s.reservedBodyIds,
+            ...s.bodies.filter((b) => b.comet).map((b) => b.bodyId),
+          ].filter((r) => r !== companion),
+          nodes: companion
+            ? null
+            : s.nodes
+                .filter(
+                  (n) =>
+                    !s.bodies.some((b) => b.comet && b.bodyId === n.bodyId),
+                )
+                .map((n) => ({
+                  id: n.id,
+                  parentId: n.parentId,
+                  bodyId: n.bodyId,
+                })),
+          bodies: s.bodies
+            .filter((b) => b.bodyId !== companion && !b.comet)
+            .map((b) => ({
+              bodyId: b.bodyId,
+              radius: b.radius,
+              seed: b.seed,
+              orbit: b.role === 'central' ? null : shape(b.orbit),
+            })),
+        },
+        portableNumbers,
+      ),
     );
   }
   // Fail loudly if the filters ever stop filtering anything.
   assert.equal(binaries, 25);
-  // Captured from generateSystem at d44d924, before activating binaries.
+  // Captured from generateSystem at d44d924, before activating binaries, with
+  // numbers rounded to ten significant digits: identical on macOS arm64,
+  // Linux arm64 and Linux x64.
   assert.equal(
     hash.digest('hex'),
-    '6a3f67a8cb75975d7df4b598af6f419ce506fa35eb7129945bf8714609e485f8',
+    '84478c9bd3de72a18575877124ee05b7eca0fd865e729888685ecbe9945b7db0',
   );
 });
 
