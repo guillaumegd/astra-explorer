@@ -577,9 +577,10 @@ export function createGalaxy(
     palette: 0,
     quality: 'auto',
   };
-  const bodyLOD = createBodyLOD(group, 8);
-  const phenomena = createPhenomenaManager(group);
-  const regions = createRegionManager(group);
+  const bodyLOD = createBodyLOD(group, 8, quality);
+  const phenomena = createPhenomenaManager(group, quality);
+  const regions = createRegionManager(group, quality);
+  group.add(regions.impostorPoints);
   const lensing = createLensing();
   // The all-sky catalogue uses the same geometry, motion, colours and active range.
   // Local detailed bodies are composited using depth, never baked into infinity.
@@ -2046,6 +2047,8 @@ export function createGalaxy(
       wallTime,
       rotation,
       activityTime,
+      renderer,
+      camera,
     );
     const specialFades = phenomena.update(
       visibleCandidates.slice(0, detailBodies),
@@ -2053,6 +2056,8 @@ export function createGalaxy(
       reduced.matches ? 0 : activityTime,
       reduced.matches,
       rotation,
+      renderer,
+      camera,
     );
     fades.push(...specialFades);
     // A small sweep is exact for rigid moving regions; differential unshear is not.
@@ -2113,6 +2118,8 @@ export function createGalaxy(
       reduced.matches ? 0 : activityTime,
       rotation,
       reduced.matches,
+      renderer,
+      camera,
     );
     host.dataset.regions = String(
       regions.stats().cached + regions.stats().persistent,
@@ -2353,6 +2360,13 @@ export function createGalaxy(
         points: renderer.info.render.points,
         lines: renderer.info.render.lines,
         programs: renderer.info.programs?.length ?? 0,
+        // Newly-created detailed entries this frame, throttled by
+        // quality.budget.creationsPerFrame: the basis for measuring creation
+        // spikes at first approach and after a cache expiry.
+        creations:
+          bodyLOD.stats().created +
+          phenomena.stats().created +
+          regions.stats().created,
         ...renderer.info.memory,
         pixels: renderer.domElement.width * renderer.domElement.height,
         density: settings.density,

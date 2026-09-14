@@ -7,6 +7,13 @@ import { planetWeather } from './planet-weather.ts';
 import { createStellarActivity } from './stellar-activity.ts';
 import { compileOrbitChain, orbitalOffset } from './orbits.ts';
 import { terrainNoise, terrainVertex } from './terrain-shaders.ts';
+import { QUALITY_TIERS, type QualityBudget } from './quality-policy.ts';
+
+/** Richest tier, creation unthrottled: the default when no controller is wired in. */
+const UNCONSTRAINED_BUDGET: QualityBudget = {
+  ...QUALITY_TIERS[0],
+  creationsPerFrame: Infinity,
+};
 
 import { describeBody } from './catalogue/runtime.ts';
 import type { BodyIdentity } from './catalogue/types.ts';
@@ -42,6 +49,20 @@ export function minimumOrbitRatio(body: BodyIdentity): number {
       : 1.018;
 }
 
+/**
+ * Derives per-fragment surface detail from the quality budget's grid
+ * resolution: octave 0 of every noise loop always runs (it carries the
+ * coastline/mountain-belt shape), only the fine octaves above it fade with
+ * the tier, so no reference relief moves as quality changes.
+ */
+export function surfaceDetailFor(gridResolution: number) {
+  return {
+    fineNormal: gridResolution >= 128 ? 1 : 0,
+    landOctaves: gridResolution >= 128 ? 7 : gridResolution >= 64 ? 5 : 3,
+    ridgeOctaves: gridResolution >= 128 ? 4 : gridResolution >= 64 ? 3 : 2,
+  };
+}
+
 export function selectStellarLevel(pixels: number, current: number): number {
   if (current === 2 && pixels > 155) return 2;
   if (pixels > 190) return 2;
@@ -65,6 +86,7 @@ const fragmentShader = `
  uniform float uTime, uDetail, uFade, uSeed, uType;
  uniform vec3 uColor,uLightDirection;
  uniform float uRelief,uIsPatch,uPatchAngle,uPatchEnabled,uSurfaceDetail;
+ uniform float uFineNormal,uLandOctaves,uRidgeOctaves;
  uniform vec3 uPatchAxis;
  uniform mat3 normalMatrix;
  ${localLighting}
@@ -90,14 +112,17 @@ const fragmentShader = `
    vec3 p=normalize(vPosition), offset=vec3(uSeed, uSeed*0.37, uSeed*0.71);
    float cap=dot(p,uPatchAxis)-cos(uPatchAngle);
    if(uPatchEnabled>0.5 && ((uIsPatch<0.5 && dot(p,uPatchAxis)>cos(uPatchAngle*0.82))||(uIsPatch>0.5 && cap<=0.0))) discard;
-   float land=terrainLand(p,uSeed);
+   float land=terrainLand(p,uSeed,uLandOctaves);
    vec3 shadingNormal=normalize(vNormal);
-   if(uRelief>0.001 && uType>0.5 && uType!=2.0) {
+   // Fine per-fragment bump normals are the costliest lighting detail (4
+   // terrainHeight evaluations); the richest tiers only. Lower tiers keep the
+   // mesh's own geometric normal, never move the terrain itself.
+   if(uRelief>0.001 && uFineNormal>0.5 && uType>0.5 && uType!=2.0) {
      vec3 t=normalize(cross(p,abs(p.y)>0.95?vec3(1,0,0):vec3(0,1,0)));
      vec3 b=cross(p,t);
      float stepSize=max(0.001,length(fwidth(p))*2.0);
-     float dx=(terrainHeight(normalize(p+t*stepSize),uSeed,uType)-terrainHeight(normalize(p-t*stepSize),uSeed,uType))/(2.0*stepSize);
-     float dy=(terrainHeight(normalize(p+b*stepSize),uSeed,uType)-terrainHeight(normalize(p-b*stepSize),uSeed,uType))/(2.0*stepSize);
+     float dx=(terrainHeight(normalize(p+t*stepSize),uSeed,uType,uLandOctaves,uRidgeOctaves)-terrainHeight(normalize(p-t*stepSize),uSeed,uType,uLandOctaves,uRidgeOctaves))/(2.0*stepSize);
+     float dy=(terrainHeight(normalize(p+b*stepSize),uSeed,uType,uLandOctaves,uRidgeOctaves)-terrainHeight(normalize(p-b*stepSize),uSeed,uType,uLandOctaves,uRidgeOctaves))/(2.0*stepSize);
      shadingNormal=normalize(normalMatrix*normalize(p-(t*dx+b*dy)*uRelief));
    }
    float facing=max(dot(shadingNormal,normalize(vView)),0.0);
@@ -143,7 +168,7 @@ const fragmentShader = `
        color=uColor*(0.45+land*0.75+dunes*0.12);
        color=mix(color,uColor*1.1,driftingVeil(p,.45)*.18);
      } else if(uType<6.5) {
-       float fissures=1.0-smoothstep(-0.003,-0.0015,terrainHeight(p,uSeed,uType));
+       float fissures=1.0-smoothstep(-0.003,-0.0015,terrainHeight(p,uSeed,uType,uLandOctaves,uRidgeOctaves));
        color=vec3(0.085,0.065,0.055)*(0.6+land)*(0.08+light)+uColor*fissures*(0.65+0.3*sin(uTime*.7+land*35.+noise(p*90.+offset)*5.));
      } else {
        float cracks=iceField(p,uSeed);
@@ -162,9 +187,9 @@ const fragmentShader = `
    if(uType==1.0 || uType==4.0) {
      float shore=uType==4.0?0.56:0.49;
      float aa=max(fwidth(land)*1.5,0.0006);
-     float dry=smoothstep(-0.00002,0.00002,terrainHeight(p,uSeed,uType));
-     float height=terrainHeight(p,uSeed,uType);
-     float mountains=mountainRange(p,uSeed);
+     float dry=smoothstep(-0.00002,0.00002,terrainHeight(p,uSeed,uType,uLandOctaves,uRidgeOctaves));
+     float height=terrainHeight(p,uSeed,uType,uLandOctaves,uRidgeOctaves);
+     float mountains=mountainRange(p,uSeed,uRidgeOctaves);
      float moisture=terrainNoise(p*18.0+offset+8.0);
      vec3 ground=mix(vec3(0.36,0.29,0.12),vec3(0.055,0.19,0.065),smoothstep(0.25,0.65,moisture));
      ground=mix(ground,vec3(0.27,0.24,0.20),smoothstep(0.10,0.38,mountains));
@@ -202,14 +227,14 @@ const fragmentShader = `
 `;
 
 const oceanFragment = `
- uniform float uSeed,uType,uFade,uTime;
+ uniform float uSeed,uType,uFade,uTime,uLandOctaves,uRidgeOctaves;
  uniform vec3 uLightDirection;
  varying vec3 vPosition,vNormal,vView;
  ${localLighting}
  ${terrainNoise}
  void main(){
    vec3 p=normalize(vPosition);
-   float floorHeight=terrainHeight(p,uSeed,uType);
+   float floorHeight=terrainHeight(p,uSeed,uType,uLandOctaves,uRidgeOctaves);
    if(floorHeight>=0.0)discard;
    float shelf=1.0-smoothstep(0.0,0.003,-floorHeight);
    vec3 color=mix(vec3(0.009,0.035,0.105),vec3(0.025,0.34,0.38),pow(shelf,2.0));
@@ -240,7 +265,7 @@ const atmosphereFragment =
   fragmentShader.split(' void main()')[0] +
   `
 
- uniform float uClouds, uHaze;
+ uniform float uClouds, uHaze, uCloudSteps;
  uniform vec3 uLocalCamera,uLocalLight;
  float cloudDensity(vec3 p) {
    vec3 drift=vec3(uTime*0.018,0.0,uTime*0.011);
@@ -260,6 +285,7 @@ const atmosphereFragment =
    // with advected billows and self-shading, no full-screen volume pass.
    float stride=0.006;
    for(int i=0;i<6;i++) {
+     if(float(i)>=uCloudSteps)break;
      vec3 samplePoint=p+ray*(float(i)+0.5)*stride;
      float radius=length(samplePoint);
      float envelope=smoothstep(0.952,0.966,radius)*(1.0-smoothstep(0.991,1.0,radius));
@@ -314,12 +340,18 @@ export const MAX_ACTIVE_BODIES = 8;
 export function createBodyLOD(
   parent: THREE.Group,
   cacheLimit = MAX_DETAILED_BODIES,
+  quality: { budget: QualityBudget } = { budget: UNCONSTRAINED_BUDGET },
 ) {
+  // Keyed by resolved segment count, not LOD level: a later rise in
+  // gridResolution resolves to a different (richer) key instead of reusing a
+  // geometry built under an earlier, lower cap.
   const geometries = new Map<number, THREE.SphereGeometry>();
   const entries = new Map<number, Entry>();
   const patchGeometries = new Map<number, THREE.PlaneGeometry>();
+  let ringGeometry: THREE.RingGeometry | null = null;
   const patchFor = (level: number) => {
-    const segments = level >= 5 ? 128 : level >= 4 ? 64 : 32;
+    const ladder = level >= 5 ? 128 : level >= 4 ? 64 : 32;
+    const segments = Math.min(ladder, quality.budget.gridResolution);
     if (!patchGeometries.has(segments))
       patchGeometries.set(
         segments,
@@ -329,13 +361,19 @@ export function createBodyLOD(
   };
   let previousTime: number | null = null;
   const geometryFor = (level: number) => {
-    let geometry = geometries.get(level);
+    const ladder = [20, 48, 96, 192][level];
+    const segments = Math.min(ladder, quality.budget.gridResolution);
+    let geometry = geometries.get(segments);
     if (!geometry) {
-      const segments = [20, 48, 96, 192][level];
       geometry = new THREE.SphereGeometry(1, segments, segments / 2);
-      geometries.set(level, geometry);
+      geometries.set(segments, geometry);
     }
     return geometry;
+  };
+  // Ring parameters never vary: a single geometry shared by every ringed body.
+  const ringGeometryFor = () => {
+    ringGeometry ??= new THREE.RingGeometry(1.35, 2.1, 72);
+    return ringGeometry;
   };
   const release = (id: number, entry: Entry) => {
     parent.remove(entry.group);
@@ -346,22 +384,41 @@ export function createBodyLOD(
     entry.ocean?.material.dispose();
     entry.atmosphere?.material.dispose();
     entry.patch?.material.dispose();
-    entry.ring?.geometry.dispose();
     entry.ring?.material.dispose();
     entries.delete(id);
   };
+  let lastCreations = 0;
   return {
     update(
       candidates: BodyCandidate[],
       time: number,
       spin: number,
       activityTime = time,
+      renderer?: THREE.WebGLRenderer,
+      camera?: THREE.Camera,
     ) {
       const dt =
         previousTime === null
           ? 0
           : Math.max(0, Math.min(time - previousTime, 0.1));
       previousTime = time;
+      const budget = quality.budget;
+      const { fineNormal, landOctaves, ridgeOctaves } = surfaceDetailFor(
+        budget.gridResolution,
+      );
+      // Applied to every live entry, not only new ones: an in-session tier
+      // change reaches already-visible bodies without waiting for a
+      // create/evict cycle.
+      for (const entry of entries.values()) {
+        const uniforms = entry.mesh.material.uniforms;
+        uniforms.uFineNormal.value = fineNormal;
+        uniforms.uLandOctaves.value = landOctaves;
+        uniforms.uRidgeOctaves.value = ridgeOctaves;
+        if (entry.atmosphere)
+          entry.atmosphere.material.uniforms.uCloudSteps.value =
+            budget.cloudSteps;
+      }
+      lastCreations = 0;
       const active = candidates
         .filter(
           (c) =>
@@ -392,6 +449,12 @@ export function createBodyLOD(
         let entry = entries.get(body.id);
         const isNew = !entry;
         if (!entry) {
+          // Candidates are already sorted by relevance (selected body, then
+          // descending pixel size): the most urgent ones win the available
+          // creation slots first, the rest wait for a later frame while the
+          // point/impostor rendering keeps showing them meanwhile.
+          if (lastCreations >= budget.creationsPerFrame) continue;
+          lastCreations++;
           if (entries.size >= cacheLimit) {
             const stale = [...entries].find(([id]) => !ids.has(id));
             if (stale) release(stale[0], stale[1]);
@@ -412,6 +475,9 @@ export function createBodyLOD(
               uLightColor2: { value: new THREE.Color(1, 1, 1) },
               uRelief: { value: body.type === 8 ? 1 : 0 },
               uNormalStep: { value: 0.03 },
+              uFineNormal: { value: 1 },
+              uLandOctaves: { value: 7 },
+              uRidgeOctaves: { value: 4 },
               uSurfaceDetail: { value: 0 },
               uIsPatch: { value: 0 },
               uPatchEnabled: { value: 0 },
@@ -494,6 +560,8 @@ export function createBodyLOD(
                 uLightColor1: material.uniforms.uLightColor1,
                 uLightColor2: material.uniforms.uLightColor2,
                 uFade: material.uniforms.uFade,
+                uLandOctaves: material.uniforms.uLandOctaves,
+                uRidgeOctaves: material.uniforms.uRidgeOctaves,
               },
             });
             entry.ocean = new THREE.Mesh(geometryFor(3), oceanMaterial);
@@ -523,6 +591,7 @@ export function createBodyLOD(
                 uLocalCamera: { value: new THREE.Vector3(0, 0, 4) },
                 uClouds: { value: air.clouds },
                 uHaze: { value: air.haze },
+                uCloudSteps: { value: quality.budget.cloudSteps },
               },
             });
             entry.atmosphere = new THREE.Mesh(geometryFor(0), airMaterial);
@@ -554,13 +623,13 @@ export function createBodyLOD(
               fragmentShader:
                 'uniform vec3 uColor;uniform float uFade;varying vec3 vP;void main(){float r=length(vP.xy);float bands=0.3+0.4*pow(sin(r*95.0),2.0);gl_FragColor=vec4(uColor*0.7,bands*uFade);}',
             });
-            entry.ring = new THREE.Mesh(
-              new THREE.RingGeometry(1.35, 2.1, 72),
-              ringMaterial,
-            );
+            entry.ring = new THREE.Mesh(ringGeometryFor(), ringMaterial);
             entry.ring.rotation.x = -1.05;
             group.add(entry.ring);
           }
+          // Fire-and-forget: starts shader compilation in the background
+          // instead of paying it synchronously on this entry's first draw.
+          if (renderer && camera) void renderer.compileAsync(group, camera);
           entries.set(body.id, entry);
         }
         if (candidate.lights) {
@@ -744,6 +813,8 @@ export function createBodyLOD(
         geometries.clear();
         patchGeometries.forEach((g) => g.dispose());
         patchGeometries.clear();
+        ringGeometry?.dispose();
+        ringGeometry = null;
       }
       return fades;
     },
@@ -780,6 +851,7 @@ export function createBodyLOD(
             .filter((e) => e.patch?.visible)
             .map((e) => e.surfaceLevel ?? 0),
         ),
+        created: lastCreations,
       };
     },
     dispose() {
@@ -788,6 +860,8 @@ export function createBodyLOD(
       geometries.clear();
       patchGeometries.forEach((g) => g.dispose());
       patchGeometries.clear();
+      ringGeometry?.dispose();
+      ringGeometry = null;
     },
   };
 }

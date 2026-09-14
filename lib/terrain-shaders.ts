@@ -13,20 +13,28 @@ export const terrainNoise = `
    mix(mix(terrainHash(i+vec3(0,0,1)),terrainHash(i+vec3(1,0,1)),f.x),mix(terrainHash(i+vec3(0,1,1)),terrainHash(i+vec3(1,1,1)),f.x),f.y),f.z);
  }
 
- float terrainLand(vec3 p, float seed) {
+ // maxOctaves fades in the fine octaves only: octave 0 always runs, so the
+ // coarse shape (coastline) never moves, only its fine relief does.
+ float terrainLand(vec3 p, float seed, float maxOctaves) {
    vec3 o=vec3(seed,seed*0.37,seed*0.71);
    vec3 warp=vec3(terrainNoise(p*3.0+o),terrainNoise(p*3.0+o+17.0),terrainNoise(p*3.0+o-13.0))-0.5;
    vec3 q=p*3.6+o+warp*0.9;
    float sum=0.0,amp=0.5;
-   for(int i=0;i<7;i++){sum+=terrainNoise(q)*amp;q=q*2.03+3.1;amp*=0.5;}
-   return sum/0.9921875;
+   for(int i=0;i<7;i++){
+     if(float(i)>=maxOctaves)break;
+     sum+=terrainNoise(q)*amp;q=q*2.03+3.1;amp*=0.5;
+   }
+   // Re-normalized for the octave count actually run, so amplitude stays
+   // consistent across quality tiers instead of looking artificially flat.
+   return sum/max(0.001,1.0-pow(0.5,maxOctaves));
  }
- float mountainRange(vec3 p,float seed) {
+ float mountainRange(vec3 p,float seed,float maxRidgeOctaves) {
    vec3 q=p*36.0+seed;
    q+=vec3(terrainNoise(q*0.4),terrainNoise(q*0.4+19.0),terrainNoise(q*0.4-7.0))*2.4;
    float belt=smoothstep(0.43,0.7,terrainNoise(p*11.0+seed+8.0));
    float ridges=0.0,amp=0.55;
    for(int i=0;i<4;i++){
+     if(float(i)>=maxRidgeOctaves)break;
      float ridge=1.0-abs(terrainNoise(q)*2.0-1.0);
      ridges+=pow(ridge,3.0)*amp;q=mat3(0.0,0.8,0.6,-0.8,0.36,-0.48,-0.6,-0.48,0.64)*q*2.1+4.0;amp*=0.48;
    }
@@ -57,17 +65,17 @@ export const terrainNoise = `
  float duneField(vec3 p,float seed) {
    return sin(p.y*650.0+terrainNoise(p*90.0+seed)*12.0)*0.5+0.5;
  }
- float terrainHeight(vec3 p,float seed,float type) {
+ float terrainHeight(vec3 p,float seed,float type,float maxOctaves,float maxRidgeOctaves) {
    if(type==0.0 || type==2.0)return 0.0;
    if(type==3.0 || type==8.0) {
      vec2 crater=craterField(p,seed);
      return (type==8.0?asteroidRadius(p,seed)-1.0:0.0)+0.0007*terrainNoise(p*60.0+seed)-0.006*crater.x+0.0025*crater.y;
    }
-   float mountains=mountainRange(p,seed);
-   float regional=mountainRange(p*5.0,seed);
+   float mountains=mountainRange(p,seed,maxRidgeOctaves);
+   float regional=mountainRange(p*5.0,seed,maxRidgeOctaves);
    float height=0.0008+0.012*mountains+0.0015*regional;
    if(type==1.0 || type==4.0) {
-     float elevation=terrainLand(p,seed)-(type==4.0?0.56:0.49);
+     float elevation=terrainLand(p,seed,maxOctaves)-(type==4.0?0.56:0.49);
      float inland=smoothstep(0.0,0.04,elevation);
      return clamp(elevation*0.025+inland*height,-0.012,0.016);
    }
@@ -81,7 +89,7 @@ export const terrainNoise = `
 `;
 
 export const terrainVertex = `
- uniform float uSeed,uType,uRelief,uIsPatch,uPatchAngle,uNormalStep;
+ uniform float uSeed,uType,uRelief,uIsPatch,uPatchAngle,uNormalStep,uLandOctaves,uRidgeOctaves;
  uniform vec3 uPatchAxis,uPatchRight,uPatchUp;
  varying vec3 vPosition,vNormal,vView;
  ${terrainNoise}
@@ -90,7 +98,7 @@ export const terrainVertex = `
    if(uIsPatch>0.5) p=normalize(uPatchAxis+tan(uPatchAngle)*(position.x*uPatchRight+position.y*uPatchUp));
    vPosition=p;
    p=normalize(p);
-   float height=terrainHeight(p,uSeed,uType)*(uType==8.0?1.0:uRelief);
+   float height=terrainHeight(p,uSeed,uType,uLandOctaves,uRidgeOctaves)*(uType==8.0?1.0:uRelief);
    vec3 displaced=p*(1.0+height);
    vec3 terrainNormal=p;
    vNormal=normalize(normalMatrix*terrainNormal);

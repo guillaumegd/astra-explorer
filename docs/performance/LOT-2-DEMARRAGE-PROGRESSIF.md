@@ -1,5 +1,8 @@
 # Performance — lot 2, démarrage progressif et génération du catalogue en Worker
 
+Lot suivant : [profils des surfaces/nuages, budget de régions, préchauffage et
+mémoire](LOT-3-PROFILS-SURFACES-REGIONS.md).
+
 Issue [#4](https://github.com/guillaumegd/astra-explorer/issues/4), au-dessus du
 lot 1 ([ordonnanceur et politique de qualité commune](LOT-1-ORDONNANCEUR.md)).
 `quality.budget.population` publiait déjà, depuis le lot 1, la population à
