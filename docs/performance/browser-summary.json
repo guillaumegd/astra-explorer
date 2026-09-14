@@ -1,0 +1,127 @@
+[
+  {
+    "file": "browser-context.json.gz",
+    "sha256_uncompressed": "f5bb7605ee7a5423c4f355012828f83495bf0ef0779a4cd8c5bb1d3d9c39c083",
+    "events": 3600,
+    "dropped": 10565,
+    "frames": 924,
+    "intervalMs": {
+      "p50": 25,
+      "p95": 25.6,
+      "p99": 33.3,
+      "max": 116.7
+    },
+    "cpuMs": {
+      "p50": 1.3,
+      "p95": 3.4,
+      "p99": 4,
+      "max": 36.6
+    },
+    "calls": {
+      "p50": 84,
+      "p95": 91,
+      "p99": 91,
+      "max": 91
+    }
+  },
+  {
+    "file": "browser-lensing.json.gz",
+    "sha256_uncompressed": "d37e014267e8a091be32cb18628824ced1d2d1b105ed62a0f8aa74ca38c4c168",
+    "events": 3600,
+    "dropped": 8185,
+    "frames": 960,
+    "intervalMs": {
+      "p50": 25,
+      "p95": 25.8,
+      "p99": 33.4,
+      "max": 58.3
+    },
+    "cpuMs": {
+      "p50": 0.7,
+      "p95": 1.1,
+      "p99": 1.3,
+      "max": 18.3
+    },
+    "calls": {
+      "p50": 84,
+      "p95": 98,
+      "p99": 98,
+      "max": 98
+    }
+  },
+  {
+    "file": "browser-overview.json.gz",
+    "sha256_uncompressed": "1b28a26f1db57ca10e62c020c0217b2caa5c376f02099398b1b9d0db140e4c59",
+    "events": 1772,
+    "dropped": 0,
+    "frames": 443,
+    "intervalMs": {
+      "p50": 25,
+      "p95": 25.8,
+      "p99": 26,
+      "max": 58.3
+    },
+    "cpuMs": {
+      "p50": 1.2,
+      "p95": 2.2,
+      "p99": 4.8,
+      "max": 62.4
+    },
+    "calls": {
+      "p50": 15,
+      "p95": 15,
+      "p99": 15,
+      "max": 15
+    }
+  },
+  {
+    "file": "browser-pause.json.gz",
+    "sha256_uncompressed": "7af171a9b10db2f98ef3370371190709de80a1f6ca6f7efae3b1e295d6936d05",
+    "events": 3600,
+    "dropped": 12541,
+    "frames": 899,
+    "intervalMs": {
+      "p50": 25,
+      "p95": 25.6,
+      "p99": 25.9,
+      "max": 149.9
+    },
+    "cpuMs": {
+      "p50": 1.5,
+      "p95": 3.4,
+      "p99": 4,
+      "max": 36.6
+    },
+    "calls": {
+      "p50": 6,
+      "p95": 91,
+      "p99": 91,
+      "max": 91
+    }
+  },
+  {
+    "file": "browser-picking.json.gz",
+    "sha256_uncompressed": "ddae0dade2752504b3fba1e901493e78219a87ece1ea1ee6a507ece399eafd75",
+    "events": 3600,
+    "dropped": 858,
+    "frames": 904,
+    "intervalMs": {
+      "p50": 25,
+      "p95": 25.9,
+      "p99": 33.3,
+      "max": 63.7
+    },
+    "cpuMs": {
+      "p50": 4.8,
+      "p95": 8.5,
+      "p99": 13.4,
+      "max": 62.6
+    },
+    "calls": {
+      "p50": 15,
+      "p95": 100,
+      "p99": 107,
+      "max": 107
+    }
+  }
+]

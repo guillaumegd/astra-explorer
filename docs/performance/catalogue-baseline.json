@@ -1,0 +1,165 @@
+{
+  "seed": 91724,
+  "node": "v22.23.2",
+  "platform": "darwin",
+  "arch": "arm64",
+  "warmupRuns": 1,
+  "results": [
+    {
+      "budget": 10000,
+      "active": 9991,
+      "generationMs": 10.180875,
+      "orbitsMs": 1.87037500000001,
+      "totalMs": 11.81604200000001,
+      "runs": [
+        {
+          "active": 9991,
+          "generationMs": 12.364207999999998,
+          "orbitsMs": 3.0803750000000036,
+          "totalMs": 15.444583000000002
+        },
+        {
+          "active": 9991,
+          "generationMs": 9.057374999999993,
+          "orbitsMs": 1.1339159999999993,
+          "totalMs": 10.191290999999993
+        },
+        {
+          "active": 9991,
+          "generationMs": 10.67304200000001,
+          "orbitsMs": 1.1430000000000007,
+          "totalMs": 11.81604200000001
+        },
+        {
+          "active": 9991,
+          "generationMs": 10.180875,
+          "orbitsMs": 1.87037500000001,
+          "totalMs": 12.05125000000001
+        },
+        {
+          "active": 9991,
+          "generationMs": 9.10875,
+          "orbitsMs": 1.9564579999999978,
+          "totalMs": 11.065207999999998
+        }
+      ]
+    },
+    {
+      "budget": 20000,
+      "active": 19997,
+      "generationMs": 16.289917000000003,
+      "orbitsMs": 2.3405839999999785,
+      "totalMs": 18.829375,
+      "runs": [
+        {
+          "active": 19997,
+          "generationMs": 29.103874999999988,
+          "orbitsMs": 3.063582999999994,
+          "totalMs": 32.16745799999998
+        },
+        {
+          "active": 19997,
+          "generationMs": 16.557917000000003,
+          "orbitsMs": 2.2714579999999955,
+          "totalMs": 18.829375
+        },
+        {
+          "active": 19997,
+          "generationMs": 16.15579199999999,
+          "orbitsMs": 2.2972500000000196,
+          "totalMs": 18.45304200000001
+        },
+        {
+          "active": 19997,
+          "generationMs": 15.777166000000022,
+          "orbitsMs": 2.3405839999999785,
+          "totalMs": 18.11775
+        },
+        {
+          "active": 19997,
+          "generationMs": 16.289917000000003,
+          "orbitsMs": 2.6530830000000094,
+          "totalMs": 18.943000000000012
+        }
+      ]
+    },
+    {
+      "budget": 65000,
+      "active": 64995,
+      "generationMs": 58.60291599999999,
+      "orbitsMs": 6.462791999999979,
+      "totalMs": 65.26916699999998,
+      "runs": [
+        {
+          "active": 64995,
+          "generationMs": 58.806375,
+          "orbitsMs": 6.462791999999979,
+          "totalMs": 65.26916699999998
+        },
+        {
+          "active": 64995,
+          "generationMs": 54.714207999999985,
+          "orbitsMs": 10.176750000000027,
+          "totalMs": 64.89095800000001
+        },
+        {
+          "active": 64995,
+          "generationMs": 58.60291599999999,
+          "orbitsMs": 6.850500000000011,
+          "totalMs": 65.453416
+        },
+        {
+          "active": 64995,
+          "generationMs": 97.787958,
+          "orbitsMs": 6.454166999999984,
+          "totalMs": 104.24212499999999
+        },
+        {
+          "active": 64995,
+          "generationMs": 54.17820799999993,
+          "orbitsMs": 5.621000000000095,
+          "totalMs": 59.79920800000002
+        }
+      ]
+    },
+    {
+      "budget": 120000,
+      "active": 119999,
+      "generationMs": 115.39166699999998,
+      "orbitsMs": 10.261166999999887,
+      "totalMs": 126.01125000000002,
+      "runs": [
+        {
+          "active": 119999,
+          "generationMs": 115.39166699999998,
+          "orbitsMs": 10.619583000000034,
+          "totalMs": 126.01125000000002
+        },
+        {
+          "active": 119999,
+          "generationMs": 148.127167,
+          "orbitsMs": 9.83462499999996,
+          "totalMs": 157.96179199999995
+        },
+        {
+          "active": 119999,
+          "generationMs": 106.294083,
+          "orbitsMs": 9.762833999999884,
+          "totalMs": 116.05691699999988
+        },
+        {
+          "active": 119999,
+          "generationMs": 107.66933300000005,
+          "orbitsMs": 10.34108399999991,
+          "totalMs": 118.01041699999996
+        },
+        {
+          "active": 119999,
+          "generationMs": 126.93225000000007,
+          "orbitsMs": 10.261166999999887,
+          "totalMs": 137.19341699999995
+        }
+      ]
+    }
+  ]
+}

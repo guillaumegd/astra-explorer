@@ -1,0 +1,26 @@
+{
+  "sha256_uncompressed": "496e5424c22694ec6ef7778688ef4826aff0aa72b4816c038a92afb781959fc5",
+  "periods": [
+    {
+      "hiddenMs": 197609.0,
+      "renderedFramesDelta": 0,
+      "simulationSecondsDelta": 0.0
+    },
+    {
+      "hiddenMs": 35473.700000047684,
+      "renderedFramesDelta": 0,
+      "simulationSecondsDelta": 0.0
+    },
+    {
+      "hiddenMs": 25305.599999904633,
+      "renderedFramesDelta": 0,
+      "simulationSecondsDelta": 0.0
+    },
+    {
+      "hiddenMs": 3392.2000000476837,
+      "renderedFramesDelta": 0,
+      "simulationSecondsDelta": 0.0
+    }
+  ],
+  "consoleErrors": 0
+}

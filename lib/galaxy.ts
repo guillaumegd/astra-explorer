@@ -1,3 +1,8 @@
+import { REFERENCE_SCENES, referencePose, summarize } from './reference-replay';
+import { createGpuDiagnostics } from './gpu-diagnostics';
+import { estimateBufferBytes, estimateTargetBytes } from './performance-memory';
+import { diagnosticControls } from './diagnostic-controls';
+import { createDiagnostics } from './performance-diagnostics';
 import { createLensing } from './phenomena/lensing';
 import { createPhenomenaManager } from './phenomena/manager';
 import {
@@ -233,6 +238,13 @@ export function createGalaxy(
   onCameraView: (view: CameraView) => void = () => {},
   onRegion: (view: RegionView | null) => void = () => {},
 ): GalaxyEngine {
+  const diagnosticStart = performance.now();
+  const diagnostics =
+    new URLSearchParams(window.location.search).get('diagnostics') === '1'
+      ? createDiagnostics()
+      : null;
+  let lastRaf: number | null = null;
+  let lastRendered: number | null = null;
   let messages = initialMessages;
   let firstFrameRendered = false;
   let openingProgress: number | null = null;
@@ -241,6 +253,81 @@ export function createGalaxy(
     alpha: false,
     powerPreference: 'default',
   });
+  let replayGpuSamples: number[] = [];
+  let replayFirstFrame = Infinity;
+  const gpuDiagnostics = diagnostics
+    ? createGpuDiagnostics(
+        renderer.getContext() as WebGL2RenderingContext,
+        (kind, at, values) => {
+          diagnostics.record(kind, at, values);
+          if (
+            kind === 'gpu-frame' &&
+            values.complete &&
+            typeof values.frameId === 'number' &&
+            values.frameId >= replayFirstFrame + 60 &&
+            typeof values.gpuMs === 'number'
+          )
+            replayGpuSamples.push(values.gpuMs);
+        },
+      )
+    : null;
+  let diagnosticFrame = 0;
+  let runReference: (mode: 'short' | 'endurance' | 'stop') => void = () => {};
+  let replayStatus: Record<string, unknown> = { active: false };
+  const replayResults: Record<string, unknown>[] = [];
+  let lastMemorySample = -Infinity;
+  let restoreTimer: ReturnType<typeof setTimeout> | undefined;
+  const removeDiagnosticControls = diagnostics
+    ? diagnosticControls(
+        () => ({
+          ...diagnostics.snapshot(),
+          gpu: gpuDiagnostics?.status(),
+          replay: { ...replayStatus, results: replayResults },
+          userAgent: navigator.userAgent,
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            dpr: window.devicePixelRatio,
+          },
+        }),
+        () => {
+          const extension = renderer
+            .getContext()
+            .getExtension('WEBGL_lose_context');
+          if (!extension) {
+            diagnostics.record(
+              'context-test-unavailable',
+              performance.now(),
+              {},
+            );
+            return;
+          }
+          extension.loseContext();
+          restoreTimer = setTimeout(() => extension.restoreContext(), 1000);
+        },
+        (mode) => runReference(mode),
+      )
+    : null;
+  const diagnosticObservers: PerformanceObserver[] = [];
+  if (diagnostics && typeof PerformanceObserver !== 'undefined') {
+    for (const type of ['longtask', 'event', 'first-input']) {
+      if (!PerformanceObserver.supportedEntryTypes.includes(type)) continue;
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries())
+          diagnostics.record(type, entry.startTime, {
+            name: entry.name,
+            durationMs: entry.duration,
+          });
+      });
+      observer.observe({
+        type,
+        buffered: true,
+        durationThreshold: 16,
+      } as PerformanceObserverInit);
+      diagnosticObservers.push(observer);
+    }
+  }
+  if (diagnostics) renderer.info.autoReset = false;
   renderer.setClearColor(0x04060b);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
   host.appendChild(renderer.domElement);
@@ -589,6 +676,19 @@ export function createGalaxy(
   let pickTarget: THREE.WebGLRenderTarget | null = null;
   const pickPixels = new Uint8Array(9 * 9 * 4);
   const pickAt = (clientX: number, clientY: number): number | null => {
+    if (!diagnostics) return performPick(clientX, clientY);
+    const started = performance.now();
+    renderer.info.reset();
+    try {
+      return performPick(clientX, clientY);
+    } finally {
+      diagnostics.record('picking', started, {
+        cpuMs: performance.now() - started,
+        ...renderer.info.render,
+      });
+    }
+  };
+  const performPick = (clientX: number, clientY: number): number | null => {
     const bounds = host.getBoundingClientRect();
     const x = clientX - bounds.left,
       y = clientY - bounds.top;
@@ -703,7 +803,11 @@ export function createGalaxy(
     const savedPickMaterial = pickPoints.material;
     if (optical) pickPoints.material = opticalPickMaterial;
     try {
-      renderer.render(pickScene, pickCamera);
+      if (gpuDiagnostics)
+        gpuDiagnostics.measure('picking', () =>
+          renderer.render(pickScene, pickCamera),
+        );
+      else renderer.render(pickScene, pickCamera);
     } finally {
       pickPoints.material = savedPickMaterial;
     }
@@ -1151,10 +1255,15 @@ export function createGalaxy(
   const contextLost = (e: Event) => {
     e.preventDefault();
     lost = true;
+    lastRaf = lastRendered = null;
+    gpuDiagnostics?.reset();
+    diagnostics?.record('context-lost', performance.now(), {});
     cancelAnimationFrame(frame);
     onError(messages.contextLost);
   };
   const contextRestored = () => {
+    gpuDiagnostics?.reset();
+    diagnostics?.record('context-restored', performance.now(), {});
     lensing.invalidate();
     lost = false;
     onError('');
@@ -1233,25 +1342,155 @@ export function createGalaxy(
   renderer.domElement.addEventListener('keydown', key);
   renderer.domElement.addEventListener('webglcontextlost', contextLost);
   renderer.domElement.addEventListener('webglcontextrestored', contextRestored);
+  let replay: {
+    mode: 'short' | 'endurance';
+    slot: number;
+    tick: number;
+    start: number;
+    cpu: number[];
+    intervals: number[];
+    saved: GalaxySettings;
+  } | null = null;
+  let replayMemory: Record<string, unknown> = {};
+  let replayWarmup: number[] = [];
+  const applyReferenceScene = () => {
+    if (!replay) return;
+    const definition = REFERENCE_SCENES[replay.slot % REFERENCE_SCENES.length];
+    overview();
+    surfaceAnchor = null;
+    surfaceTilt = 0;
+    pointer.set(0, 0);
+    focus.set(0, 0, 0);
+    focusOffset.set(0, 0, 0);
+    settings = {
+      ...settings,
+      density: catalogue.activeCount(definition.density),
+      paused: true,
+      tilt: null,
+    };
+    geometry.setDrawRange(0, settings.density);
+    dustGeometry.setDrawRange(
+      0,
+      Math.round(dustCount * Math.min(1, definition.density / 65000)),
+    );
+    if (definition.bodyId) {
+      const body = catalogue.resolveReference(definition.bodyId);
+      if (!body) throw new Error(`Missing reference body ${definition.bodyId}`);
+      select(body.id);
+    } else if (definition.regionId) frameRegion(definition.regionId);
+    travel = null;
+    focusOffset.set(0, 0, 0);
+    renderer.setPixelRatio(1);
+    uniforms.uPixelRatio.value = 1;
+    regions.setSteps(16);
+    quality.dpr = 1;
+    quality.steps = 16;
+    lensing.invalidate();
+    detailShortlist.clear();
+    scanCursor = 0;
+    replayWarmup = [];
+    replayGpuSamples = [];
+    replayFirstFrame = diagnosticFrame + 1;
+    replay.cpu = [];
+    replay.intervals = [];
+    replayStatus = {
+      active: true,
+      mode: replay.mode,
+      slot: replay.slot,
+      scene: definition.name,
+      repeat: Math.floor(replay.slot / REFERENCE_SCENES.length) + 1,
+      warmupFrames: 60,
+      sampleFrames: 120,
+      dpr: 1,
+      volumeSteps: 16,
+      seed: catalogue.seed,
+    };
+    diagnostics?.record('replay-scene', performance.now(), {
+      ...replayStatus,
+      definition,
+    });
+  };
+  const finishReplay = (reason: string) => {
+    if (!replay) return;
+    settings = replay.saved;
+    geometry.setDrawRange(0, settings.density);
+    dustGeometry.setDrawRange(
+      0,
+      Math.round(dustCount * Math.min(1, settings.density / 65000)),
+    );
+    replayStatus = {
+      ...replayStatus,
+      active: false,
+      reason,
+      elapsedMs: performance.now() - replay.start,
+    };
+    diagnostics?.record('replay-end', performance.now(), replayStatus);
+    replay = null;
+    replayFirstFrame = Infinity;
+    overview();
+  };
+  runReference = (mode) => {
+    finishReplay('stopped');
+    if (mode === 'stop') return;
+    replayResults.length = 0;
+    replay = {
+      mode,
+      slot: 0,
+      tick: 0,
+      start: performance.now(),
+      cpu: [],
+      intervals: [],
+      saved: { ...settings },
+    };
+    applyReferenceScene();
+  };
+
+  const diagnosticVisibility = () => {
+    lastRaf = lastRendered = null;
+    // rAF may stop entirely in a hidden tab, so reset on the event itself.
+    previous = lastFrame = performance.now();
+    diagnostics?.record('visibility', performance.now(), {
+      hidden: document.hidden,
+      renderedFrames: diagnostics.snapshot().renderedFrames,
+      simulationTime: elapsed,
+    });
+  };
+  document.addEventListener('visibilitychange', diagnosticVisibility);
   const animate = (now: number) => {
     if (lost) return;
     frame = requestAnimationFrame(animate);
+    if (diagnostics && !document.hidden) {
+      diagnostics.record('raf', now, {
+        intervalMs: lastRaf === null ? null : now - lastRaf,
+      });
+      lastRaf = now;
+    }
     if (document.hidden) {
+      lastRaf = lastRendered = null;
       previous = now;
       lastFrame = now;
       return;
     }
     // Cap rendering at 45 fps, even on 120/144 Hz displays.
     if (now - previous < 1000 / 45 - 1) return;
+    gpuDiagnostics?.poll();
+    gpuDiagnostics?.startFrame(++diagnosticFrame);
+    const cpuStart = diagnostics ? performance.now() : 0;
+    if (diagnostics) renderer.info.reset();
     const frameTime = now - lastFrame;
     lastFrame = now;
     const dt = Math.min((now - previous) / 1000, 0.1);
     previous = now;
-    if (quality.update(frameTime)) {
+    if (!replay && quality.update(frameTime)) {
+      diagnostics?.record('quality', now, {
+        dpr: quality.dpr,
+        steps: quality.steps,
+      });
       renderer.setPixelRatio(quality.dpr);
       uniforms.uPixelRatio.value = quality.dpr;
       regions.setSteps(quality.steps);
     }
+    if (replay) quality.frames++;
     host.dataset.pixelRatio = String(quality.dpr);
     host.dataset.volumeSteps = String(quality.steps);
     host.dataset.renderedFrames = String(quality.frames);
@@ -1262,6 +1501,25 @@ export function createGalaxy(
     }
     if (!settings.paused)
       rotation += dt * settings.speed * (reduced.matches ? 0.012 : 0.065);
+    if (replay) {
+      const definition =
+        REFERENCE_SCENES[replay.slot % REFERENCE_SCENES.length];
+      const pose = referencePose(definition, replay.tick);
+      elapsed = pose.simulationTime;
+      rotation = pose.rotation;
+      activityTime = elapsed;
+      azimuth = pose.azimuth;
+      elevation = pose.elevation;
+      distance = targetDistance = selected
+        ? selected.radius *
+          Math.max(pose.distanceRatio, minimumOrbitRatio(selected))
+        : regionFocus
+          ? regionFocus.envelope * pose.distanceRatio
+          : pose.distanceRatio;
+      group.rotation.set(0, 0, -0.18);
+      focusOffset.set(0, 0, 0);
+      surfaceAnchor = null;
+    }
     uniforms.uTime.value = elapsed;
     uniforms.uRotation.value = rotation;
     const damping = 1 - Math.exp(-dt * 2);
@@ -1556,6 +1814,12 @@ export function createGalaxy(
     material.uniforms.uOpacity.value = 0.32 + 0.54 * galaxyFade;
     dustMaterial.uniforms.uOpacity.value = 0.065 * galaxyFade;
     haloMaterial.opacity = 0.8 * galaxyFade;
+    const searchStart = diagnostics ? performance.now() : 0;
+    diagnostics?.record('cpu-phase', now, {
+      phase: 'camera-and-ui',
+      cpuMs: searchStart - cpuStart,
+      frameId: diagnosticFrame,
+    });
     const candidates: BodyCandidate[] = [];
     const projectionScale =
       renderHeight / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
@@ -1691,6 +1955,12 @@ export function createGalaxy(
       selected ? distance / selected.radius : 100,
       rotation,
     );
+    const detailsStart = diagnostics ? performance.now() : 0;
+    diagnostics?.record('cpu-phase', now, {
+      phase: 'neighbours',
+      cpuMs: detailsStart - searchStart,
+      frameId: diagnosticFrame,
+    });
     const fades = bodyLOD.update(
       visibleCandidates
         .slice(0, 8)
@@ -1921,6 +2191,12 @@ export function createGalaxy(
       reportedCameraView = cameraView;
       onCameraView(cameraView);
     }
+    const renderStart = diagnostics ? performance.now() : 0;
+    diagnostics?.record('cpu-phase', now, {
+      phase: 'details-regions-dom',
+      cpuMs: renderStart - detailsStart,
+      frameId: diagnosticFrame,
+    });
     lensing.render(
       renderer,
       scene,
@@ -1931,7 +2207,11 @@ export function createGalaxy(
       captureSky,
       renderPointDepth,
       activityTime,
+      gpuDiagnostics ?? undefined,
+      replay ? 512 : undefined,
     );
+    gpuDiagnostics?.endFrame();
+    const renderEnd = diagnostics ? performance.now() : 0;
     const selectedBinary = selected
       ? catalogue.getSystem(selected.systemId).binary
       : undefined;
@@ -1960,7 +2240,85 @@ export function createGalaxy(
       host.dataset.skyResolution = String(lensing.skyResolution());
       host.dataset.skyCaptures = String(lensing.captureStats().captures);
     }
+    if (diagnostics && now - lastMemorySample >= 1000) {
+      lastMemorySample = now;
+      replayMemory = {
+        ...estimateBufferBytes([scene, skyScene, pointDepthScene, pickScene]),
+        targetBytes:
+          lensing.estimatedTargetBytes() +
+          (pickTarget
+            ? estimateTargetBytes(pickTarget.width, pickTarget.height)
+            : 0),
+        heapBytes:
+          (performance as Performance & { memory?: { usedJSHeapSize: number } })
+            .memory?.usedJSHeapSize ?? null,
+        scope:
+          'known scene buffers and owned targets; excludes driver overhead, framebuffer, detached caches and non-target textures',
+      };
+      diagnostics.record('memory', now, replayMemory);
+    }
+    if (diagnostics) {
+      diagnostics.record('frame', now, {
+        frameId: diagnosticFrame,
+        intervalMs: lastRendered === null ? null : now - lastRendered,
+        cpuMs: performance.now() - cpuStart,
+        updateCpuMs: renderStart - cpuStart,
+        renderSubmissionCpuMs: renderEnd - renderStart,
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        points: renderer.info.render.points,
+        lines: renderer.info.render.lines,
+        programs: renderer.info.programs?.length ?? 0,
+        ...renderer.info.memory,
+        pixels: renderer.domElement.width * renderer.domElement.height,
+        density: settings.density,
+        selectedId: selected?.bodyId ?? null,
+        camera: camera.position.toArray(),
+        simulationTime: elapsed,
+        rotation,
+        skyCapture: { ...lensing.captureStats() },
+      });
+      lastRendered = now;
+    }
+    if (replay) {
+      if (replay.tick < 60) replayWarmup.push(performance.now() - cpuStart);
+      if (replay.tick >= 60) {
+        replay.cpu.push(performance.now() - cpuStart);
+        replay.intervals.push(frameTime);
+      }
+      replay.tick++;
+      replayStatus.tick = replay.tick;
+      if (replay.tick >= 180) {
+        const summary = {
+          ...replayStatus,
+          cpuMs: summarize(replay.cpu),
+          warmupCpuMs: summarize(replayWarmup),
+          camera: camera.position.toArray(),
+          frameId: diagnosticFrame,
+          gpuMs: summarize(replayGpuSamples),
+          intervalMs: summarize(replay.intervals),
+          memory: replayMemory,
+          firstApproach: replay.slot < REFERENCE_SCENES.length,
+        };
+        replayResults.push(summary);
+        if (replayResults.length > 240) replayResults.shift();
+        diagnostics?.record('replay-result', now, summary);
+        const done =
+          replay.mode === 'short'
+            ? replay.slot + 1 >= REFERENCE_SCENES.length * 3
+            : performance.now() - replay.start >= 900000;
+        if (done) finishReplay('complete');
+        else {
+          replay.slot++;
+          replay.tick = 0;
+          applyReferenceScene();
+        }
+      }
+    }
     if (!firstFrameRendered) {
+      diagnostics?.record('first-frame', performance.now(), {
+        engineStartupMs: performance.now() - diagnosticStart,
+      });
       firstFrameRendered = true;
       onFirstFrame();
     }
@@ -2049,6 +2407,11 @@ export function createGalaxy(
       pointer.set(0, 0);
     },
     dispose() {
+      document.removeEventListener('visibilitychange', diagnosticVisibility);
+      for (const observer of diagnosticObservers) observer.disconnect();
+      gpuDiagnostics?.dispose();
+      removeDiagnosticControls?.();
+      clearTimeout(restoreTimer);
       cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener('pointermove', move);

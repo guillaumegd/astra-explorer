@@ -1,3 +1,5 @@
+import type { PassProbe } from '../gpu-diagnostics.ts';
+import { estimateTargetBytes } from '../performance-memory.ts';
 import * as THREE from 'three';
 import type { BodyIdentity } from '../catalogue/types.ts';
 import { createCaptureBudget } from './capture-budget.ts';
@@ -75,11 +77,14 @@ export function createLensing() {
       capture: (cube: THREE.CubeCamera) => void,
       depth: () => void = () => {},
       skySimulationTime = simulationTime,
+      probe?: PassProbe,
+      fixedSkyResolution?: number,
     ) {
       active = subject && subject.fade > 0.002 ? subject : null;
       if (!active) {
         if (wallTime - lastSeen > 4) release();
-        renderer.render(scene, camera);
+        if (probe) probe.measure('scene', () => renderer.render(scene, camera));
+        else renderer.render(scene, camera);
         return;
       }
       lastSeen = active.seen ?? wallTime;
@@ -136,7 +141,8 @@ export function createLensing() {
           changedWorld,
         )
       ) {
-        const resolution = captureBudget.stats().resolution;
+        const resolution =
+          fixedSkyResolution ?? captureBudget.stats().resolution;
         if (sky!.width !== resolution) sky!.setSize(resolution, resolution);
         uniforms.uSkySize.value = resolution;
         cube!.position.copy(center);
@@ -146,9 +152,15 @@ export function createLensing() {
           c.updateProjectionMatrix();
         }
         const started = performance.now(),
-          query = captureBudget.begin();
+          query = probe ? null : captureBudget.begin();
         try {
-          capture(cube!);
+          if (probe)
+            probe.measure(
+              'sky-six-faces',
+              () => capture(cube!),
+              (ms) => captureBudget.acceptGpu(ms),
+            );
+          else capture(cube!);
         } finally {
           captureBudget.end(
             query,
@@ -164,13 +176,24 @@ export function createLensing() {
       group.visible = false;
       try {
         renderer.setRenderTarget(source);
-        renderer.render(scene, camera);
-        depth();
+        if (probe) {
+          probe.measure('scene-color-depth', () =>
+            renderer.render(scene, camera),
+          );
+          probe.measure('point-depth', depth);
+        } else {
+          renderer.render(scene, camera);
+          depth();
+        }
       } finally {
         group.visible = visible;
         renderer.setRenderTarget(null);
       }
-      renderer.render(composite, camera);
+      if (probe)
+        probe.measure('lensing-composite', () =>
+          renderer.render(composite, camera),
+        );
+      else renderer.render(composite, camera);
     },
     trace(ray: THREE.Ray) {
       if (!active || active.fade < 0.5) return null;
@@ -218,6 +241,12 @@ export function createLensing() {
     },
     stats() {
       return { active: active ? 1 : 0, targets: source ? 2 : 0 };
+    },
+    estimatedTargetBytes() {
+      return (
+        (source ? estimateTargetBytes(source.width, source.height) : 0) +
+        (sky ? estimateTargetBytes(sky.width, sky.height, 6, true) : 0)
+      );
     },
     skyResolution() {
       return sky?.width ?? 512;

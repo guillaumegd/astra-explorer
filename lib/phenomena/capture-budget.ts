@@ -97,6 +97,14 @@ export function createCaptureBudget() {
       void wallTime;
       capturedTime = simulationTime;
     },
+    acceptGpu(milliseconds: number) {
+      if (!Number.isFinite(milliseconds) || milliseconds < 0) return;
+      if (!gpuMeasured) {
+        costMs = milliseconds;
+        adapt();
+      } else sample(milliseconds);
+      gpuMeasured = true;
+    },
     stats() {
       return {
         costMs,
