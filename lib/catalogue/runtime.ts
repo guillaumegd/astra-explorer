@@ -24,20 +24,39 @@ export class RuntimeCatalogue {
   constructor(seed = CATALOGUE_SEED) {
     this.seed = seed;
   }
+  /** Appends one freshly generated system; the only place bodies/systems grow. */
+  private pushSystem(system: SystemDefinition) {
+    this.systems.push(system);
+    for (const body of system.bodies) {
+      this.bodies.push(body);
+      this.byId.set(body.bodyId, body);
+    }
+  }
   ensure(target: number) {
     if (!Number.isFinite(target) || target < 0 || target > MAX_BODIES)
       throw new RangeError('Invalid catalogue budget');
-    while (this.bodies.length < target) {
-      const system = generateSystem(
-        this.systems.length,
-        this.bodies.length,
-        this.seed,
+    while (this.bodies.length < target)
+      this.pushSystem(
+        generateSystem(this.systems.length, this.bodies.length, this.seed),
       );
-      this.systems.push(system);
-      for (const body of system.bodies) {
-        this.bodies.push(body);
-        this.byId.set(body.bodyId, body);
-      }
+  }
+  /** Grows just far enough to cover system `index`, never past it. */
+  ensureSystem(index: number) {
+    while (this.systems.length <= index && this.bodies.length < MAX_BODIES)
+      this.pushSystem(
+        generateSystem(this.systems.length, this.bodies.length, this.seed),
+      );
+  }
+  /**
+   * Adopts systems generated elsewhere (a worker or a chunked idle slice).
+   * Must be exactly the next contiguous range: same guarantee as `ensure`,
+   * since `generateSystem` is pure in (index, firstParticle, seed).
+   */
+  adopt(systems: SystemDefinition[]) {
+    for (const system of systems) {
+      if (system.index !== this.systems.length)
+        throw new RangeError('Non-contiguous catalogue chunk');
+      this.pushSystem(system);
     }
   }
   getBody(index: number): BodyIdentity {
@@ -48,8 +67,11 @@ export class RuntimeCatalogue {
   }
   resolveReference(bodyId: string): BodyIdentity | null {
     // Old compact indices and V1 references are deliberately never interpreted as V2.
-    if (!/^v2:system:\d{6}:body:\d{3}$/.test(bodyId)) return null;
-    this.ensure(MAX_BODIES);
+    const match = /^v2:system:(\d{6}):body:\d{3}$/.exec(bodyId);
+    if (!match) return null;
+    // The system index is embedded in the id, so we only ever need to grow
+    // up to that system — never the full catalogue for a nearby reference.
+    this.ensureSystem(Number(match[1]));
     return this.byId.get(bodyId) ?? null;
   }
   getSystem(index: number): SystemDefinition {
@@ -63,9 +85,7 @@ export class RuntimeCatalogue {
   getSystemMembers(index: number) {
     return this.getSystem(index).bodies;
   }
-  activeCount(budget: number) {
-    const target = Math.max(0, Math.min(MAX_BODIES, Math.floor(budget)));
-    this.ensure(target);
+  private boundaryCount(target: number) {
     let low = 0,
       high = this.systems.length;
     while (low < high) {
@@ -77,6 +97,21 @@ export class RuntimeCatalogue {
     return low
       ? this.systems[low - 1].rootId + this.systems[low - 1].bodies.length
       : 0;
+  }
+  activeCount(budget: number) {
+    const target = Math.max(0, Math.min(MAX_BODIES, Math.floor(budget)));
+    this.ensure(target);
+    return this.boundaryCount(target);
+  }
+  /**
+   * Same boundary as `activeCount`, but read-only: never grows the
+   * catalogue. Used by anything that reads the current density live (the UI
+   * counter, a slider drag) so it never forces a blocking generation burst —
+   * that only happens through `ensure`/`adopt`/background growth.
+   */
+  activeCountWithin(budget: number) {
+    const target = Math.max(0, Math.min(MAX_BODIES, Math.floor(budget)));
+    return this.boundaryCount(target);
   }
   private listDestinations(
     key: 'phenomena' | 'binaries',

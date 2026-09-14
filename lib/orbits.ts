@@ -30,16 +30,18 @@ export function compileOrbitChain(
   id: number,
   lookup: (id: number) => OrbitalBody,
 ): Float32Array {
-  const data = new Float32Array(ORBIT_STRIDE),
-    seen = new Set<number>();
+  const data = new Float32Array(ORBIT_STRIDE);
+  // Cycle guard: the chain is bounded to ORBIT_DEPTH links, so a plain scan
+  // of the ids seen so far beats allocating a Set per call.
+  const seen: number[] = [];
   let body = lookup(id),
     depth = 0;
   // A body with an orbit but no parent closes the chain on the system origin.
   while (body.parentId !== null || body.orbit) {
-    if (seen.has(body.id)) throw new Error('Cycle dans la hiérarchie orbitale');
+    if (seen.includes(body.id)) throw new Error('Cycle dans la hiérarchie orbitale');
     if (depth >= ORBIT_DEPTH)
       throw new Error('Hiérarchie orbitale trop profonde');
-    seen.add(body.id);
+    seen.push(body.id);
     const parent = body.parentId === null ? null : lookup(body.parentId),
       orbit = orbitFor(body, parent);
     data[ORBIT_DEPTH * 4 + depth] = orbit.eccentricity ?? 0;

@@ -390,3 +390,34 @@ export function generateSystem(
     nodes,
   };
 }
+
+/**
+ * Generates the next systems starting at `fromSystem`/`firstParticle` until
+ * at least `minBodies` bodies have been produced (one system may overshoot
+ * it). Pure and stateless, like `generateSystem` — safe to run on a worker
+ * or in a time-boxed main-thread slice, and to call repeatedly to walk the
+ * catalogue forward in chunks instead of all at once.
+ */
+export function generateChunk(
+  fromSystem: number,
+  firstParticle: number,
+  minBodies: number,
+  globalSeed = CATALOGUE_SEED,
+): {
+  systems: SystemDefinition[];
+  nextSystem: number;
+  nextFirstParticle: number;
+} {
+  const systems: SystemDefinition[] = [];
+  let system = fromSystem,
+    particle = firstParticle,
+    produced = 0;
+  while (produced < minBodies) {
+    const definition = generateSystem(system, particle, globalSeed);
+    systems.push(definition);
+    particle += definition.bodies.length;
+    produced += definition.bodies.length;
+    system++;
+  }
+  return { systems, nextSystem: system, nextFirstParticle: particle };
+}

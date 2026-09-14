@@ -5,6 +5,7 @@ import { portableNumbers } from './fixtures/portable-numbers.mjs';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
 import {
   generateSystem,
+  generateChunk,
   naturalArchitecture,
   architectureFor,
 } from '../lib/catalogue/generate.ts';
@@ -27,6 +28,52 @@ test('V2 references never reinterpret an old selection; V1 fixture remains stabl
   assert.equal(cat.resolveReference('v1:system:000001:body:000'), null);
   const body = cat.getBody(98);
   assert.equal(cat.resolveReference(body.bodyId), body);
+});
+test('resolveReference only grows the catalogue up to the referenced system', () => {
+  const cat = new RuntimeCatalogue();
+  const early = cat.getBody(50);
+  const systemsAfterEarly = cat.systems.length;
+  assert.ok(systemsAfterEarly < 20);
+  const resolved = cat.resolveReference(early.bodyId);
+  assert.equal(resolved, early);
+  // Resolving a reference already covered by what was generated for id 50
+  // must not reach further into the catalogue.
+  assert.equal(cat.systems.length, systemsAfterEarly);
+  // A reference far into the catalogue only grows up to its own system, not
+  // to MAX_BODIES: cheaper systems near the start stay unexplored past it.
+  const far = new RuntimeCatalogue().getBody(60000);
+  const other = new RuntimeCatalogue();
+  const farResolved = other.resolveReference(far.bodyId);
+  assert.equal(farResolved.bodyId, far.bodyId);
+  assert.ok(other.bodies.length < 120000);
+  assert.equal(other.systems.length, far.systemId + 1);
+});
+test('growing a catalogue in chunks via adopt() matches growing it synchronously via ensure()', () => {
+  const reference = new RuntimeCatalogue();
+  reference.ensure(6000);
+  const grown = new RuntimeCatalogue();
+  let system = 0,
+    particle = 0;
+  // Chunks overshoot 6000 (each call produces at least its own minBodies,
+  // regardless of the outer target) — that mirrors the real background
+  // driver, which grows in fixed increments rather than to an exact count.
+  while (grown.bodies.length < 6000) {
+    const chunk = generateChunk(system, particle, 1500, grown.seed);
+    grown.adopt(chunk.systems);
+    system = chunk.nextSystem;
+    particle = chunk.nextFirstParticle;
+  }
+  assert.ok(grown.bodies.length >= reference.bodies.length);
+  assert.deepEqual(grown.bodies.slice(0, reference.bodies.length), reference.bodies);
+  assert.deepEqual(
+    grown.systems.slice(0, reference.systems.length),
+    reference.systems,
+  );
+  // Shrinking then growing back (density down then up) still resolves the
+  // same identities: nothing is regenerated once adopted.
+  assert.equal(grown.activeCount(3000), reference.activeCount(3000));
+  assert.deepEqual(grown.getBody(2000), reference.getBody(2000));
+  assert.throws(() => grown.adopt([reference.systems[0]]), RangeError);
 });
 test('query order, regeneration and density preserve identities and complete systems', () => {
   const a = new RuntimeCatalogue(),

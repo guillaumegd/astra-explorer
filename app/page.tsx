@@ -27,23 +27,22 @@ import { Button } from '@/components/ui/button';
 import { CinematicIntro } from '@/components/cinematic-intro';
 import { hasSeenOpening, rememberOpening } from '@/lib/opening-sequence';
 import { Dialog } from '@base-ui/react/dialog';
-import {
-  createAmbientSoundtrack,
-  type AmbientSoundtrack,
-} from '@/lib/ambient-audio';
+import type { AmbientSoundtrack } from '@/lib/ambient-audio';
 import { Slider } from '@/components/ui/slider';
 import { type BodyIdentity } from '@/lib/stellar-lod';
 import { catalogue } from '@/lib/catalogue/runtime';
 import type { RegionDefinition } from '@/lib/catalogue/types';
 import { localSystemRoot } from '@/lib/system-framing';
-import {
-  createGalaxy,
-  type GalaxyEngine,
-  type CameraView,
-  type GalaxyMessages,
-  type SkyPointing,
-  type SystemView,
-  type RegionView,
+// The engine (three.js + lib/galaxy.ts) and the ambient audio are not
+// needed to paint the shell: they load as their own chunk, in parallel,
+// once the mount effect runs, instead of blocking the very first render.
+import type {
+  GalaxyEngine,
+  CameraView,
+  GalaxyMessages,
+  SkyPointing,
+  SystemView,
+  RegionView,
 } from '@/lib/galaxy';
 import type { QualityMode } from '@/lib/quality-policy';
 import { formatNumber, locales, localeNames } from '@/lib/i18n';
@@ -148,6 +147,9 @@ export default function Home() {
   const [palette, setPalette] = useState(0);
   const [quality, setQuality] = useState<QualityMode>('auto');
   const [ready, setReady] = useState(false);
+  // Bumped as background catalogue growth advances what's drawable, purely
+  // to re-render the density readout — nothing reads its value.
+  const [, bumpGrowth] = useState(0);
   const [opening, setOpening] = useState(() => !hasSeenOpening());
   const [openingRun, setOpeningRun] = useState(0);
   const [error, setError] = useState('');
@@ -188,42 +190,7 @@ export default function Home() {
   };
   useEffect(() => {
     if (!mount.current) return;
-    soundtrack.current = createAmbientSoundtrack(() => {
-      setMusicEnabled(false);
-      setMusicError(tRef.current.sound.unavailable);
-    });
-    try {
-      engine.current = createGalaxy(
-        mount.current,
-        buildGalaxyMessages(tRef.current),
-        setError,
-        (body) => {
-          setSelected(body);
-        },
-        (value, kind, pulse, binaryAngle, region) =>
-          soundtrack.current?.setProximity(
-            value,
-            kind,
-            pulse,
-            binaryAngle,
-            region,
-          ),
-        (view) => {
-          setSystemView(view);
-        },
-        setPointing,
-        () => setReady(true),
-        setCameraView,
-        setRegionView,
-      );
-      queueMicrotask(() => {
-        setMusicBusy(false);
-        setVolume(35);
-        setSelected(null);
-      });
-    } catch {
-      queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
-    }
+    let cancelled = false;
     // Ambient music defaults to on. With the opening running it is primed from
     // the gate click and raised only once the galaxy is out; without one there
     // is no such moment, so the first gesture both unblocks and raises it.
@@ -231,12 +198,59 @@ export default function Home() {
       enableMusic(musicRef.current.volume / 100);
     };
     const gestureEvents = ['pointerdown', 'keydown', 'touchstart'] as const;
-    if (!musicRef.current.opening) {
-      unblock();
+    if (!musicRef.current.opening)
       gestureEvents.forEach((type) => window.addEventListener(type, unblock));
-    }
+    // The engine (three.js + lib/galaxy.ts) and the ambient audio are heavy
+    // enough to matter for the first paint, so they load as their own chunk,
+    // in parallel with the rest of the shell, instead of being bundled in.
+    Promise.all([import('@/lib/galaxy'), import('@/lib/ambient-audio')])
+      .then(([{ createGalaxy }, { createAmbientSoundtrack }]) => {
+        if (cancelled || !mount.current) return;
+        soundtrack.current = createAmbientSoundtrack(() => {
+          setMusicEnabled(false);
+          setMusicError(tRef.current.sound.unavailable);
+        });
+        if (!musicRef.current.opening) unblock();
+        try {
+          engine.current = createGalaxy(
+            mount.current,
+            buildGalaxyMessages(tRef.current),
+            setError,
+            (body) => {
+              setSelected(body);
+            },
+            (value, kind, pulse, binaryAngle, region) =>
+              soundtrack.current?.setProximity(
+                value,
+                kind,
+                pulse,
+                binaryAngle,
+                region,
+              ),
+            (view) => {
+              setSystemView(view);
+            },
+            setPointing,
+            () => setReady(true),
+            setCameraView,
+            setRegionView,
+            () => bumpGrowth((n) => n + 1),
+          );
+          queueMicrotask(() => {
+            setMusicBusy(false);
+            setVolume(35);
+            setSelected(null);
+          });
+        } catch {
+          queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
+      });
 
     return () => {
+      cancelled = true;
       engine.current?.dispose();
       soundtrack.current?.dispose();
       soundtrack.current = null;
@@ -380,7 +394,8 @@ export default function Home() {
   const changeDensity = (value: number) => {
     if (
       selected &&
-      selected.id >= (engine.current?.catalogue.activeCount(value) ?? value)
+      selected.id >=
+        (engine.current?.catalogue.activeCountWithin(value) ?? value)
     )
       setNotice(t.controls.densityNotice);
     setDensity(value);
@@ -844,7 +859,10 @@ export default function Home() {
                     <div className="control-label">
                       <span id="density-label">{t.controls.count}</span>
                       <output>
-                        {formatNumber(catalogue.activeCount(density), locale)}
+                        {formatNumber(
+                          catalogue.activeCountWithin(density),
+                          locale,
+                        )}
                       </output>
                     </div>
                     <Slider
