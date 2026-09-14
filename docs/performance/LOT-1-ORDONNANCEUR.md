@@ -1,5 +1,7 @@
 # Performance — lot 1, ordonnanceur et politique de qualité commune
 
+Lot suivant : [démarrage progressif et génération du catalogue en Worker](LOT-2-DEMARRAGE-PROGRESSIF.md).
+
 Issue [#3](https://github.com/guillaumegd/astra-explorer/issues/3), au-dessus du
 lot 0. Deux modules remplacent le limiteur et la politique de la révision
 auditée `ad69261` : `lib/frame-scheduler.ts` pour le calendrier de rendu,

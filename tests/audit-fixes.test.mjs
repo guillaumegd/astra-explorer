@@ -110,6 +110,7 @@ const configureCode = source.slice(
 // eslint-disable-next-line @typescript-eslint/no-implied-eval
 const configure = new Function(
   'catalogue',
+  'filled',
   'settings',
   'selected',
   'framed',
@@ -142,6 +143,7 @@ test('configure preserves binary scope and ignores equivalent normalized budgets
   for (const density of [65000, 120000]) {
     const result = configure(
       cat,
+      count,
       { density: cat.activeCount(65000) },
       binary,
       { scope: 'stellar' },
@@ -157,6 +159,7 @@ test('configure resolves region identity and exits when its host is disabled', (
     r = cat.getRemnants(120000).find((r) => r.hostBodyId >= low);
   const result = configure(
     cat,
+    count,
     { density: count },
     null,
     null,
@@ -169,6 +172,7 @@ test('configure resolves region identity and exits when its host is disabled', (
   const survivor = cat.getRemnants(10000)[0];
   const kept = configure(
     cat,
+    count,
     { density: low },
     null,
     null,

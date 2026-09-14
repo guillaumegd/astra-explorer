@@ -48,10 +48,12 @@ La graine est celle du catalogue V2. `catalogue-baseline.json` est la mesure
 locale du 13 septembre 2026 (macOS arm64, Node 22.23.2). Elle exclut le navigateur,
 les transferts GPU et la compilation des shaders et ne certifie aucun mobile.
 
-`npm run build:static && npm run check:build-budget` bloque la CI si la somme
-gzip de tous les fichiers JS statiques dépasse 315 000 octets. Ce plafond
-provisoire protège l'état actuel ; l'objectif de 250 000 octets reste au lot 2.
-La somme de tous les chunks empêche de contourner le budget en découpant le JS.
+`npm run build:static && npm run check:build-budget` bloque la CI si le JS du
+chemin critique (coque + moteur, voir le
+[lot 2](LOT-2-DEMARRAGE-PROGRESSIF.md)) ou le total livré dépassent leurs
+plafonds provisoires (320 000 puis 340 000 octets gzip). L'objectif de
+250 000 octets sur le seul chemin critique reste ouvert : le moteur (three.js)
+et la coque en représentent déjà la quasi-totalité à eux deux.
 Le calcul gzip Node peut différer de l'estimation affichée par Vite.
 
 ## Parcours et mémoire

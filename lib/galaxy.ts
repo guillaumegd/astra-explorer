@@ -10,6 +10,9 @@ import {
   type RegionCandidate,
 } from './phenomena/region-manager';
 import { catalogue } from './catalogue/runtime';
+import { generateChunk } from './catalogue/generate';
+import { MAX_BODIES } from './catalogue/config';
+import type { SystemDefinition } from './catalogue/types';
 import {
   animatedRegionCenter,
   regionZoomDistance,
@@ -244,6 +247,8 @@ export function createGalaxy(
   onFirstFrame: () => void = () => {},
   onCameraView: (view: CameraView) => void = () => {},
   onRegion: (view: RegionView | null) => void = () => {},
+  /** Fires as the background catalogue growth advances what's drawable. */
+  onGrowth: (filled: number, capacity: number) => void = () => {},
 ): GalaxyEngine {
   const diagnosticStart = performance.now();
   const diagnostics =
@@ -355,40 +360,25 @@ export function createGalaxy(
   const group = new THREE.Group();
   group.rotation.z = -0.18;
   scene.add(group);
-  const max = catalogue.activeCount(120000);
   let seed = 91724;
   const random = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
     return seed / 4294967296;
   };
-  const positions = new Float32Array(max * 3);
-  const sizes = new Float32Array(max);
-  const seeds = new Float32Array(max);
-  const orbits = new Float32Array(max * ORBIT_STRIDE);
-  const roots = new Float32Array(max);
-  for (let id = 0; id < max; id++) {
-    const body = catalogue.getBody(id);
-    const system = catalogue.getSystem(body.systemId);
-    positions.set(system.anchor, id * 3);
-    seeds[id] = system.motionSeed;
-    roots[id] = system.rootId;
-    sizes[id] =
-      (0.22 + (body.seed % 1) ** 5 * 1.15) *
-      (body.role === 'central' ? 1 : 0.12);
-    orbits.set(compileOrbitChain(id, describeBody), id * ORBIT_STRIDE);
-  }
-  const bodyRadii = new Float32Array(max),
-    bodyTypes = new Float32Array(max),
-    bodyColors = new Float32Array(max * 3);
+  // Buffers are sized once for the full catalogue capacity and never
+  // reallocated; only the leading `filled` ids ever hold real data. The
+  // rest of the catalogue grows into them in the background (see below).
+  const positions = new Float32Array(MAX_BODIES * 3);
+  const sizes = new Float32Array(MAX_BODIES);
+  const seeds = new Float32Array(MAX_BODIES);
+  const orbits = new Float32Array(MAX_BODIES * ORBIT_STRIDE);
+  const roots = new Float32Array(MAX_BODIES);
+  const bodyRadii = new Float32Array(MAX_BODIES),
+    bodyTypes = new Float32Array(MAX_BODIES),
+    bodyColors = new Float32Array(MAX_BODIES * 3),
+    phenomenonFlags = new Float32Array(MAX_BODIES);
   const scratchColor = new THREE.Color();
-  for (let id = 0; id < max; id++) {
-    const body = describeBody(id);
-    bodyRadii[id] =
-      body.phenomenon?.envelope ?? body.pulsar?.envelope ?? body.radius;
-    bodyTypes[id] = body.type;
-    scratchColor.set(body.color).toArray(bodyColors, id * 3);
-  }
-  const ids = Float32Array.from({ length: max }, (_, i) => i);
+  const ids = Float32Array.from({ length: MAX_BODIES }, (_, i) => i);
   const geometry = new THREE.BufferGeometry();
   const orbitalBuffer = new THREE.InterleavedBuffer(orbits, ORBIT_STRIDE);
   for (let level = 0; level < ORBIT_DEPTH; level++)
@@ -400,30 +390,64 @@ export function createGalaxy(
     'aEccentricity',
     new THREE.InterleavedBufferAttribute(orbitalBuffer, 3, ORBIT_DEPTH * 4),
   );
-  geometry.setAttribute('aBodyRadius', new THREE.BufferAttribute(bodyRadii, 1));
-  geometry.setAttribute('aBodyType', new THREE.BufferAttribute(bodyTypes, 1));
-  geometry.setAttribute('aBodyColor', new THREE.BufferAttribute(bodyColors, 3));
-  geometry.setAttribute(
-    'aPhenomenon',
-    new THREE.BufferAttribute(
-      Float32Array.from({ length: max }, (_, id) =>
-        catalogue.getBody(id).comet
-          ? 3
-          : catalogue.getBody(id).pulsar
-            ? 2
-            : catalogue.getBody(id).phenomenon
-              ? 1
-              : 0,
-      ),
-      1,
-    ),
-  );
-  geometry.setAttribute('aSystemRoot', new THREE.BufferAttribute(roots, 1));
+  const bodyRadiusAttribute = new THREE.BufferAttribute(bodyRadii, 1);
+  const bodyTypeAttribute = new THREE.BufferAttribute(bodyTypes, 1);
+  const bodyColorAttribute = new THREE.BufferAttribute(bodyColors, 3);
+  const phenomenonAttribute = new THREE.BufferAttribute(phenomenonFlags, 1);
+  const rootAttribute = new THREE.BufferAttribute(roots, 1);
+  const positionAttribute = new THREE.BufferAttribute(positions, 3);
+  const sizeAttribute = new THREE.BufferAttribute(sizes, 1);
+  const seedAttribute = new THREE.BufferAttribute(seeds, 1);
+  geometry.setAttribute('aBodyRadius', bodyRadiusAttribute);
+  geometry.setAttribute('aBodyType', bodyTypeAttribute);
+  geometry.setAttribute('aBodyColor', bodyColorAttribute);
+  geometry.setAttribute('aPhenomenon', phenomenonAttribute);
+  geometry.setAttribute('aSystemRoot', rootAttribute);
   geometry.setAttribute('aId', new THREE.BufferAttribute(ids, 1));
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
-  geometry.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
-  geometry.setDrawRange(0, catalogue.activeCount(65000));
+  geometry.setAttribute('position', positionAttribute);
+  geometry.setAttribute('aSize', sizeAttribute);
+  geometry.setAttribute('aSeed', seedAttribute);
+  /** Writes the compact GPU attributes for [start, end) — never generates. */
+  function fillRange(start: number, end: number) {
+    for (let id = start; id < end; id++) {
+      const body = catalogue.getBody(id);
+      const system = catalogue.getSystem(body.systemId);
+      positions.set(system.anchor, id * 3);
+      seeds[id] = system.motionSeed;
+      roots[id] = system.rootId;
+      sizes[id] =
+        (0.22 + (body.seed % 1) ** 5 * 1.15) *
+        (body.role === 'central' ? 1 : 0.12);
+      orbits.set(compileOrbitChain(id, describeBody), id * ORBIT_STRIDE);
+      bodyRadii[id] =
+        body.phenomenon?.envelope ?? body.pulsar?.envelope ?? body.radius;
+      bodyTypes[id] = body.type;
+      scratchColor.set(body.color).toArray(bodyColors, id * 3);
+      phenomenonFlags[id] = body.comet ? 3 : body.pulsar ? 2 : body.phenomenon ? 1 : 0;
+    }
+  }
+  function markFilledAttributesDirty() {
+    orbitalBuffer.needsUpdate = true;
+    bodyRadiusAttribute.needsUpdate = true;
+    bodyTypeAttribute.needsUpdate = true;
+    bodyColorAttribute.needsUpdate = true;
+    phenomenonAttribute.needsUpdate = true;
+    rootAttribute.needsUpdate = true;
+    positionAttribute.needsUpdate = true;
+    sizeAttribute.needsUpdate = true;
+    seedAttribute.needsUpdate = true;
+  }
+  // First light: only what the current quality tier needs for an initial
+  // render, never the full catalogue (that used to force generating and
+  // compiling orbits for all of MAX_BODIES before the first frame).
+  let filled = Math.min(quality.budget.population, MAX_BODIES);
+  catalogue.ensure(filled);
+  // A system always completes whole, so bodies.length can overshoot
+  // MAX_BODIES by up to one system's worth — never trust it unclamped as a
+  // fill/buffer bound (the buffers themselves are sized to MAX_BODIES).
+  filled = Math.min(catalogue.bodies.length, MAX_BODIES);
+  fillRange(0, filled);
+  geometry.setDrawRange(0, filled);
   const replacements = Array.from(
     { length: 12 },
     () => new THREE.Vector2(-1, 0),
@@ -542,8 +566,11 @@ export function createGalaxy(
   const halo = new THREE.Sprite(haloMaterial);
   halo.scale.set(9, 6, 1);
   group.add(halo);
+  // The initial draw range is exactly what first light generated: never
+  // more than what's already filled into the GPU buffers.
+  let requestedDensity = filled;
   let settings: GalaxySettings = {
-    density: catalogue.activeCount(65000),
+    density: filled,
     speed: 1,
     tilt: null,
     paused: false,
@@ -1423,16 +1450,26 @@ export function createGalaxy(
       paused: true,
       tilt: null,
     };
-    geometry.setDrawRange(0, settings.density);
-    dustGeometry.setDrawRange(
-      0,
-      Math.round(dustCount * Math.min(1, definition.density / 65000)),
-    );
+    requestedDensity = settings.density;
     if (definition.bodyId) {
       const body = catalogue.resolveReference(definition.bodyId);
       if (!body) throw new Error(`Missing reference body ${definition.bodyId}`);
       select(body.id);
     } else if (definition.regionId) frameRegion(definition.regionId);
+    // Reference scenes are diagnostics-only and need exact reproducibility:
+    // catch the GPU buffers up to whatever the catalogue now holds,
+    // synchronously, instead of waiting for the background growth to do it.
+    if (catalogue.bodies.length > filled) {
+      const target = Math.min(catalogue.bodies.length, MAX_BODIES);
+      fillRange(filled, target);
+      filled = target;
+      markFilledAttributesDirty();
+    }
+    geometry.setDrawRange(0, settings.density);
+    dustGeometry.setDrawRange(
+      0,
+      Math.round(dustCount * Math.min(1, definition.density / 65000)),
+    );
     travel = null;
     focusOffset.set(0, 0, 0);
     quality.freeze({
@@ -2396,14 +2433,115 @@ export function createGalaxy(
     scheduler.suspend();
     lastRendered = null;
   }
+  // Background growth: walks the catalogue from `filled` up to MAX_BODIES
+  // in chunks, off the critical first-render path. A worker does the pure
+  // generation work when available; otherwise the same chunking runs on the
+  // main thread in short, idle-scheduled slices — either way, no single
+  // step is a long task.
+  const WORKER_CHUNK_BODIES = 6000;
+  const IDLE_CHUNK_BODIES = 1500;
+  let growthDisposed = false;
+  let idleHandle: number | null = null;
+  const cancelIdle =
+    typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout;
+  const scheduleIdle =
+    typeof requestIdleCallback === 'function'
+      ? requestIdleCallback
+      : (fn: () => void) => setTimeout(fn, 0);
+  function advanceDensity() {
+    const nextDensity = Math.min(
+      catalogue.activeCountWithin(requestedDensity),
+      filled,
+    );
+    if (nextDensity !== settings.density) {
+      settings = { ...settings, density: nextDensity };
+      geometry.setDrawRange(0, settings.density);
+    }
+    onGrowth(filled, MAX_BODIES);
+  }
+  // A chunk in flight (worker or idle-scheduled) can be made stale by a
+  // synchronous forcing call elsewhere (only `applyReferenceScene` does
+  // this, for diagnostics reproducibility) advancing the catalogue in the
+  // meantime. adoptChunk() checks contiguity itself and just resyncs by
+  // requesting the next chunk from wherever the catalogue actually is,
+  // rather than adopting a now-out-of-order chunk.
+  function adoptChunk(systems: SystemDefinition[]) {
+    if (growthDisposed) return;
+    if (systems.length && systems[0].index === catalogue.systems.length) {
+      catalogue.adopt(systems);
+      // A chunk's last system can overshoot MAX_BODIES (systems are never
+      // split), so clamp before touching the MAX_BODIES-sized GPU buffers.
+      const target = Math.min(catalogue.bodies.length, MAX_BODIES);
+      fillRange(filled, target);
+      filled = target;
+      markFilledAttributesDirty();
+      advanceDensity();
+    }
+    growNext();
+  }
+  let worker: Worker | null = null;
+  try {
+    if (typeof Worker !== 'undefined')
+      worker = new Worker(
+        new URL('./catalogue/generate.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+  } catch {
+    worker = null;
+  }
+  function growNext() {
+    if (growthDisposed || catalogue.bodies.length >= MAX_BODIES) return;
+    const fromSystem = catalogue.systems.length;
+    const firstParticle = catalogue.bodies.length;
+    if (worker) {
+      const minBodies = Math.min(
+        WORKER_CHUNK_BODIES,
+        MAX_BODIES - firstParticle,
+      );
+      worker.postMessage({
+        fromSystem,
+        firstParticle,
+        minBodies,
+        seed: catalogue.seed,
+      });
+    } else {
+      idleHandle = scheduleIdle(() => {
+        idleHandle = null;
+        const minBodies = Math.min(
+          IDLE_CHUNK_BODIES,
+          MAX_BODIES - firstParticle,
+        );
+        const chunk = generateChunk(
+          fromSystem,
+          firstParticle,
+          minBodies,
+          catalogue.seed,
+        );
+        adoptChunk(chunk.systems);
+      }) as unknown as number;
+    }
+  }
+  if (worker)
+    worker.onmessage = (event: MessageEvent<{ systems: SystemDefinition[] }>) => {
+      adoptChunk(event.data.systems);
+    };
   applyBudget('start');
   startLoop();
+  growNext();
   return {
     catalogue,
     configure(next) {
+      // Never forces generation past what background growth has already
+      // filled into the GPU buffers: a slider jump only picks a new target,
+      // it does not itself trigger a blocking catalogue burst.
+      requestedDensity = next.density;
       const densityChanged =
-        settings.density !== catalogue.activeCount(next.density);
-      settings = { ...next, density: catalogue.activeCount(next.density) };
+        settings.density !==
+        Math.min(catalogue.activeCountWithin(next.density), filled);
+      settings = {
+        ...next,
+        density: Math.min(catalogue.activeCountWithin(next.density), filled),
+      };
       if (quality.setMode(settings.quality, performance.now()))
         applyBudget(`mode:${settings.quality}`);
       if (selected && densityChanged) {
@@ -2483,6 +2621,9 @@ export function createGalaxy(
       pointer.set(0, 0);
     },
     dispose() {
+      growthDisposed = true;
+      worker?.terminate();
+      if (idleHandle !== null) cancelIdle(idleHandle);
       document.removeEventListener('visibilitychange', visibility);
       for (const observer of diagnosticObservers) observer.disconnect();
       gpuDiagnostics?.dispose();
