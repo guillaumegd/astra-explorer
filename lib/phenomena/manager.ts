@@ -8,8 +8,13 @@ import type { BodyCandidate } from '../stellar-lod.ts';
 export function phenomenonVisibility(pixels: number) {
   return THREE.MathUtils.smoothstep(pixels, 6, 80);
 }
+/** No controller wired in: creation stays unthrottled, as it always was. */
+const UNCONSTRAINED_CREATIONS = { budget: { creationsPerFrame: Infinity } };
 /** Four reserved cache slots; ordinary bodies retain eight, total never exceeds twelve. */
-export function createPhenomenaManager(parent: THREE.Group) {
+export function createPhenomenaManager(
+  parent: THREE.Group,
+  quality: { budget: { creationsPerFrame: number } } = UNCONSTRAINED_CREATIONS,
+) {
   const entries = new Map<
     number,
     {
@@ -23,6 +28,7 @@ export function createPhenomenaManager(parent: THREE.Group) {
   >();
   let previous: number | null = null;
   let subject: LensSubject | null = null;
+  let lastCreations = 0;
   return {
     update(
       candidates: BodyCandidate[],
@@ -30,6 +36,8 @@ export function createPhenomenaManager(parent: THREE.Group) {
       simulationTime: number,
       reducedMotion = false,
       orbitTime = simulationTime,
+      renderer?: THREE.WebGLRenderer,
+      camera?: THREE.Camera,
     ) {
       const dt =
         previous === null ? 0 : Math.min(0.1, Math.max(0, time - previous));
@@ -42,16 +50,19 @@ export function createPhenomenaManager(parent: THREE.Group) {
         )
         .slice(0, 4);
       const ids = new Set(active.map((c) => c.identity.id));
+      let createdThisFrame = 0;
       for (const c of active) {
         let entry = entries.get(c.identity.id);
         const created = !entry;
         if (!entry) {
+          if (createdThisFrame >= quality.budget.creationsPerFrame) continue;
           if (entries.size >= 4) {
             const stale = [...entries].find(([id]) => !ids.has(id));
             if (!stale) continue;
             stale[1].renderer.dispose();
             entries.delete(stale[0]);
           }
+          createdThisFrame++;
           entry = {
             renderer: c.identity.comet
               ? createComet(c.identity)
@@ -63,6 +74,8 @@ export function createPhenomenaManager(parent: THREE.Group) {
           };
           entries.set(c.identity.id, entry);
           parent.add(entry.renderer.group);
+          if (renderer && camera)
+            void renderer.compileAsync(entry.renderer.group, camera);
         }
         entry.seen = time;
         entry.renderer.group.position.copy(c.position);
@@ -97,6 +110,7 @@ export function createPhenomenaManager(parent: THREE.Group) {
               seen: primary.seen,
             }
           : null;
+      lastCreations = createdThisFrame;
       return fades;
     },
     detailThreshold(id: number) {
@@ -122,6 +136,7 @@ export function createPhenomenaManager(parent: THREE.Group) {
       return {
         cached: entries.size,
         visible: [...entries.values()].filter((e) => e.fade > 0.002).length,
+        created: lastCreations,
       };
     },
     dispose() {

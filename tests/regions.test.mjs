@@ -20,6 +20,10 @@ import {
   REMNANT_SIZE_SPAN,
 } from '../lib/catalogue/config.ts';
 import { galacticShear, shearAngle } from '../lib/particle-motion.ts';
+import {
+  allocateRegionSteps,
+  regionStepBudget,
+} from '../lib/phenomena/region-budget.ts';
 
 test('regions are identical whatever the order or the density', () => {
   const a = listNebulae();
@@ -183,6 +187,69 @@ test('the cloud turns rigidly, so its envelope always contains it', () => {
           assert.ok(point.distanceTo(centre) <= region.envelope);
         }
     }
+});
+
+test('allocateRegionSteps never spends more than the total budget on non-priority candidates', () => {
+  const steps = 16;
+  const budget = regionStepBudget(steps);
+  const candidates = Array.from({ length: 12 }, (_, i) => ({
+    id: `c${i}`,
+    pixels: 60 + i * 5,
+    focused: false,
+    inside: 0,
+  }));
+  const allocation = allocateRegionSteps(candidates, steps);
+  let spent = 0;
+  for (const c of candidates)
+    spent += Math.max(c.pixels, 1) * (allocation.get(c.id) ?? 0);
+  assert.ok(spent <= budget * 1.0001);
+  // Every value comes from the tier's own ladder.
+  for (const value of allocation.values())
+    assert.ok([0, 4, 8, steps].includes(value));
+});
+
+test('allocateRegionSteps never degrades a focused or traversed candidate', () => {
+  const steps = 8;
+  const candidates = [
+    { id: 'far', pixels: 500, focused: false, inside: 0 },
+    { id: 'far2', pixels: 500, focused: false, inside: 0 },
+    { id: 'far3', pixels: 500, focused: false, inside: 0 },
+    { id: 'far4', pixels: 500, focused: false, inside: 0 },
+    { id: 'focused', pixels: 500, focused: true, inside: 0 },
+    { id: 'inside', pixels: 500, focused: false, inside: 0.4 },
+  ];
+  const allocation = allocateRegionSteps(candidates, steps);
+  assert.equal(allocation.get('focused'), steps);
+  assert.equal(allocation.get('inside'), steps);
+});
+
+test('allocateRegionSteps keeps a near-invisible candidate capped, however much headroom is left', () => {
+  const steps = 16;
+  const candidates = [{ id: 'tiny', pixels: 2, focused: false, inside: 0 }];
+  const allocation = allocateRegionSteps(candidates, steps);
+  assert.equal(allocation.get('tiny'), 4);
+});
+
+test('allocateRegionSteps never leaves a single, lonely candidate at zero', () => {
+  // Deliberately tiny budget: a single huge candidate at the full tier alone
+  // could exceed it, but it must still receive something.
+  const steps = 16;
+  const candidates = [{ id: 'huge', pixels: 100000, focused: false, inside: 0 }];
+  const allocation = allocateRegionSteps(candidates, steps);
+  assert.ok(allocation.get('huge') > 0);
+});
+
+test('allocateRegionSteps is deterministic for a given candidate set', () => {
+  const steps = 16;
+  const candidates = Array.from({ length: 9 }, (_, i) => ({
+    id: `n${i}`,
+    pixels: (i * 37) % 200,
+    focused: false,
+    inside: 0,
+  }));
+  const a = allocateRegionSteps(candidates, steps);
+  const b = allocateRegionSteps(candidates, steps);
+  assert.deepEqual([...a.entries()], [...b.entries()]);
 });
 
 test('a region is never a body: no index, no budget, no pick', () => {

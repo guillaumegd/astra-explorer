@@ -70,6 +70,40 @@ test('lens sky capture includes offscreen volumes and restores all state after f
   manager.dispose();
 });
 
+test('repeated sky captures never force a defines.STEPS shader recompile', () => {
+  const parent = new THREE.Group(),
+    sky = new THREE.Group();
+  const manager = createRegionManager(parent);
+  const candidates = listNebulae().map((region, i) => ({
+    region,
+    position: new THREE.Vector3(...region.center),
+    // A mix of priority and non-priority steps, so the view material's
+    // defines.STEPS differs from the capture material's on more than one entry.
+    pixels: i === 0 ? 200 : 20,
+    inside: 0,
+    focused: false,
+  }));
+  // Two updates: the first settles each material's real STEPS value (one
+  // legitimate recompile away from the placeholder used at construction);
+  // steady state is what captures must never disturb.
+  manager.update(candidates, 0, 0, 0);
+  manager.update(candidates, 0.1, 0.1, 0);
+  const viewVersions = parent.children.map(
+    (g) => g.children[0].material.version,
+  );
+  manager.captureSky(sky, () => {});
+  manager.captureSky(sky, () => {});
+  manager.captureSky(sky, () => {});
+  const finalVersions = parent.children.map(
+    (g) => g.children[0].material.version,
+  );
+  // `.version` only increments on `needsUpdate = true`: never touched by
+  // swapping mesh.material between the two stable variants, so three rounds
+  // of capture leave every material exactly where the steady-state left it.
+  assert.deepEqual(viewVersions, finalVersions);
+  manager.dispose();
+});
+
 test('nebulae occupy at most 1.4 percent of the galaxy diameter and keep a low LOD at distance', () => {
   const list = listNebulae(),
     parent = new THREE.Group(),

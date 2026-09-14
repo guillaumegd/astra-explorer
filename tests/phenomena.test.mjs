@@ -11,6 +11,7 @@ import {
   createRegionManager,
   regionVisibility,
 } from '../lib/phenomena/region-manager.ts';
+import { listNebulae } from '../lib/catalogue/regions.ts';
 import { minimumOrbitRatio, createBodyLOD } from '../lib/stellar-lod.ts';
 import { systemBounds } from '../lib/system-framing.ts';
 const catalogue = new RuntimeCatalogue();
@@ -204,5 +205,60 @@ test('volumetric samples degrade only down the declared ladder', () => {
   assert.equal(manager.steps(), 4);
   manager.setSteps(16);
   assert.equal(manager.steps(), 16);
+  manager.dispose();
+});
+
+test('phenomena creation is throttled by the quality budget and catches up over later frames', () => {
+  catalogue.ensure(120000);
+  const holes = catalogue
+    .getPhenomena(120000)
+    .filter((b) => b.kind === 'black-hole');
+  assert.ok(holes.length >= 4);
+  const parent = new THREE.Group();
+  const quality = { budget: { creationsPerFrame: 1 } };
+  const manager = createPhenomenaManager(parent, quality);
+  const c = (b, pixels = 200) => ({
+    identity: b,
+    position: new THREE.Vector3(),
+    pixels,
+    distanceInRadii: 3,
+  });
+  const candidates = holes.slice(0, 4).map((b) => c(b));
+  manager.update(candidates, 0, 0);
+  assert.equal(manager.stats().created, 1);
+  assert.equal(manager.stats().cached, 1);
+  manager.update(candidates, 0.1, 0.1);
+  assert.equal(manager.stats().created, 1);
+  assert.equal(manager.stats().cached, 2);
+  manager.update(candidates, 0.2, 0.2);
+  manager.update(candidates, 0.3, 0.3);
+  assert.equal(manager.stats().cached, 4);
+  manager.dispose();
+});
+
+test('region creation is throttled by the quality budget: the impostor covers the wait', () => {
+  const list = listNebulae();
+  assert.ok(list.length >= 4);
+  const parent = new THREE.Group();
+  const quality = { budget: { creationsPerFrame: 2 } };
+  const manager = createRegionManager(parent, quality);
+  const candidates = list.map((region) => ({
+    region,
+    position: new THREE.Vector3(...region.center),
+    pixels: 50,
+    inside: 0,
+    focused: false,
+  }));
+  manager.update(candidates, 0, 0, 0);
+  assert.equal(manager.stats().created, 2);
+  assert.equal(manager.stats().persistent, 2);
+  manager.update(candidates, 0.1, 0.1, 0);
+  assert.equal(manager.stats().persistent, 4);
+  let frame = 0.1;
+  while (manager.stats().persistent < list.length) {
+    frame += 0.1;
+    manager.update(candidates, frame, frame, 0);
+  }
+  assert.equal(manager.stats().persistent, list.length);
   manager.dispose();
 });

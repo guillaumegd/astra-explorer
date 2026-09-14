@@ -25,9 +25,8 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
     uFilament: { value: new THREE.Color(region.palette[1]) },
     uPocket: { value: new THREE.Color(region.palette[2]) },
   };
-  const material = new THREE.ShaderMaterial({
+  const shaderOptions = {
     uniforms,
-    defines: { STEPS: steps },
     vertexShader: volumeVertex,
     transparent: true,
     depthWrite: false,
@@ -78,10 +77,17 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
         #include <colorspace_fragment>
         gl_FragColor.rgb *= alpha;
       }`,
+  };
+  const viewMaterial = new THREE.ShaderMaterial({
+    ...shaderOptions,
+    defines: { STEPS: steps },
   });
+  // Built lazily on first capture and never mutated again: sky capture no
+  // longer forces a defines.STEPS recompile on every entry/exit.
+  let captureMaterial: THREE.ShaderMaterial | null = null;
   const mesh = new THREE.Mesh(
     new THREE.SphereGeometry(region.envelope, 32, 16),
-    material,
+    viewMaterial,
   );
   mesh.frustumCulled = false;
   mesh.onBeforeRender = (_renderer, _scene, camera) => {
@@ -102,13 +108,25 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
       group.visible = fade > 0.002;
     },
     setSteps(next: number) {
-      if (material.defines.STEPS === next) return;
-      material.defines.STEPS = next;
-      material.needsUpdate = true;
+      if (viewMaterial.defines.STEPS === next) return;
+      viewMaterial.defines.STEPS = next;
+      viewMaterial.needsUpdate = true;
+    },
+    setCaptureMode(active: boolean, captureSteps: number) {
+      if (active) {
+        captureMaterial ??= new THREE.ShaderMaterial({
+          ...shaderOptions,
+          defines: { STEPS: captureSteps },
+        });
+        mesh.material = captureMaterial;
+      } else {
+        mesh.material = viewMaterial;
+      }
     },
     dispose() {
       mesh.geometry.dispose();
-      material.dispose();
+      viewMaterial.dispose();
+      captureMaterial?.dispose();
       group.removeFromParent();
     },
   };
