@@ -38,7 +38,8 @@ export function createSurfaceActivity(
         vec3 right=normalize(cross(axis,vec3(0.,1.,0.))),up=cross(right,axis);
         float t=fract(position.x+uTime*(uType==5.?.08:.16));
         float emission=1.;
-        float height=terrainHeight(axis,uSeed,uType);
+        // Fixed full detail: a bounded 768-point effect, not worth a quality-tier wire-up.
+        float height=terrainHeight(axis,uSeed,uType,7.0,4.0);
         if(uType==6.) emission=1.-smoothstep(-.003,-.0015,height);
         if(uType==3.||uType==8.) emission=1.-smoothstep(2.,3.,mod(uTime+position.y*37.,29.));
         if(uType==7.) emission=.5+.5*sin(uTime*.12+longitude);
