@@ -1,8 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { createLensing } from '../lib/phenomena/lensing.ts';
+import {
+  createLensing,
+  lensingScissorBounds,
+} from '../lib/phenomena/lensing.ts';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
+
+test('lensing scissor keeps the full visible influence at viewport edges', () => {
+  assert.deepEqual(lensingScissorBounds(800, 600, 20, 300, 90), {
+    x: 0,
+    y: 210,
+    width: 110,
+    height: 180,
+  });
+  assert.deepEqual(lensingScissorBounds(800, 600, 780, 580, 90), {
+    x: 690,
+    y: 490,
+    width: 110,
+    height: 110,
+  });
+});
 
 test('one optical field owns two targets, preserves scene visibility and expires after four seconds', () => {
   const lens = createLensing(),

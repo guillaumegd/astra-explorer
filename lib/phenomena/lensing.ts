@@ -12,6 +12,25 @@ export type LensSubject = {
   fade: number;
   seen?: number;
 };
+
+/** Clamp a circular lens influence to the drawing buffer without dropping its
+ * clipped edge. The extent must be derived from both clamped endpoints: using
+ * a clamped origin with an unclamped diameter leaves a rectangular hole when a
+ * lens overlaps a viewport edge. */
+export function lensingScissorBounds(
+  width: number,
+  height: number,
+  centerX: number,
+  centerY: number,
+  radius: number,
+) {
+  const left = Math.max(0, Math.floor(centerX - radius));
+  const bottom = Math.max(0, Math.floor(centerY - radius));
+  const right = Math.min(width, Math.ceil(centerX + radius));
+  const top = Math.min(height, Math.ceil(centerY + radius));
+  return { x: left, y: bottom, width: right - left, height: top - bottom };
+}
+
 /** One detailed optical field, two additional targets (scene/depth and all-sky cube). */
 export function createLensing() {
   let source: THREE.WebGLRenderTarget | null = null;
@@ -57,6 +76,26 @@ export function createLensing() {
   quad.frustumCulled = false;
   const composite = new THREE.Scene();
   composite.add(quad);
+  // The source target contains the entire scene. Render it before restricting
+  // the expensive optical pass, otherwise pixels outside the scissor retain
+  // the renderer clear colour (the black rectangle reported during close-up).
+  const sourceUniforms = { uSource: { value: null as THREE.Texture | null } };
+  const sourceMaterial = new THREE.ShaderMaterial({
+    uniforms: sourceUniforms,
+    depthTest: false,
+    depthWrite: false,
+    vertexShader:
+      'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
+    fragmentShader:
+      'varying vec2 vUv;uniform sampler2D uSource;void main(){gl_FragColor=texture2D(uSource,vUv);#include <colorspace_fragment>}',
+  });
+  const sourceQuad = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    sourceMaterial,
+  );
+  sourceQuad.frustumCulled = false;
+  const sourceComposite = new THREE.Scene();
+  sourceComposite.add(sourceQuad);
   const release = () => {
     source?.dispose();
     sky?.dispose();
@@ -105,6 +144,7 @@ export function createLensing() {
         });
         cube = new THREE.CubeCamera(0.01, 180, sky);
         uniforms.uScene.value = source.texture;
+        sourceUniforms.uSource.value = source.texture;
         uniforms.uDepth.value = source.depthTexture;
         uniforms.uSky.value = sky.texture;
       }
@@ -197,6 +237,7 @@ export function createLensing() {
         renderer.setRenderTarget(null);
       }
       const renderComposite = () => {
+        renderer.render(sourceComposite, camera);
         // The shader has an early-out outside this sphere. Scissoring avoids
         // submitting its 320-step path over pixels that cannot be influenced.
         // Keep the full target when the camera is inside/behind the bound.
@@ -218,13 +259,16 @@ export function createLensing() {
           return;
         }
         const projectedCenter = center.clone().project(camera);
-        const x = Math.max(0, Math.floor((projectedCenter.x * 0.5 + 0.5) * size.x - radius));
-        const y = Math.max(0, Math.floor((projectedCenter.y * 0.5 + 0.5) * size.y - radius));
-        const width = Math.min(size.x - x, Math.ceil(radius * 2));
-        const height = Math.min(size.y - y, Math.ceil(radius * 2));
-        if (width <= 0 || height <= 0) return;
+        const bounds = lensingScissorBounds(
+          size.x,
+          size.y,
+          (projectedCenter.x * 0.5 + 0.5) * size.x,
+          (projectedCenter.y * 0.5 + 0.5) * size.y,
+          radius,
+        );
+        if (bounds.width <= 0 || bounds.height <= 0) return;
         renderer.setScissorTest(true);
-        renderer.setScissor(x, y, width, height);
+        renderer.setScissor(bounds.x, bounds.y, bounds.width, bounds.height);
         try {
           renderer.render(composite, camera);
         } finally {
@@ -302,6 +346,8 @@ export function createLensing() {
       release();
       quad.geometry.dispose();
       material.dispose();
+      sourceQuad.geometry.dispose();
+      sourceMaterial.dispose();
     },
   };
 }
