@@ -27,6 +27,7 @@ import {
 import { createFrameScheduler } from './frame-scheduler';
 import { asteroidRadius } from './asteroid-shape';
 import { sampleBodyTravel } from './body-travel';
+import { closeupBudget, createCloseupVisitTracker } from './closeup-policy';
 import { desiredSurfaceTilt, surfaceCameraPose } from './surface-camera';
 import {
   systemBounds,
@@ -611,9 +612,22 @@ export function createGalaxy(
     palette: 0,
     quality: 'auto',
   };
-  const bodyLOD = createBodyLOD(group, 8, quality);
-  const phenomena = createPhenomenaManager(group, quality);
-  const regions = createRegionManager(group, quality);
+  // The global controller keeps the desktop/manual profile intact. Surfaces
+  // consult this narrow, transient view of it when a compact device approaches
+  // a body, so nearby resource creation cannot starve the camera/input frame.
+  const surfaceQuality = {
+    get budget() {
+      return closeupBudget(
+        quality.budget,
+        constrainedDevice,
+        selected ? distance / selected.radius : null,
+      );
+    },
+  };
+  const bodyLOD = createBodyLOD(group, 8, surfaceQuality);
+  const closeupVisits = createCloseupVisitTracker();
+  const phenomena = createPhenomenaManager(group, surfaceQuality);
+  const regions = createRegionManager(group, surfaceQuality);
   group.add(regions.impostorPoints);
   const lensing = createLensing();
   // The all-sky catalogue uses the same geometry, motion, colours and active range.
@@ -1107,6 +1121,13 @@ export function createGalaxy(
     surfaceAnchor = null;
     regionFocus = null;
     selected = describeBody(id);
+    const previousVisit = closeupVisits.begin(id, performance.now());
+    if (previousVisit)
+      diagnostics?.record('closeup-visit', performance.now(), previousVisit);
+    diagnostics?.record('closeup-visit-start', performance.now(), {
+      bodyId: id,
+      firstVisit: closeupVisits.snapshot()?.firstVisit ?? true,
+    });
     if (selected.phenomenon || selected.pulsar || selected.comet) {
       elevation = (25 * Math.PI) / 180;
       azimuth = 0.6;
@@ -1134,6 +1155,9 @@ export function createGalaxy(
     travel = null;
     clearFrame();
     regionFocus = null;
+    const completedVisit = closeupVisits.end(performance.now());
+    if (completedVisit)
+      diagnostics?.record('closeup-visit', performance.now(), completedVisit);
     selected = null;
     targetDistance = mobile ? 40 : 29.4;
     onSelection(null);
@@ -1170,6 +1194,9 @@ export function createGalaxy(
     travel = null;
     clearFrame();
     surfaceAnchor = null;
+    const completedVisit = closeupVisits.end(performance.now());
+    if (completedVisit)
+      diagnostics?.record('closeup-visit', performance.now(), completedVisit);
     selected = null;
     regionFocus = region;
     animatedRegionCenter(
@@ -1349,6 +1376,7 @@ export function createGalaxy(
   const targetInner = new THREE.Color(palettes[0][0]),
     targetOuter = new THREE.Color(palettes[0][1]);
   let mobile = false;
+  let constrainedDevice = false;
   let sizedWidth = 0,
     sizedHeight = 0;
   const resize = () => {
@@ -1356,6 +1384,12 @@ export function createGalaxy(
     if (width <= 0 || height <= 0) return;
     const previousAspect = camera.aspect;
     mobile = width < 600;
+    // Width alone misses landscape tablets. This remains opt-in to touch-like
+    // devices, so a narrow desktop window never loses its manual Ultra tier.
+    constrainedDevice =
+      mobile ||
+      (window.matchMedia('(pointer: coarse)').matches &&
+        Math.min(width, height) <= 1024);
     renderer.setSize(width, height);
     // Mobile browsers fire this while scrolling; only a real size change
     // invalidates the pixel ceiling and the measurement windows.
@@ -2233,7 +2267,7 @@ export function createGalaxy(
       frameId: diagnosticFrame,
     });
     // How many bodies may hold a full surface at once is a budget decision.
-    const detailBodies = quality.budget.detailBodies;
+    const detailBodies = surfaceQuality.budget.detailBodies;
     const fades = bodyLOD.update(
       visibleCandidates
         .slice(0, detailBodies)
@@ -2244,6 +2278,11 @@ export function createGalaxy(
       renderer,
       camera,
     );
+    const lodStats = bodyLOD.stats();
+    if (selected && distance / selected.radius < 3 && closeupVisits.warm(now))
+      diagnostics?.record('closeup-warm', now, closeupVisits.snapshot() ?? {});
+    if (lodStats.patches > 0 && closeupVisits.ready(now))
+      diagnostics?.record('closeup-ready', now, closeupVisits.snapshot() ?? {});
     const specialFades = phenomena.update(
       visibleCandidates.slice(0, detailBodies),
       wallTime,
@@ -2314,6 +2353,9 @@ export function createGalaxy(
       reduced.matches,
       renderer,
       camera,
+    );
+    closeupVisits.recordCreations(
+      lodStats.created + phenomena.stats().created + regions.stats().created,
     );
     setHostData('regions', String(
       regions.stats().cached + regions.stats().persistent,
@@ -2420,8 +2462,8 @@ export function createGalaxy(
     setHostData('catalogueVersion', 'v2');
     setHostData('activeBodies', String(settings.density));
     setHostData('selectedBody', selected?.bodyId ?? '');
-    setHostData('surfaceLevel', String(bodyLOD.stats().surfaceLevel));
-    setHostData('surfacePatches', String(bodyLOD.stats().patches));
+    setHostData('surfaceLevel', String(lodStats.surfaceLevel));
+    setHostData('surfacePatches', String(lodStats.patches));
     setHostData('altitudeRatio', selected
       ? String(distance / selected.radius - 1)
       : '');
@@ -2565,7 +2607,7 @@ export function createGalaxy(
         // quality.budget.creationsPerFrame: the basis for measuring creation
         // spikes at first approach and after a cache expiry.
         creations:
-          bodyLOD.stats().created +
+          lodStats.created +
           phenomena.stats().created +
           regions.stats().created,
         ...renderer.info.memory,

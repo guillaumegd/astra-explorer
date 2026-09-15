@@ -237,6 +237,32 @@ test('surface LOD refines only a camera-local patch and releases it on exit', ()
   lod.dispose();
 });
 
+test('the local patch is warmed before the close-up threshold without becoming visible', () => {
+  const body = describeBody(4);
+  const parent = new THREE.Group();
+  const lod = createBodyLOD(parent);
+  const candidate = (ratio) => ({
+    identity: body,
+    position: new THREE.Vector3(),
+    pixels: 1000,
+    distanceInRadii: ratio,
+    cameraPosition: new THREE.Vector3(0, 0, body.radius * ratio),
+  });
+
+  lod.update([candidate(2.5)], 0, 0);
+  const patch = parent.children[0].children.find(
+    (child) => child.geometry?.type === 'PlaneGeometry',
+  );
+  assert.ok(patch, 'the hidden patch is allocated while approach has time');
+  assert.equal(patch.visible, false);
+  assert.equal(lod.stats().patches, 0);
+
+  lod.update([candidate(1.9)], 0.1, 0);
+  assert.equal(patch.visible, true);
+  assert.equal(lod.stats().patches, 1);
+  lod.dispose();
+});
+
 test('every planet family increases local geometry and shader detail when approaching', () => {
   const catalogue = Array.from({ length: 300 }, (_, i) => describeBody(i));
   for (const type of [1, 2, 4, 5, 6, 7]) {

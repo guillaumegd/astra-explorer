@@ -698,6 +698,12 @@ export function createBodyLOD(
         const solid = body.type !== 0 && body.type !== 2;
         const close =
           body.type !== 0 && ratio < 2 && !!candidate.cameraPosition;
+        // Build and compile the local patch while the camera is still outside
+        // the close-up threshold. The patch remains invisible until `close`,
+        // so its first allocation/program link is not on the critical camera
+        // path. Later frames can still refine its geometry as we approach.
+        const warmPatch =
+          body.type !== 0 && ratio < 3 && !!candidate.cameraPosition;
         const surfaceUniforms = entry.mesh.material.uniforms;
         surfaceUniforms.uRelief.value +=
           ((solid ? 1 : 0) - surfaceUniforms.uRelief.value) *
@@ -716,7 +722,7 @@ export function createBodyLOD(
           (detail - surfaceUniforms.uSurfaceDetail.value) *
           (1 - Math.exp(-dt * 4));
         surfaceUniforms.uPatchEnabled.value = close ? 1 : 0;
-        if (close) {
+        if (warmPatch) {
           if (!entry.patch) {
             const patchMaterial = new THREE.ShaderMaterial({
               vertexShader: terrainVertex,
@@ -737,7 +743,10 @@ export function createBodyLOD(
               entry!.mesh.onBeforeRender(...args);
             entry.patch.frustumCulled = false;
             entry.group.add(entry.patch);
+            if (renderer && camera) void renderer.compileAsync(entry.patch, camera);
           }
+        }
+        if (close && entry.patch) {
           entry.group.updateWorldMatrix(true, false);
           const axis = surfaceUniforms.uPatchAxis.value as THREE.Vector3;
           const nextAxis = candidate.cameraPosition!.clone();
