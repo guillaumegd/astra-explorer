@@ -257,7 +257,7 @@ test('every overlay moved by setMarkerPosition consumes the marker variables', (
     new URL('../app/globals.css', import.meta.url),
     'utf8',
   );
-  for (const name of ['body-marker', 'system-marker', 'region-outline']) {
+  for (const name of ['body-marker', 'system-marker']) {
     assert.ok(source.includes(`'${name}'`), name);
     const start = css.indexOf(`.${name} {`);
     assert.ok(start >= 0, name);
@@ -268,6 +268,6 @@ test('every overlay moved by setMarkerPosition consumes the marker variables', (
       name,
     );
   }
-  // Three call sites, three classes: a new overlay must join the list above.
-  assert.equal((source.match(/setMarkerPosition\(/g) ?? []).length, 3);
+  // Two call sites, two classes: a new overlay must join the list above.
+  assert.equal((source.match(/setMarkerPosition\(/g) ?? []).length, 2);
 });

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { catalogue } from '../lib/catalogue/runtime.ts';
 import { listNebulae } from '../lib/catalogue/regions.ts';
@@ -141,4 +142,51 @@ test('both binary photospheres rotate about the common orbital normal', () => {
     }
   }
   lod.dispose();
+});
+
+test('a framed region eases into focus and lets go of it just as gradually', () => {
+  const [region] = listNebulae();
+  const parent = new THREE.Group();
+  const manager = createRegionManager(parent);
+  const c = candidate(region, 400);
+  manager.update([c], 0, 0, 0);
+  const { uFocus, uFade } = parent.children[0].children[0].material.uniforms;
+  assert.equal(uFocus.value, 0);
+  c.focused = true;
+  const rise = [];
+  let time = 0.1;
+  for (; time < 3; time += 0.1) {
+    manager.update([c], time, 0, 0);
+    rise.push(uFocus.value);
+  }
+  // A cut would read as a HUD state change; the cloud has to come up to it.
+  assert.ok(rise[0] > 0 && rise[0] < 0.4);
+  assert.ok(rise.every((v, i) => i === 0 || v > rise[i - 1]));
+  assert.ok(uFocus.value > 0.95);
+  // Focus is a radiance lift, never an opacity one: the veil is unchanged.
+  assert.equal(uFade.value, 1);
+  c.focused = false;
+  for (; time < 6; time += 0.1) manager.update([c], time, 0, 0);
+  assert.equal(uFocus.value, 0);
+  manager.dispose();
+});
+
+test('region focus brightens the volume and never thickens it', () => {
+  const read = (path) =>
+    readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+  assert.match(
+    read('lib/phenomena/volume-shader.ts'),
+    /uniform float [^;]*\buFocus\b/,
+  );
+  for (const path of [
+    'lib/phenomena/nebula.ts',
+    'lib/phenomena/supernova-remnant.ts',
+  ]) {
+    const source = read(path);
+    assert.ok(source.includes('focusLift(colour / max(rawAlpha, 0.0001))'));
+    // Raising the alpha of a framed cloud would turn the veil into a wall and
+    // hide the stars behind it — the one thing the volumes must never do.
+    assert.doesNotMatch(source, /float alpha = [^;]*uFocus/);
+    assert.doesNotMatch(source, /rawAlpha[^;]*uFocus/);
+  }
 });

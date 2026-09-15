@@ -12,7 +12,7 @@ export const VOLUME_STEPS = [4, 8, 16] as const;
 export const volumeChunk = `
   uniform vec2 uShear;
   uniform vec3 uEye;
-  uniform float uEnvelope, uRadius, uFade, uDensity, uTime, uSeed;
+  uniform float uEnvelope, uRadius, uFade, uDensity, uTime, uSeed, uFocus;
   uniform vec3 uGlow, uFilament, uPocket;
   varying vec3 vLocal;
 
@@ -45,6 +45,19 @@ export const volumeChunk = `
     t0 = max(-b - h, 0.0);
     t1 = -b + h;
     return t1 > t0;
+  }
+  /**
+   * How a framed region answers its selection: it brightens and saturates,
+   * never thickens. The alpha is deliberately left untouched — raising it
+   * would turn the veil into a wall and hide the stars behind it, which is
+   * exactly what the volumes are written to avoid. Extrapolating past the
+   * luminance can drive a channel negative, hence the clamp.
+   */
+  vec3 focusLift(vec3 straight) {
+    float lum = dot(straight, vec3(0.2126, 0.7152, 0.0722));
+    return max(vec3(0.0),
+               mix(vec3(lum), straight, 1.0 + uFocus * 0.45)) *
+           (1.0 + uFocus * 0.4);
   }
   /** Base-space offset from the region centre; uShear is (cos, sin) of the
       centre's own rotation. p is already relative to the animated host;

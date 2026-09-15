@@ -60,8 +60,6 @@ function buildGalaxyMessages(t: Dictionary): GalaxyMessages {
     contextLost: t.canvas.contextLost,
     bodyKindLabel: (kind) => t.bodyKinds[kind],
     exploreBodyAria: t.system.exploreBodyAria,
-    regionLabel: (type) =>
-      type === 'nebula' ? t.regions.nebula : t.regions.remnant,
   };
 }
 

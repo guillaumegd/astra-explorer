@@ -87,7 +87,6 @@ export type GalaxyMessages = {
   contextLost: string;
   bodyKindLabel: (kind: BodyKind) => string;
   exploreBodyAria: (name: string, kindLabel: string) => string;
-  regionLabel: (type: 'nebula' | 'remnant') => string;
 };
 export type SystemView = {
   root: BodyIdentity;
@@ -709,8 +708,6 @@ export function createGalaxy(
   const nearbyRegions: RegionDefinition[] = [];
   const regionPool: RegionCandidate[] = [];
   const regionCandidates: RegionCandidate[] = [];
-  const markedRegions: RegionCandidate[] = [];
-  const regionMarkers = new Map<string, HTMLButtonElement>();
   const regionPoint = new THREE.Vector3();
   let distance = 29.4,
     targetDistance = 29.4;
@@ -2361,84 +2358,10 @@ export function createGalaxy(
     setHostData('regions', String(
       regions.stats().cached + regions.stats().persistent,
     ));
-    // Reached by marker or by the menu, never by ray: a transparent volume must
-    // not steal a click from the stars behind it.
-    markedRegions.length = 0;
-    for (const candidate of regionCandidates)
-      if (
-        candidate.focused &&
-        candidate.inside === 0 &&
-        candidate.pixels > 8 &&
-        regions.isVisible(candidate.region.regionId)
-      )
-        markedRegions.push(candidate);
-    markedRegions.sort((a, b) => b.pixels - a.pixels);
-
-    for (const [id, node] of regionMarkers)
-      if (!markedRegions.some((c) => c.region.regionId === id)) {
-        node.remove();
-        regionMarkers.delete(id);
-      }
-    for (const candidate of markedRegions) {
-      const region = candidate.region;
-      let node = regionMarkers.get(region.regionId);
-      if (!node) {
-        node = document.createElement('button');
-        node.className = 'region-outline';
-        const svg = document.createElementNS(
-          'http://www.w3.org/2000/svg',
-          'svg',
-        );
-        svg.setAttribute('viewBox', '0 0 100 100');
-        svg.setAttribute('aria-hidden', 'true');
-        const ring = document.createElementNS(
-          'http://www.w3.org/2000/svg',
-          'circle',
-        );
-        ring.setAttribute('cx', '50');
-        ring.setAttribute('cy', '50');
-        ring.setAttribute('r', '48');
-        const hitRing = ring.cloneNode() as SVGCircleElement;
-        hitRing.classList.add('region-hit');
-        svg.appendChild(hitRing);
-        svg.appendChild(ring);
-        node.appendChild(svg);
-        node.dataset.label = region.name;
-        node.dataset.central = 'false';
-        const label = messages.regionLabel(region.type);
-        node.title = label;
-        node.setAttribute(
-          'aria-label',
-          messages.exploreBodyAria(region.name, label),
-        );
-        node.addEventListener('click', (event) => {
-          event.stopPropagation();
-          frameRegion(region.regionId);
-        });
-        host.appendChild(node);
-        regionMarkers.set(region.regionId, node);
-      }
-      projected
-        .copy(candidate.position)
-        .applyMatrix4(group.matrixWorld)
-        .project(camera);
-      const diameter = Math.max(40, candidate.pixels * 2);
-      setStyle(node, 'width', `${diameter}px`);
-      setStyle(node, 'height', `${diameter}px`);
-      node.dataset.focused = String(candidate.focused);
-      setStyle(node, 'display',
-        projected.z > -1 &&
-        projected.z < 1 &&
-        Math.abs(projected.x) < 1 + diameter / sizedWidth &&
-        Math.abs(projected.y) < 1 + diameter / renderHeight
-          ? 'block'
-          : 'none');
-      setMarkerPosition(
-        node,
-        (projected.x * 0.5 + 0.5) * sizedWidth,
-        (-projected.y * 0.5 + 0.5) * renderHeight,
-      );
-    }
+    // A framed region answers in the scene itself: its volume brightens and
+    // its filaments sharpen (uFocus, lib/phenomena/volume-shader.ts). Nothing
+    // is drawn over it — a dashed ring could only ever trace the integration
+    // envelope, which is neither the cloud's extent nor its centre of light.
     const activeRegion = regionFocus ?? insideRegion;
     const focusedPresence =
       regionCandidates.find((c) => c.region.regionId === regionFocus?.regionId)
@@ -2862,16 +2785,6 @@ export function createGalaxy(
     setMessages(next) {
       messages = next;
       renderer.domElement.setAttribute('aria-label', messages.canvasHint);
-      for (const [id, marker] of regionMarkers) {
-        const region = catalogue.resolveRegion(id, settings.density);
-        if (!region) continue;
-        const label = messages.regionLabel(region.type);
-        marker.title = label;
-        marker.setAttribute(
-          'aria-label',
-          messages.exploreBodyAria(region.name, label),
-        );
-      }
       // Markers already on screen are re-labelled in place; frameSystem()
       // will use the new messages for any it creates from here on.
       framed?.members.forEach((member, i) => {
@@ -2931,8 +2844,6 @@ export function createGalaxy(
       bodyLOD.dispose();
       phenomena.dispose();
       regions.dispose();
-      regionMarkers.forEach((marker) => marker.remove());
-      regionMarkers.clear();
       lensing.dispose();
       pointDepthMaterial.dispose();
       debris.dispose();

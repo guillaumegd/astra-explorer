@@ -535,16 +535,22 @@ summary:focus-visible {
   text-align: center;
   font-size: 14px;
 }
+/* Locates a distant selected body without encircling it: a halo that fades
+   out has no edge to read as a frame, and leaves the body itself visible. */
 .body-marker {
   position: absolute;
-  width: 26px;
-  height: 26px;
-  border: 1px solid #c3ddffbb;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   transform: translate3d(var(--marker-x, 0px), var(--marker-y, 0px), 0)
     translate(-50%, -50%);
   pointer-events: none;
-  box-shadow: 0 0 12px #9bbaff44;
+  background: radial-gradient(
+    circle,
+    #c3ddff30 0%,
+    #9bbaff1c 38%,
+    #9bbaff00 72%
+  );
   display: none;
 }
 .system-marker {
@@ -1004,65 +1010,4 @@ summary:focus-visible {
 .phenomenon-category > summary:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
-}
-
-/* An extended region is selected on its boundary, never on a synthetic core.
-   Empty interiors pass pointer events through to the canvas and its stars. */
-.region-outline {
-  position: absolute;
-  transform: translate3d(var(--marker-x, 0px), var(--marker-y, 0px), 0)
-    translate(-50%, -50%);
-  z-index: 1;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: #bad1e8;
-  pointer-events: none;
-}
-.region-outline svg {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-.region-outline circle {
-  fill: none;
-  stroke: currentColor;
-  stroke-opacity: 0.22;
-  stroke-width: 1;
-  stroke-dasharray: 5 9;
-  vector-effect: non-scaling-stroke;
-  pointer-events: stroke;
-  cursor: pointer;
-}
-.region-outline:hover circle,
-.region-outline:focus-visible circle,
-.region-outline[data-focused='true'] circle {
-  stroke-opacity: 0.8;
-  stroke-width: 2;
-  stroke-dasharray: none;
-}
-.region-outline:focus-visible {
-  outline: 2px solid #bad1e8;
-  outline-offset: 5px;
-}
-.region-outline:hover::after,
-.region-outline:focus-visible::after {
-  content: attr(data-label);
-  position: absolute;
-  left: 50%;
-  top: 0;
-  transform: translate(-50%, -100%);
-  padding: 5px 9px;
-  color: #dce9fa;
-  background: #07101de6;
-  border-radius: 5px;
-  white-space: nowrap;
-  font: 12px monospace;
-}
-
-.region-outline circle.region-hit {
-  stroke-opacity: 0;
-  stroke-width: 14;
-  stroke-dasharray: none;
 }

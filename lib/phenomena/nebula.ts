@@ -19,6 +19,7 @@ export function createNebula(region: RegionDefinition, steps = 16) {
     uEnvelope: { value: region.envelope },
     uRadius: { value: region.radius },
     uFade: { value: 0 },
+    uFocus: { value: 0 },
     uDensity: { value: region.density },
     uTime: { value: 0 },
     uSeed: { value: region.seed },
@@ -94,7 +95,10 @@ export function createNebula(region: RegionDefinition, steps = 16) {
           float excitation = smoothstep(.3,.7,valueNoise(q*2.8+uSeed+51.));
           vec3 tint = mix(uGlow, uFilament, excitation);
           // Dust removes background light; it is not a dark luminous gas.
-          tint = mix(tint * (0.85 + ridge * 1.2), uPocket * 0.12, dust);
+          // Focus sharpens the filament ridges before it touches anything
+          // else: what a framed cloud gains is structure, not bulk.
+          tint = mix(tint * (0.85 + ridge * (1.2 + uFocus * 0.9)),
+                     uPocket * 0.12, dust);
           colour += tint * coverage * transmittance;
           transmittance *= 1.0 - coverage;
         }
@@ -104,7 +108,7 @@ export function createNebula(region: RegionDefinition, steps = 16) {
         float alpha = min(0.55, rawAlpha) * uFade;
         if (alpha < 0.004) discard;
         // Convert straight emitted colour, then premultiply for the custom blend.
-        gl_FragColor = vec4(colour / max(rawAlpha, 0.0001), alpha);
+        gl_FragColor = vec4(focusLift(colour / max(rawAlpha, 0.0001)), alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         gl_FragColor.rgb *= alpha;
@@ -132,9 +136,16 @@ export function createNebula(region: RegionDefinition, steps = 16) {
   return {
     group,
     region,
-    update(time: number, fade: number, reducedMotion = false, rotation = 0) {
+    update(
+      time: number,
+      fade: number,
+      reducedMotion = false,
+      rotation = 0,
+      focus = 0,
+    ) {
       uniforms.uTime.value = reducedMotion ? 0 : time;
       uniforms.uFade.value = fade;
+      uniforms.uFocus.value = focus;
       const angle = shearAngle(region.center[0], region.center[2], rotation);
       uniforms.uShear.value.set(Math.cos(angle), Math.sin(angle));
       group.visible = fade > 0.002;

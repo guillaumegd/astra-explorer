@@ -18,6 +18,7 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
     uEnvelope: { value: region.envelope },
     uRadius: { value: region.radius },
     uFade: { value: 0 },
+    uFocus: { value: 0 },
     uDensity: { value: region.density },
     uTime: { value: 0 },
     uSeed: { value: region.seed },
@@ -65,14 +66,16 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
           // Distinct line-emission layers; palette is an illustrative mapping.
           float outerShock = smoothstep(front - width, front + width, r);
           vec3 tint = mix(uFilament, uGlow, outerShock);
-          colour += tint * (0.6 + filament * 0.75) * coverage * transmittance;
+          // Focus sharpens the shock filaments first, as in the nebula.
+          colour += tint * (0.6 + filament * (0.75 + uFocus * 0.6)) *
+                    coverage * transmittance;
           transmittance *= 1.0 - coverage;
         }
         float rawAlpha = 1.0 - transmittance;
         float alpha = min(0.7, rawAlpha) * uFade;
         if (alpha < 0.004) discard;
         // Convert straight emitted colour, then premultiply for the custom blend.
-        gl_FragColor = vec4(colour / max(rawAlpha, 0.0001), alpha);
+        gl_FragColor = vec4(focusLift(colour / max(rawAlpha, 0.0001)), alpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
         gl_FragColor.rgb *= alpha;
@@ -100,9 +103,16 @@ export function createRemnant(region: RegionDefinition, steps = 16) {
   return {
     group,
     region,
-    update(time: number, fade: number, reducedMotion = false, rotation = 0) {
+    update(
+      time: number,
+      fade: number,
+      reducedMotion = false,
+      rotation = 0,
+      focus = 0,
+    ) {
       uniforms.uTime.value = reducedMotion ? 0 : time;
       uniforms.uFade.value = fade;
+      uniforms.uFocus.value = focus;
       const angle = shearAngle(region.center[0], region.center[2], rotation);
       uniforms.uShear.value.set(Math.cos(angle), Math.sin(angle));
       group.visible = fade > 0.002;

@@ -41,6 +41,9 @@ export function createRegionManager(
     }
   >();
   const nebulae = new Map<string, ReturnType<typeof createNebula>>();
+  // Eased 0..1 per region: a framed cloud brightens into focus rather than
+  // switching, and keeps easing back out while it is still on screen.
+  const focusLevels = new Map<string, number>();
   const impostors = createRegionImpostors();
   const active: RegionCandidate[] = [];
   const ids = new Set<string>();
@@ -63,6 +66,18 @@ export function createRegionManager(
     ) {
       const dt = previous === null ? 0 : Math.max(0, time - previous);
       previous = time;
+      const focusStep = 1 - Math.exp(-dt / 0.45);
+      for (const c of candidates) {
+        const id = c.region.regionId;
+        const current = focusLevels.get(id) ?? 0;
+        const next = current + (Number(c.focused) - current) * focusStep;
+        if (next < 0.002 && !c.focused) focusLevels.delete(id);
+        else focusLevels.set(id, next);
+      }
+      const focusOf = (id: string) => focusLevels.get(id) ?? 0;
+      for (const id of focusLevels.keys())
+        if (!candidates.some((c) => c.region.regionId === id))
+          focusLevels.delete(id);
       let createdThisFrame = 0;
       const creationsPerFrame = quality.budget.creationsPerFrame;
       const nebulaCandidates = candidates.filter(
@@ -127,10 +142,13 @@ export function createRegionManager(
             // Strongest when the raymarch got little or no budget; never
             // fully off, so the region keeps an artistic presence even at
             // full detail (a soft halo behind the volumetric cloud).
+            // The framed region lifts its halo too, so the answer to a
+            // selection is legible before the raymarch detail arrives.
             presence: referenceVolumes
               ? 0
               : regionVisibility(c.pixels, c.inside) *
-                (0.15 + 0.85 * (1 - detailShare)),
+                (0.15 + 0.85 * (1 - detailShare)) *
+                (1 + focusOf(c.region.regionId) * 0.5),
           };
         }),
       );
@@ -164,6 +182,7 @@ export function createRegionManager(
           c.pixels > 0 || c.inside > 0 || c.focused ? 1 : 0,
           reducedMotion,
           rotation,
+          focusOf(c.region.regionId),
         );
       }
       for (const [id, nebula] of nebulae)
@@ -226,6 +245,7 @@ export function createRegionManager(
           entry.fade,
           reducedMotion,
           rotation,
+          focusOf(id),
         );
         if (time - entry.seen > 4) {
           entry.renderer.dispose();
@@ -295,11 +315,6 @@ export function createRegionManager(
         parent.children.splice(0, parent.children.length, ...children);
         parent.updateMatrixWorld(true);
       }
-    },
-    isVisible(id: string) {
-      return (
-        nebulae.get(id)?.group.visible ?? (entries.get(id)?.fade ?? 0) > 0.05
-      );
     },
     stats() {
       return {
