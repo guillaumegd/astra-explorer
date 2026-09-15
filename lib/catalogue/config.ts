@@ -24,6 +24,10 @@ export const MAX_BODIES = 120000;
 // The shape the anchors already produce; naming it moves no system. The disc
 // radius mirrors `0.65 + placement ** 0.72 * 12` in generate.ts.
 export const GALAXY_ENVELOPE = { radius: 12.8, halfHeight: 0.95 } as const;
+// A local system must remain visually local. This leaves ample space for its
+// hierarchy while preventing a long generated orbit chain from eclipsing the
+// galaxy that contains it.
+export const SYSTEM_ENVELOPE_LIMIT = GALAXY_ENVELOPE.radius * 0.1;
 /** One tenth of the disc diameter, as the phenomena guide prescribes. */
 export const NEBULA_CELL = (GALAXY_ENVELOPE.radius * 2) / 10;
 // The guide writes 1%, which over the ~79 eligible cells of this galaxy yields

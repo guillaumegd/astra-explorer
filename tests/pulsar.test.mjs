@@ -80,7 +80,7 @@ test('binary activation moves nothing else in the V2 baseline', () => {
   // Linux arm64 and Linux x64.
   assert.equal(
     hash.digest('hex'),
-    '84478c9bd3de72a18575877124ee05b7eca0fd865e729888685ecbe9945b7db0',
+    '897273550a6ab951414a56e6b5d6b67a736294ab36f3a3dd592a5327f4197ffb',
   );
 });
 
@@ -112,7 +112,7 @@ test('binary geometry is frozen', () => {
   // Captured from generateSystem once lot 5 activated the second source.
   assert.equal(
     hash.digest('hex'),
-    '62b98582c583e58c07235565de469c65e6269b6168e07225b9ea15d8c4ad20a9',
+    '80d309637dd228f4ac48430ed02c5c048e7d1942e22e4e1c0aadf18fe4e4bfee',
   );
 });
 

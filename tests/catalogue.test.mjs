@@ -17,6 +17,7 @@ import {
   SOLID_MOON_WEIGHTS,
   GAS_MOON_WEIGHTS,
   ASTEROID_WEIGHTS,
+  SYSTEM_ENVELOPE_LIMIT,
 } from '../lib/catalogue/config.ts';
 import { compileOrbitChain, ORBIT_STRIDE } from '../lib/orbits.ts';
 
@@ -164,6 +165,10 @@ test('100000 generated systems obey the population bounds and invisible-node gra
   let ordinary = 0;
   for (let i = 512; i < 100512; i++) {
     const system = generateSystem(i, 0);
+    assert.ok(
+      system.envelope <= SYSTEM_ENVELOPE_LIMIT + 1e-12,
+      `system ${i} escaped its local envelope`,
+    );
     const isOrdinary =
       system.architecture === 'single' || system.architecture === 'binary';
     const ps = system.bodies.filter((b) => b.role === 'planet');
@@ -271,6 +276,6 @@ test('comet activation leaves every existing body identical', () => {
   // Linux arm64 and Linux x64.
   assert.equal(
     hash.digest('hex'),
-    '06037128f4774747112959bd3e3cd0e2da57a2a818e3aab7ade3192c3b28104e',
+    'c2ca1e2ed28100285de093a5c422cf6736cf6e6cb8d448f91187abbed5ff0178',
   );
 });

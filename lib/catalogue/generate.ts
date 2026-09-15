@@ -231,7 +231,9 @@ export function generateSystem(
     binary = { separation, speed, phase, inclination, masses: [1, mass] };
   }
   const orbitStream = stream(seed, 'orbits');
-  const spacing = 1.5 + orbitStream() * 0.4;
+  // A shallow geometric progression keeps even the fullest systems local to
+  // their host galaxy while retaining distinct, non-intersecting orbit shells.
+  const spacing = 1.2 + orbitStream() * 0.1;
   const planetCount = weighted(
     population,
     compact ? COMPACT_PLANET_WEIGHTS : PLANET_WEIGHTS,
@@ -353,6 +355,7 @@ export function generateSystem(
     );
   }
   if (index === 0) anchor.splice(0, 3, 5.1, 0.08, 0);
+
   const barycentre = `${id}:barycentre`;
   const orbitalRootId =
     architecture === 'binary' ? barycentre : `${central.bodyId}:orbit`;
