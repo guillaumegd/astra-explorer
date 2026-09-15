@@ -22,6 +22,36 @@ test('lensing scissor keeps the full visible influence at viewport edges', () =>
   });
 });
 
+test('lensing composite overlays its source without clearing the canvas', () => {
+  const lens = createLensing();
+  const body = new RuntimeCatalogue().getBody(0);
+  const group = new THREE.Group();
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.000001, 180);
+  camera.position.set(0, 0, body.radius * 50);
+  camera.lookAt(0, 0, 0);
+  const autoClearDuringRender = [];
+  const renderer = {
+    autoClear: true,
+    getDrawingBufferSize: (v) => v.set(800, 800),
+    setRenderTarget: () => {},
+    setScissorTest: () => {},
+    setScissor: () => {},
+    render: () => autoClearDuringRender.push(renderer.autoClear),
+  };
+  lens.render(
+    renderer,
+    new THREE.Scene(),
+    camera,
+    { body, group, fade: 1 },
+    0,
+    0,
+    () => {},
+  );
+  assert.equal(autoClearDuringRender.at(-1), false);
+  assert.equal(renderer.autoClear, true);
+  lens.dispose();
+});
+
 test('one optical field owns two targets, preserves scene visibility and expires after four seconds', () => {
   const lens = createLensing(),
     scene = new THREE.Scene(),

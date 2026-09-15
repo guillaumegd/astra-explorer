@@ -238,6 +238,18 @@ export function createLensing() {
       }
       const renderComposite = () => {
         renderer.render(sourceComposite, camera);
+        const renderOverlay = () => {
+          // This is an overlay over sourceComposite, never a fresh frame.
+          // Keeping autoClear enabled here lets WebGL clear pixels outside the
+          // scissor on some drivers, recreating the rectangular black canvas.
+          const autoClear = renderer.autoClear;
+          renderer.autoClear = false;
+          try {
+            renderer.render(composite, camera);
+          } finally {
+            renderer.autoClear = autoClear;
+          }
+        };
         // The shader has an early-out outside this sphere. Scissoring avoids
         // submitting its 320-step path over pixels that cannot be influenced.
         // Keep the full target when the camera is inside/behind the bound.
@@ -255,7 +267,7 @@ export function createLensing() {
           radius >= Math.max(size.x, size.y) ||
           !renderer.setScissorTest
         ) {
-          renderer.render(composite, camera);
+          renderOverlay();
           return;
         }
         const projectedCenter = center.clone().project(camera);
@@ -270,7 +282,7 @@ export function createLensing() {
         renderer.setScissorTest(true);
         renderer.setScissor(bounds.x, bounds.y, bounds.width, bounds.height);
         try {
-          renderer.render(composite, camera);
+          renderOverlay();
         } finally {
           renderer.setScissorTest(false);
         }
