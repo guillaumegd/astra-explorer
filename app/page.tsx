@@ -43,8 +43,13 @@ import type {
   SkyPointing,
   SystemView,
   RegionView,
+  QualityReport,
 } from '@/lib/galaxy';
-import type { QualityMode } from '@/lib/quality-policy';
+import {
+  resolveInitialQuality,
+  storeQuality,
+  type QualityMode,
+} from '@/lib/quality-policy';
 import { formatNumber, locales, localeNames } from '@/lib/i18n';
 import { useLocale } from '@/lib/i18n/use-locale';
 import type { Dictionary } from '@/lib/i18n/types';
@@ -175,7 +180,24 @@ export default function Home() {
   const returnFocus = useRef<HTMLElement | null>(null);
   const dock = useRef<HTMLDivElement>(null);
   const [palette, setPalette] = useState(0);
-  const [quality, setQuality] = useState<QualityMode>('auto');
+  const [quality, setQuality] = useState<QualityMode>(() =>
+    resolveInitialQuality(),
+  );
+  const [qualityStatus, setQualityStatus] = useState<QualityReport>({
+    mode: 'auto',
+    preset: 'balanced',
+    targetFps: 30,
+    label: 'balanced-30',
+    reason: 'start',
+  });
+  const settingsRef = useRef({
+    density,
+    speed,
+    tilt,
+    paused,
+    palette,
+    quality,
+  });
   const [economyActive, setEconomyActive] = useState(false);
   const [ready, setReady] = useState(false);
   // Bumped as background catalogue growth advances what's drawable, purely
@@ -187,6 +209,13 @@ export default function Home() {
   const [systemView, setSystemView] = useState<SystemView | null>(null);
   const [selected, setSelected] = useState<BodyIdentity | null>(null);
   const [regionView, setRegionView] = useState<RegionView | null>(null);
+  const chooseQuality = useCallback((next: QualityMode) => {
+    storeQuality(next);
+    setQuality(next);
+    const settings = { ...settingsRef.current, quality: next };
+    settingsRef.current = settings;
+    engine.current?.configure(settings);
+  }, []);
   const pointingReadout = useRef<{
     value: SkyPointing;
     listener: ((value: SkyPointing) => void) | null;
@@ -286,17 +315,23 @@ export default function Home() {
               soundtrack.current?.setEconomy(economy);
               setEconomyActive(economy);
             },
+            setQualityStatus,
           );
+          // The import resolves after React effects have run, so apply the
+          // already-selected persisted profile to this newly created engine.
+          engine.current.configure(settingsRef.current);
           queueMicrotask(() => {
             setMusicBusy(false);
             setVolume(35);
             setSelected(null);
           });
-        } catch {
+        } catch (cause) {
+          console.error('ASTRA 3D initialization failed', cause);
           queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
         }
       })
-      .catch(() => {
+      .catch((cause) => {
+        console.error('ASTRA 3D module failed to load', cause);
         if (!cancelled) queueMicrotask(() => setError(tRef.current.canvas.renderFailed));
       });
 
@@ -312,14 +347,16 @@ export default function Home() {
     };
   }, []);
   useEffect(() => {
-    engine.current?.configure({
+    const settings = {
       density,
       speed,
       tilt,
       paused,
       palette,
       quality,
-    });
+    };
+    settingsRef.current = settings;
+    engine.current?.configure(settings);
   }, [density, speed, tilt, paused, palette, quality]);
   useEffect(() => {
     engine.current?.setMessages(galaxyMessages);
@@ -388,7 +425,7 @@ export default function Home() {
     setPaused(false);
     setPalette(0);
     setTilt(null);
-    setQuality('auto');
+    chooseQuality('auto');
   };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -965,6 +1002,9 @@ export default function Home() {
                         [
                           ['auto', t.quality.automatic],
                           ['economy', t.quality.economy],
+                          ['balanced', t.quality.balanced],
+                          ['high', t.quality.high],
+                          ['ultra', t.quality.ultra],
                         ] as const
                       ).map(([mode, label]) => (
                         <Button
@@ -973,13 +1013,27 @@ export default function Home() {
                           className="scale-control"
                           aria-label={`${t.quality.label} : ${label}`}
                           aria-pressed={quality === mode}
-                          onClick={() => setQuality(mode)}
+                          onClick={() => chooseQuality(mode)}
                         >
                           {label}
                         </Button>
                       ))}
                     </div>
                   </div>
+                  <output
+                    className="quality-effective"
+                    aria-live="polite"
+                    data-quality-effective={qualityStatus.label}
+                  >
+                    {t.quality.effective}:{' '}
+                    {t.quality.tiers[qualityStatus.preset]} ·{' '}
+                    {qualityStatus.targetFps} FPS
+                    {quality === 'auto'
+                      ? ` · ${t.quality.adaptive}`
+                      : qualityStatus.preset === 'rescue'
+                        ? ` · ${t.quality.safetyFallback}`
+                        : ` · ${t.quality.manual}`}
+                  </output>
                   <p className="quality-hint">{t.quality.hint}</p>
                   <div className="palette-row">
                     <span>{t.controls.color}</span>

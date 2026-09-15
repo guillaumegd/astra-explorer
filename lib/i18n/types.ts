@@ -120,6 +120,14 @@ export type Dictionary = {
     label: string;
     automatic: string;
     economy: string;
+    balanced: string;
+    high: string;
+    ultra: string;
+    effective: string;
+    adaptive: string;
+    manual: string;
+    safetyFallback: string;
+    tiers: Record<'economy' | 'balanced' | 'high' | 'ultra' | 'rescue', string>;
     hint: string;
   };
   loading: string;

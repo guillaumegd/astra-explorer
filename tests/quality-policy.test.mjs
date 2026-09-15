@@ -4,6 +4,9 @@ import {
   QUALITY_TIERS,
   createQualityController,
   effectivePixelRatio,
+  loadStoredQuality,
+  resolveInitialQuality,
+  storeQuality,
 } from '../lib/quality-policy.ts';
 
 /**
@@ -39,8 +42,9 @@ test('the budget contract is complete and ordered from rich to modest', () => {
     'cpuBudgetMs',
     'detailBodies',
     'gridResolution',
-    'cloudSteps',
-    'volumeSteps',
+    'ringSegments',
+  'cloudSteps',
+  'volumeSteps',
     'opticalResolution',
     'opticalSteps',
     'population',
@@ -50,6 +54,7 @@ test('the budget contract is complete and ordered from rich to modest', () => {
     assert.equal(budget.tier, index);
     for (const field of fields)
       assert.equal(typeof budget[field], 'number', `${budget.label}.${field}`);
+    assert.equal(typeof budget.referenceVolumes, 'boolean');
     assert.ok([30, 60].includes(budget.targetFps));
     if (!index) return;
     const richer = QUALITY_TIERS[index - 1];
@@ -61,20 +66,93 @@ test('the budget contract is complete and ordered from rich to modest', () => {
   });
 });
 
-test('automatic starts cautious and economy is an explicit, capped choice', () => {
+test('Ultra matches the pre-performance visual reference budget', () => {
+  const ultra = QUALITY_TIERS[0];
+  assert.deepEqual(
+    {
+      dpr: ultra.dpr,
+      pixelCap: ultra.pixelCap,
+      detailBodies: ultra.detailBodies,
+      gridResolution: ultra.gridResolution,
+      ringSegments: ultra.ringSegments,
+      cloudSteps: ultra.cloudSteps,
+      volumeSteps: ultra.volumeSteps,
+      referenceVolumes: ultra.referenceVolumes,
+      opticalResolution: ultra.opticalResolution,
+      opticalSteps: ultra.opticalSteps,
+      creationsPerFrame: ultra.creationsPerFrame,
+    },
+    {
+      dpr: 1.75,
+      pixelCap: Infinity,
+      detailBodies: 8,
+      gridResolution: 192,
+      ringSegments: 72,
+      cloudSteps: 6,
+      volumeSteps: 16,
+      referenceVolumes: true,
+      opticalResolution: 512,
+      opticalSteps: 320,
+      creationsPerFrame: Infinity,
+    },
+  );
+});
+
+test('automatic starts cautious and manual profiles select their exact budget', () => {
   const auto = createQualityController();
   assert.equal(auto.budget.label, 'balanced-30');
   assert.equal(auto.budget.targetFps, 30);
   assert.equal(auto.budget.dpr, 1);
   assert.equal(auto.stats().mode, 'auto');
   assert.equal(auto.setMode('economy', 0), true);
-  assert.equal(auto.budget.label, 'economy-floor');
-  assert.equal(auto.budget.dpr, 0.8);
-  // Economy climbs to its own ceiling, never to the balanced tiers.
+  assert.equal(auto.budget.label, 'economy-30');
+  assert.equal(auto.budget.dpr, 1);
+  // A named manual choice cannot be silently promoted or demoted.
   load(auto, 2, 60, { start: 1000 });
   assert.equal(auto.budget.label, 'economy-30');
   assert.equal(auto.setMode('auto', 61000), true);
   assert.equal(auto.budget.label, 'balanced-30');
+});
+
+test('every manual profile stays pinned, including Ultra under sustained load', () => {
+  for (const [mode, label] of [
+    ['economy', 'economy-30'],
+    ['balanced', 'balanced-30'],
+    ['high', 'high-60'],
+    ['ultra', 'ultra-60'],
+  ]) {
+    const controller = createQualityController(mode, 0);
+    assert.equal(controller.budget.label, label);
+    assert.deepEqual(load(controller, 20, 5), []);
+    assert.equal(controller.budget.label, label);
+  }
+});
+
+test('the selected profile is persisted defensively', () => {
+  const previous = globalThis.window;
+  const values = new Map();
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value),
+    },
+  };
+  try {
+    assert.equal(resolveInitialQuality(), 'auto');
+    storeQuality('ultra');
+    assert.equal(loadStoredQuality(), 'ultra');
+    values.set('astra-quality-v1', 'invalid');
+    assert.equal(resolveInitialQuality(), 'auto');
+  } finally {
+    globalThis.window = previous;
+  }
+});
+
+test('Auto progressively earns Ultra when the measured margin holds', () => {
+  const controller = createQualityController('auto', 0);
+  load(controller, 2, 70);
+  assert.equal(controller.budget.label, 'ultra-60');
+  assert.equal(controller.stats().reason, 'margin');
 });
 
 test('persistent overload drops quality within a second', () => {
@@ -101,11 +179,13 @@ test('a drop answers with cadence, steps and details, not only the pixel ratio',
   assert.ok(after.dpr < before.dpr);
 });
 
-test('severe overload may fall back below the floor of a chosen mode', () => {
+test('manual quality uses the existing rescue tier only for severe overload', () => {
   const controller = createQualityController('economy', 0);
   load(controller, 400, 10);
   assert.equal(controller.budget.label, 'rescue');
-  assert.equal(controller.stats().reason, 'severe-overload');
+  assert.equal(controller.stats().reason, 'safety-rescue');
+  assert.equal(controller.setMode('economy', 11000), true);
+  assert.equal(controller.budget.label, 'economy-30');
 });
 
 test('stable load holds a tier: no round trip within ten seconds', () => {
@@ -114,7 +194,7 @@ test('stable load holds a tier: no round trip within ten seconds', () => {
   assert.deepEqual(early, [], 'no promotion before the margin is proven');
   const later = load(controller, 3, 8, { start: 10000 });
   assert.equal(later.length, 1);
-  assert.equal(controller.budget.tier, 2);
+  assert.equal(controller.budget.tier, 3);
   assert.equal(controller.stats().reason, 'margin');
 });
 
@@ -130,7 +210,7 @@ test('a tier that cannot hold is not tried again on the same clock', () => {
     gaps.every((gap) => gap > 500),
     'changes are never immediate',
   );
-  const promotions = changes.filter((change) => change.tier === 2);
+  const promotions = changes.filter((change) => change.tier === 3);
   assert.ok(promotions.length >= 2, 'the ladder does retry');
   assert.ok(
     promotions[1].at - promotions[0].at > 24000,
@@ -162,7 +242,7 @@ test('GPU windows drive the ladder when queries are available', () => {
 test('windows are reset by visibility, resize and context loss', () => {
   const controller = createQualityController('auto', 0);
   load(controller, 100, 0.4);
-  assert.equal(controller.budget.tier, 3, 'no decision on a short window');
+  assert.equal(controller.budget.tier, 4, 'no decision on a short window');
   controller.reset(400, 'visibility');
   assert.equal(controller.stats().reason, 'visibility');
   assert.deepEqual(
@@ -184,12 +264,13 @@ test('a frozen budget stops adaptation for the reference replay', () => {
 });
 
 test('the pixel ratio obeys the device, the tier and the pixel ceiling', () => {
-  const [high, , , balanced, , floor] = QUALITY_TIERS;
-  assert.equal(effectivePixelRatio(high, 800, 600, 3), 1.75);
+  const [ultra, high, , , balanced, , floor] = QUALITY_TIERS;
+  assert.equal(effectivePixelRatio(ultra, 2560, 1440, 3), 1.75);
+  assert.equal(effectivePixelRatio(high, 800, 600, 3), 1.5);
   assert.equal(effectivePixelRatio(high, 800, 600, 1), 1);
   // 1728 x 1084 CSS pixels: the audit's reference window.
   assert.equal(effectivePixelRatio(balanced, 1728, 1084, 2), 1);
-  assert.ok(effectivePixelRatio(high, 2560, 1440, 3) < 1.75);
+  assert.ok(effectivePixelRatio(high, 2560, 1440, 3) < 2);
   assert.equal(effectivePixelRatio(floor, 1024, 640, 2), 0.8);
   // The ceiling binds before the tier ratio on a large window.
   assert.equal(effectivePixelRatio(floor, 1728, 1084, 2), 0.73);

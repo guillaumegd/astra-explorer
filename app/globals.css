@@ -373,6 +373,15 @@ summary:focus-visible {
 .palettes {
   display: flex;
   gap: 2px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.quality-effective {
+  display: block;
+  padding: 0 4px 5px;
+  color: #cbd9ed;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .quality-hint {
   padding: 0 4px 4px;

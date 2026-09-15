@@ -46,6 +46,7 @@ export function createRegionManager(
   const ids = new Set<string>();
   let previous: number | null = null;
   let steps = 16;
+  let referenceVolumes = false;
   let lastCreations = 0;
   return {
     /** Not added to `parent`: the caller mounts it wherever the scene graph
@@ -90,18 +91,31 @@ export function createRegionManager(
       active.length = Math.min(active.length, REGION_DETAIL_LIMIT);
       ids.clear();
       for (const c of active) ids.add(c.region.regionId);
+      const referencePriority = referenceVolumes
+        ? [...candidates]
+            .filter((c) => c.pixels > 0 || c.focused || c.inside > 0)
+            .sort(
+              (a, b) =>
+                Number(b.focused) - Number(a.focused) ||
+                b.inside - a.inside ||
+                b.pixels - a.pixels,
+            )
+            .slice(0, REGION_DETAIL_LIMIT)
+        : [];
       // One shared budget for every nebula (always rendered) and every
       // remnant that actually holds a cache slot: the total cost — not a
       // fixed count of "priority" slots — is what stays bounded.
-      const allocation = allocateRegionSteps(
-        [...nebulaCandidates, ...active].map((c) => ({
-          id: c.region.regionId,
-          pixels: c.pixels,
-          focused: c.focused,
-          inside: c.inside,
-        })),
-        steps,
-      );
+      const allocation = referenceVolumes
+        ? new Map<string, number>()
+        : allocateRegionSteps(
+            [...nebulaCandidates, ...active].map((c) => ({
+              id: c.region.regionId,
+              pixels: c.pixels,
+              focused: c.focused,
+              inside: c.inside,
+            })),
+            steps,
+          );
       impostors.update(
         candidates.map((c) => {
           const allocatedSteps = allocation.get(c.region.regionId) ?? 0;
@@ -113,9 +127,10 @@ export function createRegionManager(
             // Strongest when the raymarch got little or no budget; never
             // fully off, so the region keeps an artistic presence even at
             // full detail (a soft halo behind the volumetric cloud).
-            presence:
-              regionVisibility(c.pixels, c.inside) *
-              (0.15 + 0.85 * (1 - detailShare)),
+            presence: referenceVolumes
+              ? 0
+              : regionVisibility(c.pixels, c.inside) *
+                (0.15 + 0.85 * (1 - detailShare)),
           };
         }),
       );
@@ -133,7 +148,14 @@ export function createRegionManager(
           if (renderer && camera) void renderer.compileAsync(nebula.group, camera);
         }
         nebula.group.position.copy(c.position);
-        const projectedSteps = allocation.get(c.region.regionId) ?? 0;
+        const projectedSteps = referenceVolumes
+          ? c.pixels < 6 && !c.focused && c.inside === 0
+            ? 4
+            : referencePriority.includes(c) &&
+                (c.pixels > 48 || c.focused || c.inside > 0)
+              ? steps
+              : 8
+          : (allocation.get(c.region.regionId) ?? 0);
         nebula.setSteps(Math.min(projectedSteps, steps));
         // Frustum culling is safe: the object remains allocated and returns at
         // full presence, with no projected-size threshold or detail-slot fade.
@@ -192,7 +214,13 @@ export function createRegionManager(
         // Outgoing entries continue following their source while fading.
         const source = candidates.find((c) => c.region.regionId === id);
         if (source) entry.renderer.group.position.copy(source.position);
-        entry.renderer.setSteps(allocation.get(id) ?? Math.min(8, steps));
+        entry.renderer.setSteps(
+          referenceVolumes
+            ? source && referencePriority.includes(source)
+              ? steps
+              : Math.min(8, steps)
+            : (allocation.get(id) ?? Math.min(8, steps)),
+        );
         entry.renderer.update(
           simulationTime,
           entry.fade,
@@ -210,6 +238,13 @@ export function createRegionManager(
     setSteps(next: number) {
       if (steps === next) return;
       steps = next;
+      for (const entry of entries.values()) entry.renderer.setSteps(next);
+    },
+    setProfile(next: number, reference: boolean) {
+      const changed = steps !== next || referenceVolumes !== reference;
+      steps = next;
+      referenceVolumes = reference;
+      if (!changed) return;
       for (const entry of entries.values()) entry.renderer.setSteps(next);
     },
     steps() {

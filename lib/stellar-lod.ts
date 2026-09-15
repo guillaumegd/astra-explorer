@@ -334,7 +334,7 @@ type Entry = {
   atmosphere?: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   ring?: THREE.Mesh<THREE.RingGeometry, THREE.ShaderMaterial>;
 };
-export const MAX_DETAILED_BODIES = 12; // Eight active meshes plus four fading/cached bodies.
+export const MAX_DETAILED_BODIES = 12;
 export const MAX_ACTIVE_BODIES = 8;
 
 export function createBodyLOD(
@@ -348,7 +348,6 @@ export function createBodyLOD(
   const geometries = new Map<number, THREE.SphereGeometry>();
   const entries = new Map<number, Entry>();
   const patchGeometries = new Map<number, THREE.PlaneGeometry>();
-  let ringGeometry: THREE.RingGeometry | null = null;
   const patchFor = (level: number) => {
     const ladder = level >= 5 ? 128 : level >= 4 ? 64 : 32;
     const segments = Math.min(ladder, quality.budget.gridResolution);
@@ -370,10 +369,17 @@ export function createBodyLOD(
     }
     return geometry;
   };
-  // Ring parameters never vary: a single geometry shared by every ringed body.
+  // Ring geometry is shared per resolution. Keeping the small set until the
+  // cache empties lets a quality switch update visible rings immediately.
+  const ringGeometries = new Map<number, THREE.RingGeometry>();
   const ringGeometryFor = () => {
-    ringGeometry ??= new THREE.RingGeometry(1.35, 2.1, 72);
-    return ringGeometry;
+    const segments = quality.budget.ringSegments;
+    let geometry = ringGeometries.get(segments);
+    if (!geometry) {
+      geometry = new THREE.RingGeometry(1.35, 2.1, segments);
+      ringGeometries.set(segments, geometry);
+    }
+    return geometry;
   };
   const release = (id: number, entry: Entry) => {
     parent.remove(entry.group);
@@ -417,6 +423,7 @@ export function createBodyLOD(
         if (entry.atmosphere)
           entry.atmosphere.material.uniforms.uCloudSteps.value =
             budget.cloudSteps;
+        if (entry.ring) entry.ring.geometry = ringGeometryFor();
       }
       lastCreations = 0;
       const active = candidates
@@ -813,8 +820,8 @@ export function createBodyLOD(
         geometries.clear();
         patchGeometries.forEach((g) => g.dispose());
         patchGeometries.clear();
-        ringGeometry?.dispose();
-        ringGeometry = null;
+        ringGeometries.forEach((g) => g.dispose());
+        ringGeometries.clear();
       }
       return fades;
     },
@@ -860,8 +867,8 @@ export function createBodyLOD(
       geometries.clear();
       patchGeometries.forEach((g) => g.dispose());
       patchGeometries.clear();
-      ringGeometry?.dispose();
-      ringGeometry = null;
+      ringGeometries.forEach((g) => g.dispose());
+      ringGeometries.clear();
     },
   };
 }

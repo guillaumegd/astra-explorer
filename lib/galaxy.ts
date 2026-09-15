@@ -22,6 +22,7 @@ import {
   createQualityController,
   effectivePixelRatio,
   type QualityMode,
+  type QualityPreset,
 } from './quality-policy';
 import { createFrameScheduler } from './frame-scheduler';
 import { asteroidRadius } from './asteroid-shape';
@@ -67,8 +68,15 @@ export type GalaxySettings = {
   tilt: number | null;
   paused: boolean;
   palette: number;
-  /** Automatic adapts on its own; economy is an explicit, capped choice. */
+  /** Automatic adapts on its own; all named profiles are pinned. */
   quality: QualityMode;
+};
+export type QualityReport = {
+  mode: QualityMode;
+  preset: QualityPreset;
+  targetFps: number;
+  label: string;
+  reason: string;
 };
 // Localized strings the engine needs for text it renders itself (canvas
 // aria-label, error messages, system-marker labels), decoupled from React so
@@ -253,6 +261,8 @@ export function createGalaxy(
   onGrowth: (filled: number, capacity: number) => void = () => {},
   /** The common quality controller also owns the optional audio profile. */
   onAudioEconomy: (economy: boolean) => void = () => {},
+  /** Exposes the actual budget so Auto's changes are never invisible. */
+  onQuality: (report: QualityReport) => void = () => {},
 ): GalaxyEngine {
   const diagnosticStart = performance.now();
   const diagnostics =
@@ -1292,9 +1302,10 @@ export function createGalaxy(
     const budget = quality.budget;
     scheduler.setTarget(budget.targetFps);
     applyPixelRatio();
-    regions.setSteps(budget.volumeSteps);
+    regions.setProfile(budget.volumeSteps, budget.referenceVolumes);
     setHostData('volumeSteps', String(budget.volumeSteps));
     setHostData('qualityTier', budget.label);
+    setHostData('qualityMode', quality.stats().mode);
     setHostData('targetFps', String(budget.targetFps));
     const economy = budget.label.startsWith('economy') || budget.label === 'rescue';
     if (economy !== reportedAudioEconomy) {
@@ -1307,6 +1318,14 @@ export function createGalaxy(
       ...quality.stats(),
       pixelRatio: renderer.getPixelRatio(),
       refreshHz: scheduler.stats().refreshHz,
+    });
+    const status = quality.stats();
+    onQuality({
+      mode: status.mode,
+      preset: status.preset,
+      targetFps: status.targetFps,
+      label: status.label,
+      reason: status.reason,
     });
   };
   let lastPointingReport = 0;
@@ -1688,7 +1707,10 @@ export function createGalaxy(
     });
   };
   document.addEventListener('visibilitychange', visibility);
-  const animate = (now: number) => {
+  // resize() can invalidate the first frame before this portion of the factory
+  // is evaluated. A declaration is therefore required here: startLoop() must
+  // be able to schedule it without touching a temporal-dead-zone binding.
+  function animate(now: number) {
     if (lost || document.hidden) {
       stopLoop();
       return;
@@ -2621,7 +2643,7 @@ export function createGalaxy(
       performance.now() >= demandRenderUntil
     )
       stopLoop();
-  };
+  }
   function startLoop() {
     if (running || lost || document.hidden) return;
     running = true;

@@ -20,8 +20,12 @@ export type QualityBudget = {
   cpuBudgetMs: number;
   detailBodies: number;
   gridResolution: number;
+  /** Radial segments used for close-up planetary rings. */
+  ringSegments: number;
   cloudSteps: number;
   volumeSteps: number;
+  /** Replays the pre-performance per-region volumetric allocation in Ultra. */
+  referenceVolumes: boolean;
   opticalResolution: number;
   /** Geodesic iterations for the lens; 320 preserves the reference integrator. */
   opticalSteps: number;
@@ -31,7 +35,9 @@ export type QualityBudget = {
   creationsPerFrame: number;
 };
 
-export type QualityMode = 'auto' | 'economy' | 'balanced' | 'high';
+/** A named, user-selectable profile. Auto is the only adaptive profile. */
+export type QualityMode = 'auto' | 'economy' | 'balanced' | 'high' | 'ultra';
+export type QualityPreset = Exclude<QualityMode, 'auto'> | 'rescue';
 
 const tier = (
   label: string,
@@ -41,8 +47,10 @@ const tier = (
   cpuBudgetMs: number,
   detailBodies: number,
   gridResolution: number,
+  ringSegments: number,
   cloudSteps: number,
   volumeSteps: number,
+  referenceVolumes: boolean,
   opticalResolution: number,
   opticalSteps: number,
   population: number,
@@ -56,8 +64,10 @@ const tier = (
   cpuBudgetMs,
   detailBodies,
   gridResolution,
+  ringSegments,
   cloudSteps,
   volumeSteps,
+  referenceVolumes,
   opticalResolution,
   opticalSteps,
   population,
@@ -66,13 +76,33 @@ const tier = (
 
 /** Engineering starting values from the profile table of the parent issue. */
 export const QUALITY_TIERS: readonly QualityBudget[] = [
-  tier('high-60', 60, 1.75, 4e6, 8, 8, 128, 6, 16, 512, 320, 65000, 4),
-  tier('high-entry', 60, 1.25, 4e6, 8, 8, 128, 6, 16, 512, 320, 65000, 4),
-  tier('balanced-60', 60, 1.25, 2e6, 8, 4, 64, 4, 8, 512, 240, 40000, 3),
-  tier('balanced-30', 30, 1, 2e6, 10, 4, 64, 4, 8, 512, 192, 20000, 2),
-  tier('economy-30', 30, 1, 1e6, 10, 2, 64, 2, 4, 256, 128, 20000, 2),
-  tier('economy-floor', 30, 0.8, 1e6, 10, 2, 32, 0, 4, 256, 96, 10000, 1),
-  tier('rescue', 30, 0.7, 7e5, 12, 1, 32, 0, 2, 128, 64, 10000, 1),
+  // This is the visual contract at ad69261, immediately before the performance
+  // work: full relief/cloud detail, eight surfaces, native per-region volume
+  // priority, 1.75 DPR ceiling and no drawing-buffer pixel cap.
+  tier(
+    'ultra-60',
+    60,
+    1.75,
+    Infinity,
+    8,
+    8,
+    192,
+    72,
+    6,
+    16,
+    true,
+    512,
+    320,
+    65000,
+    Infinity,
+  ),
+  tier('high-60', 60, 1.5, 8e6, 10, 8, 192, 72, 6, 16, false, 512, 320, 65000, 5),
+  tier('high-entry', 60, 1.25, 5e6, 8, 8, 128, 72, 6, 16, false, 512, 320, 65000, 4),
+  tier('balanced-60', 60, 1.25, 3e6, 8, 6, 128, 72, 4, 12, false, 512, 240, 40000, 3),
+  tier('balanced-30', 30, 1, 2e6, 10, 4, 64, 72, 4, 8, false, 512, 192, 20000, 2),
+  tier('economy-30', 30, 1, 1e6, 10, 2, 64, 64, 2, 4, false, 256, 128, 20000, 2),
+  tier('economy-floor', 30, 0.8, 1e6, 10, 2, 32, 48, 0, 4, false, 256, 96, 10000, 1),
+  tier('rescue', 30, 0.7, 7e5, 12, 1, 32, 32, 0, 2, false, 128, 64, 10000, 1),
 ].map((budget, index) => ({ ...budget, tier: index }));
 
 const RESCUE = QUALITY_TIERS.length - 1;
@@ -81,11 +111,48 @@ const MODES: Record<
   QualityMode,
   { start: number; best: number; floor: number }
 > = {
-  auto: { start: 3, best: 0, floor: 5 },
-  economy: { start: 5, best: 4, floor: 5 },
-  balanced: { start: 3, best: 2, floor: 5 },
-  high: { start: 1, best: 0, floor: 5 },
+  auto: { start: 4, best: 0, floor: 6 },
+  economy: { start: 5, best: 5, floor: 5 },
+  balanced: { start: 4, best: 4, floor: 4 },
+  high: { start: 1, best: 1, floor: 1 },
+  ultra: { start: 0, best: 0, floor: 0 },
 };
+
+export function presetForBudget(budget: QualityBudget): QualityPreset {
+  if (budget.label === 'rescue') return 'rescue';
+  if (budget.label.startsWith('ultra')) return 'ultra';
+  if (budget.label.startsWith('high')) return 'high';
+  if (budget.label.startsWith('balanced')) return 'balanced';
+  return 'economy';
+}
+
+export const QUALITY_STORAGE_KEY = 'astra-quality-v1';
+
+export function loadStoredQuality(): QualityMode | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const stored = window.localStorage.getItem(QUALITY_STORAGE_KEY);
+    return stored &&
+      ['auto', 'economy', 'balanced', 'high', 'ultra'].includes(stored)
+      ? (stored as QualityMode)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeQuality(mode: QualityMode) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(QUALITY_STORAGE_KEY, mode);
+  } catch {
+    // Storage can be unavailable in private browsing; the profile still works.
+  }
+}
+
+export function resolveInitialQuality(): QualityMode {
+  return loadStoredQuality() ?? 'auto';
+}
 
 const WINDOW_MS = 1000;
 /** Enough elapsed time to call an overload persistent rather than a spike. */
@@ -176,6 +243,11 @@ export function createQualityController(
         cadence < scheduledFps * 0.5 ||
         quantile(cpu, 0.5) > scheduledMs * 1.5 ||
         (gpuKnown && quantile(gpu, 0.5) > gpuLimit * 2);
+      // A named profile stays fixed under ordinary load. The pre-existing
+      // emergency budget remains available only for a sustained, severe
+      // failure; the engine reports it to the UI as an explicit fallback.
+      if (mode !== 'auto')
+        return severe ? move(RESCUE, at, 'safety-rescue') : false;
       // Severe overload may reach the rescue tier even under a chosen mode.
       const worst = severe ? RESCUE : MODES[mode].floor;
       return move(
@@ -184,6 +256,7 @@ export function createQualityController(
         severe ? 'severe-overload' : 'overload',
       );
     }
+    if (mode !== 'auto') return false;
     if (level <= MODES[mode].best) {
       comfortableSince = null;
       return false;
@@ -234,7 +307,7 @@ export function createQualityController(
       clear(at);
     },
     setMode(next: QualityMode, at: number) {
-      if (next === mode) return false;
+      if (next === mode && level === MODES[next].start) return false;
       mode = next;
       stableMs = BASE_STABLE_MS;
       lastPromotion = -Infinity;
@@ -257,6 +330,8 @@ export function createQualityController(
         mode,
         tier: this.budget.tier,
         label: this.budget.label,
+        preset: presetForBudget(this.budget),
+        targetFps: this.budget.targetFps,
         frozen: frozen !== null,
         reason: lastReason,
         stableMs,

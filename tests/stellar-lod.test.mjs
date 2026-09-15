@@ -333,9 +333,12 @@ test('surface detail keeps octave 0 always on and only fades finer octaves with 
   assert.equal(rich.fineNormal, 1);
   assert.equal(mid.fineNormal, 0);
   assert.equal(low.fineNormal, 0);
-  assert.ok(rich.landOctaves >= mid.landOctaves && mid.landOctaves >= low.landOctaves);
   assert.ok(
-    rich.ridgeOctaves >= mid.ridgeOctaves && mid.ridgeOctaves >= low.ridgeOctaves,
+    rich.landOctaves >= mid.landOctaves && mid.landOctaves >= low.landOctaves,
+  );
+  assert.ok(
+    rich.ridgeOctaves >= mid.ridgeOctaves &&
+      mid.ridgeOctaves >= low.ridgeOctaves,
   );
   // Never zero: the coarse octave that carries the coastline/mountain-belt
   // shape always runs, at every tier.
@@ -391,7 +394,10 @@ test('a ring geometry is shared across ringed bodies and freed once nothing uses
   });
   lod.update([candidate(0)], 0, 0);
   lod.update([candidate(0)], 0.1, 0);
-  const firstRing = parent.children[0].children.find((m) => m.userData.bodyId === undefined && m.geometry?.type === 'RingGeometry');
+  const firstRing = parent.children[0].children.find(
+    (m) =>
+      m.userData.bodyId === undefined && m.geometry?.type === 'RingGeometry',
+  );
   assert.ok(firstRing);
   let disposed = false;
   firstRing.geometry.addEventListener('dispose', () => {
@@ -399,6 +405,33 @@ test('a ring geometry is shared across ringed bodies and freed once nothing uses
   });
   lod.update([], 6, 0);
   assert.ok(disposed, 'shared ring geometry is freed once no entry uses it');
+  lod.dispose();
+});
+
+test('ring geometry follows the active quality profile without recreating the body', () => {
+  let ringed;
+  for (let id = 0; id < 2000 && !ringed; id++) {
+    const body = describeBody(id);
+    if (body.rings) ringed = body;
+  }
+  assert.ok(ringed, 'fixture assumption: at least one ringed body in range');
+  const parent = new THREE.Group();
+  const quality = { budget: QUALITY_TIERS[0] };
+  const lod = createBodyLOD(parent, MAX_DETAILED_BODIES, quality);
+  const candidate = {
+    identity: ringed,
+    position: new THREE.Vector3(),
+    pixels: 200,
+    distanceInRadii: 5,
+  };
+  lod.update([candidate], 0, 0);
+  const ring = parent.children[0].children.find(
+    (mesh) => mesh.geometry?.type === 'RingGeometry',
+  );
+  assert.equal(ring.geometry.parameters.thetaSegments, 72);
+  quality.budget = QUALITY_TIERS[5];
+  lod.update([candidate], 0.1, 0);
+  assert.equal(ring.geometry.parameters.thetaSegments, 64);
   lod.dispose();
 });
 
