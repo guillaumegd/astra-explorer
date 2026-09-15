@@ -1,54 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import {
-  createLensing,
-  lensingScissorBounds,
-} from '../lib/phenomena/lensing.ts';
+import { createLensing } from '../lib/phenomena/lensing.ts';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
 
-test('lensing scissor keeps the full visible influence at viewport edges', () => {
-  assert.deepEqual(lensingScissorBounds(800, 600, 20, 300, 90), {
-    x: 0,
-    y: 210,
-    width: 110,
-    height: 180,
-  });
-  assert.deepEqual(lensingScissorBounds(800, 600, 780, 580, 90), {
-    x: 690,
-    y: 490,
-    width: 110,
-    height: 110,
-  });
-});
-
-test('lensing composite overlays its source without clearing the canvas', () => {
+test('the lens composite repaints the whole canvas, never a clipped region', () => {
   const lens = createLensing();
   const body = new RuntimeCatalogue().getBody(0);
   const group = new THREE.Group();
   const camera = new THREE.PerspectiveCamera(48, 1, 0.000001, 180);
   camera.position.set(0, 0, body.radius * 50);
   camera.lookAt(0, 0, 0);
-  const autoClearDuringRender = [];
+  const calls = [];
+  let target = null;
   const renderer = {
-    autoClear: true,
     getDrawingBufferSize: (v) => v.set(800, 800),
-    setRenderTarget: () => {},
-    setScissorTest: () => {},
-    setScissor: () => {},
-    render: () => autoClearDuringRender.push(renderer.autoClear),
+    setRenderTarget: (t) => {
+      target = t;
+      calls.push({ op: 'target', target: t });
+    },
+    // A scissor bounded by the projected influence is what left the rest of
+    // the canvas at the clear colour: its bounds were physical pixels while
+    // setScissor scales logical ones by the pixel ratio.
+    setScissorTest: () => assert.fail('the composite must never be scissored'),
+    setScissor: () => assert.fail('the composite must never be scissored'),
+    render: (scene) => calls.push({ op: 'render', scene, target }),
   };
+  const scene = new THREE.Scene();
   lens.render(
     renderer,
-    new THREE.Scene(),
+    scene,
     camera,
     { body, group, fade: 1 },
     0,
     0,
     () => {},
   );
-  assert.equal(autoClearDuringRender.at(-1), false);
-  assert.equal(renderer.autoClear, true);
+  const renders = calls.filter((call) => call.op === 'render');
+  assert.equal(renders.length, 2);
+  // The scene is captured off-screen, then one full-screen pass on the canvas
+  // both composites the lens and carries the scene outside its influence.
+  assert.equal(renders[0].scene, scene);
+  assert.notEqual(renders[0].target, null);
+  assert.notEqual(renders[1].scene, scene);
+  assert.equal(renders[1].target, null);
   lens.dispose();
 });
 

@@ -13,24 +13,6 @@ export type LensSubject = {
   seen?: number;
 };
 
-/** Clamp a circular lens influence to the drawing buffer without dropping its
- * clipped edge. The extent must be derived from both clamped endpoints: using
- * a clamped origin with an unclamped diameter leaves a rectangular hole when a
- * lens overlaps a viewport edge. */
-export function lensingScissorBounds(
-  width: number,
-  height: number,
-  centerX: number,
-  centerY: number,
-  radius: number,
-) {
-  const left = Math.max(0, Math.floor(centerX - radius));
-  const bottom = Math.max(0, Math.floor(centerY - radius));
-  const right = Math.min(width, Math.ceil(centerX + radius));
-  const top = Math.min(height, Math.ceil(centerY + radius));
-  return { x: left, y: bottom, width: right - left, height: top - bottom };
-}
-
 /** One detailed optical field, two additional targets (scene/depth and all-sky cube). */
 export function createLensing() {
   let source: THREE.WebGLRenderTarget | null = null;
@@ -76,26 +58,6 @@ export function createLensing() {
   quad.frustumCulled = false;
   const composite = new THREE.Scene();
   composite.add(quad);
-  // The source target contains the entire scene. Render it before restricting
-  // the expensive optical pass, otherwise pixels outside the scissor retain
-  // the renderer clear colour (the black rectangle reported during close-up).
-  const sourceUniforms = { uSource: { value: null as THREE.Texture | null } };
-  const sourceMaterial = new THREE.ShaderMaterial({
-    uniforms: sourceUniforms,
-    depthTest: false,
-    depthWrite: false,
-    vertexShader:
-      'varying vec2 vUv;void main(){vUv=uv;gl_Position=vec4(position.xy,0.,1.);}',
-    fragmentShader:
-      'varying vec2 vUv;uniform sampler2D uSource;void main(){gl_FragColor=texture2D(uSource,vUv);#include <colorspace_fragment>}',
-  });
-  const sourceQuad = new THREE.Mesh(
-    new THREE.PlaneGeometry(2, 2),
-    sourceMaterial,
-  );
-  sourceQuad.frustumCulled = false;
-  const sourceComposite = new THREE.Scene();
-  sourceComposite.add(sourceQuad);
   const release = () => {
     source?.dispose();
     sky?.dispose();
@@ -144,7 +106,6 @@ export function createLensing() {
         });
         cube = new THREE.CubeCamera(0.01, 180, sky);
         uniforms.uScene.value = source.texture;
-        sourceUniforms.uSource.value = source.texture;
         uniforms.uDepth.value = source.depthTexture;
         uniforms.uSky.value = sky.texture;
       }
@@ -237,55 +198,18 @@ export function createLensing() {
         renderer.setRenderTarget(null);
       }
       const renderComposite = () => {
-        renderer.render(sourceComposite, camera);
-        const renderOverlay = () => {
-          // This is an overlay over sourceComposite, never a fresh frame.
-          // Keeping autoClear enabled here lets WebGL clear pixels outside the
-          // scissor on some drivers, recreating the rectangular black canvas.
-          const autoClear = renderer.autoClear;
-          renderer.autoClear = false;
-          try {
-            renderer.render(composite, camera);
-          } finally {
-            renderer.autoClear = autoClear;
-          }
-        };
-        // The shader has an early-out outside this sphere. Scissoring avoids
-        // submitting its 320-step path over pixels that cannot be influenced.
-        // Keep the full target when the camera is inside/behind the bound.
-        const influence = Math.max(
-          p.diskOuter * 2,
-          p.jets ? body.radius * 40 : 0,
-        );
-        const view = center.clone().applyMatrix4(camera.matrixWorldInverse);
-        const depth = -view.z;
-        const radius =
-          (influence * size.y) /
-          Math.max(0.000001, 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * depth);
-        if (
-          depth <= camera.near ||
-          radius >= Math.max(size.x, size.y) ||
-          !renderer.setScissorTest
-        ) {
-          renderOverlay();
-          return;
-        }
-        const projectedCenter = center.clone().project(camera);
-        const bounds = lensingScissorBounds(
-          size.x,
-          size.y,
-          (projectedCenter.x * 0.5 + 0.5) * size.x,
-          (projectedCenter.y * 0.5 + 0.5) * size.y,
-          radius,
-        );
-        if (bounds.width <= 0 || bounds.height <= 0) return;
-        renderer.setScissorTest(true);
-        renderer.setScissor(bounds.x, bounds.y, bounds.width, bounds.height);
-        try {
-          renderOverlay();
-        } finally {
-          renderer.setScissorTest(false);
-        }
+        // One full-screen pass is the whole frame: the shader returns the
+        // untouched source colour for every ray that misses the optical
+        // influence, so this quad composites the lens and blits the scene at
+        // once. Do not scissor it back to the projected influence. That
+        // optimisation caused the reported black rectangle: setScissor takes
+        // logical pixels and scales them by the renderer pixel ratio, while the
+        // bounds were derived from getDrawingBufferSize (physical pixels), so
+        // above ratio 1 the composited region was offset and oversized and the
+        // rest of the canvas kept the clear colour. It also saved nothing: the
+        // scissored path still had to blit the source over the full canvas
+        // first, which costs as much as letting the shader early out.
+        renderer.render(composite, camera);
       };
       if (probe) probe.measure('lensing-composite', renderComposite);
       else renderComposite();
@@ -358,8 +282,6 @@ export function createLensing() {
       release();
       quad.geometry.dispose();
       material.dispose();
-      sourceQuad.geometry.dispose();
-      sourceMaterial.dispose();
     },
   };
 }
