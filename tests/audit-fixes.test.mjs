@@ -248,3 +248,26 @@ test('region resize preserves interior zoom and fits an exterior framing in port
     );
   }
 });
+
+// `setMarkerPosition` only writes CSS variables. A rule that ignores them has
+// no `left`/`top` either, so its overlay falls back to its static position in
+// the corner of the canvas instead of following its subject.
+test('every overlay moved by setMarkerPosition consumes the marker variables', () => {
+  const css = readFileSync(
+    new URL('../app/globals.css', import.meta.url),
+    'utf8',
+  );
+  for (const name of ['body-marker', 'system-marker', 'region-outline']) {
+    assert.ok(source.includes(`'${name}'`), name);
+    const start = css.indexOf(`.${name} {`);
+    assert.ok(start >= 0, name);
+    const rule = css.slice(start, css.indexOf('}', start));
+    assert.match(
+      rule,
+      /translate3d\(\s*var\(--marker-x[^)]*\),\s*var\(--marker-y/,
+      name,
+    );
+  }
+  // Three call sites, three classes: a new overlay must join the list above.
+  assert.equal((source.match(/setMarkerPosition\(/g) ?? []).length, 3);
+});
