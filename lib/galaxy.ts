@@ -621,6 +621,7 @@ export function createGalaxy(
         quality.budget,
         constrainedDevice,
         selected ? distance / selected.radius : null,
+        quality.mode === 'auto',
       );
     },
   };

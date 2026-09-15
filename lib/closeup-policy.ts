@@ -5,14 +5,22 @@ import type { QualityBudget } from './quality-policy.ts';
  * surface and its local resources competes directly with camera motion. On a
  * coarse-pointer, small-screen device, reserve the transition for the selected
  * body. This is deliberately a transient rendering budget, not a new user
- * quality profile; desktop (including manual Ultra) keeps its exact budget.
+ * quality profile. A selected profile is a visual contract: it always keeps
+ * its exact budget, including on a compact device. Only Auto may reserve
+ * capacity for a close-up when the device constraint makes it necessary.
  */
 export function closeupBudget(
   budget: QualityBudget,
   constrainedDevice: boolean,
   distanceInRadii: number | null,
+  adaptive = true,
 ): QualityBudget {
-  if (!constrainedDevice || distanceInRadii === null || distanceInRadii > 8)
+  if (
+    !adaptive ||
+    !constrainedDevice ||
+    distanceInRadii === null ||
+    distanceInRadii > 8
+  )
     return budget;
 
   return {

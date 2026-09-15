@@ -281,6 +281,10 @@ export function createQualityController(
     get budget(): QualityBudget {
       return frozen ?? QUALITY_TIERS[level];
     },
+    /** Read without allocating a diagnostic status on the render path. */
+    get mode(): QualityMode {
+      return mode;
+    },
     /** One rendered frame. Returns true when the budget changed. */
     sample({ now: at, cpuMs, scheduledMs, excludedMs = 0 }: QualitySample) {
       if (frozen) return false;

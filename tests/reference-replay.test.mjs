@@ -23,6 +23,11 @@ test('versioned route contains valid stable destinations within each population'
       assert.ok(catalogue.resolveRegion(scene.regionId, scene.density));
   }
 });
+test('visual-fidelity reference set covers ice, ringed gas and both diffuse volume families', () => {
+  const names = new Set(REFERENCE_SCENES.map((scene) => scene.name));
+  for (const name of ['ice', 'ringed-gas', 'nebula-crossing', 'remnant'])
+    assert.ok(names.has(name), `missing visual reference scene: ${name}`);
+});
 test('reference pose depends only on scene and frame, preserves all fixed inputs', () => {
   const scene = REFERENCE_SCENES[0];
   assert.deepEqual(referencePose(scene, 0), {

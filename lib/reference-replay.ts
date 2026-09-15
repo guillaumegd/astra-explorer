@@ -30,6 +30,9 @@ export const REFERENCE_SCENES: ReferenceScene[] = [
   body('rocky-ground', 'v2:system:000007:body:002'),
   body('ocean', 'v2:system:000001:body:006'),
   body('gas', 'v2:system:000001:body:004', 2.2),
+  // Stable catalogue identity with rings: protects their material and
+  // geometry from being accidentally omitted by a quality transition.
+  body('ringed-gas', 'v2:system:000003:body:003', 2.35),
   body('moon', 'v2:system:000001:body:002'),
   body('asteroid', 'v2:system:000001:body:011', 1.6),
   body('volcano', 'v2:system:000002:body:003'),

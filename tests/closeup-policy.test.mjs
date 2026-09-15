@@ -6,7 +6,7 @@ import {
 } from '../lib/closeup-policy.ts';
 import { QUALITY_TIERS } from '../lib/quality-policy.ts';
 
-test('the close-up reservation is limited to constrained-device approaches', () => {
+test('the close-up reservation is limited to Auto on constrained-device approaches', () => {
   const ultra = QUALITY_TIERS[0];
   assert.equal(closeupBudget(ultra, false, 2), ultra);
   assert.equal(closeupBudget(ultra, true, 9), ultra);
@@ -20,6 +20,10 @@ test('the close-up reservation is limited to constrained-device approaches', () 
   // The source object is the desktop/manual-Ultra contract and remains intact.
   assert.equal(ultra.gridResolution, 192);
   assert.equal(ultra.creationsPerFrame, Infinity);
+
+  // A chosen visual profile may not silently lose close-up fidelity because
+  // the device has a coarse pointer or a small viewport.
+  assert.equal(closeupBudget(ultra, true, 2, false), ultra);
 });
 
 test('close-up metrics distinguish a first visit from a revisit', () => {
