@@ -36,6 +36,10 @@ test('visual-fidelity reference set covers ice, ringed gas and both diffuse volu
     'remnant-distant',
   ])
     assert.ok(names.has(name), `missing visual reference scene: ${name}`);
+  // A renamed or regenerated catalogue must not leave the scene ringless.
+  const ringed = REFERENCE_SCENES.find((scene) => scene.name === 'ringed-gas');
+  const body = new RuntimeCatalogue().resolveReference(ringed.bodyId);
+  assert.ok(body?.rings, 'ringed-gas reference body must carry rings');
 });
 test('reference pose depends only on scene and frame, preserves all fixed inputs', () => {
   const scene = REFERENCE_SCENES[0];

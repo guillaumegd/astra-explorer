@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createLensing } from '../lib/phenomena/lensing.ts';
+import { lensingFragment } from '../lib/phenomena/lensing-shader.ts';
 import { RuntimeCatalogue } from '../lib/catalogue/runtime.ts';
 
 test('the lens composite repaints the whole canvas, never a clipped region', () => {
@@ -191,4 +192,58 @@ test('transparent disc rim does not steal the background selection', () => {
   }
   assert.ok(transparent > 0 && opaque > 0);
   lens.dispose();
+});
+
+test('the lens pass hands the canvas the colours the scene wrote, black hole or not', () => {
+  const lens = createLensing(),
+    body = new RuntimeCatalogue().getBody(0),
+    group = new THREE.Group(),
+    scene = new THREE.Scene();
+  scene.add(group);
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.000001, 180);
+  camera.position.set(0, 0, body.radius * 50);
+  camera.lookAt(0, 0, 0);
+  const targets = new Set();
+  const renderer = {
+    getDrawingBufferSize: (v) => v.set(800, 600),
+    setRenderTarget: (t) => {
+      if (t) targets.add(t);
+    },
+    render: () => {},
+  };
+  lens.render(
+    renderer,
+    scene,
+    camera,
+    { body, group, fade: 1 },
+    0,
+    0,
+    () => {},
+  );
+  const colour = [...targets].find((t) => t.depthTexture);
+  // An sRGB attachment makes the driver decode and re-encode around every
+  // blend, so an atmosphere or a glow over a night side would land on a
+  // different colour here than on the canvas, whose buffer converts nothing.
+  assert.equal(colour.texture.colorSpace, THREE.NoColorSpace);
+  lens.dispose();
+});
+
+test('the composite decodes what it samples, and encodes the frame once', () => {
+  // The scene target and the sky cube both hold display-ready colour: whatever
+  // reaches them is what the canvas would have shown. The integrator works in
+  // the linear space its own emission is written in, so each sampled source is
+  // decoded exactly once and the frame is encoded exactly once on the way out.
+  // Without the decode, one sRGB encode lands on the whole scene and lifts
+  // every dark pixel — a night side went from 5/255 to 39/255 — as soon as a
+  // black hole took the lens subject.
+  assert.match(lensingFragment, /sRGBTransferEOTF\(texture2D\(uScene,vUv\)\)/);
+  assert.match(
+    lensingFragment,
+    /sRGBTransferEOTF\(textureCubeLodEXT\(uSky,skyDirection,lod\)\)/,
+  );
+  const count = (pattern) => lensingFragment.match(pattern)?.length ?? 0;
+  assert.equal(count(/texture2D\(uScene/g), 1);
+  assert.equal(count(/textureCubeLodEXT\(uSky/g), 1);
+  assert.equal(count(/sRGBTransferEOTF/g), 2);
+  assert.equal(count(/#include <colorspace_fragment>/g), 1);
 });

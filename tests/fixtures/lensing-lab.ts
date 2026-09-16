@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { createLensing } from '../../lib/phenomena/lensing.ts';
 import { catalogue } from '../../lib/catalogue/runtime.ts';
+import { createBodyLOD } from '../../lib/stellar-lod.ts';
+import { createLocalLights, mixLocalLights } from '../../lib/body-lighting.ts';
 
 export function createLensingLab(host: HTMLElement = document.body) {
   const body = catalogue.getBody(0);
@@ -53,6 +55,13 @@ export function createLensingLab(host: HTMLElement = document.body) {
   );
   foreground.visible = false;
   scene.add(foreground);
+  // An observed body, lit by one star, exactly as the engine lights it: a
+  // terminator and a night side are what the composite must leave alone.
+  const observedGroup = new THREE.Group();
+  scene.add(observedGroup);
+  const observed = createBodyLOD(observedGroup, 1);
+  const observedBody = catalogue.resolveReference('v2:system:000001:body:006')!;
+  const observedPosition = new THREE.Vector3();
   const lens = createLensing();
   let time = 10,
     wall = 0;
@@ -61,12 +70,13 @@ export function createLensingLab(host: HTMLElement = document.body) {
   renderer.domElement.style.cssText =
     'position:fixed;inset:0;z-index:100000;pointer-events:none';
   host.appendChild(renderer.domElement);
-  const draw = () =>
+  /** `withLens` false is the frame with no black hole on screen at all. */
+  const draw = (withLens = true) =>
     lens.render(
       renderer,
       scene,
       camera,
-      { body, group, fade: 1 },
+      withLens ? { body, group, fade: 1 } : null,
       (wall += 0.016),
       time,
       (c) => c.update(renderer, skyScene),
@@ -102,6 +112,61 @@ export function createLensingLab(host: HTMLElement = document.body) {
       foreground.position.copy(camera.position).multiplyScalar(0.65);
       draw();
     },
+    /**
+     * Puts a catalogue planet in the frame beside the black hole, at the
+     * distance and lighting the engine would give it: `offset` is how far from
+     * the axis it sits, in radians, and the star sits off to one side so a
+     * terminator crosses the disc. Settling the fade takes a few updates.
+     */
+    observe(visible: boolean, offset = 0.38) {
+      observedGroup.visible = visible;
+      if (!visible) {
+        draw();
+        return null;
+      }
+      const toHole = camera.position.clone().negate().normalize();
+      const side = new THREE.Vector3(0, 1, 0).cross(toHole).normalize();
+      const up = toHole.clone().cross(side).normalize();
+      const aim = toHole
+        .clone()
+        .multiplyScalar(Math.cos(offset))
+        .addScaledVector(side, Math.sin(offset));
+      observedPosition
+        .copy(camera.position)
+        .addScaledVector(aim, observedBody.radius * 3.2);
+      const lights = mixLocalLights(
+        observedPosition,
+        [
+          {
+            // Grazing light: half the disc is day, half is night.
+            position: observedPosition
+              .clone()
+              .addScaledVector(up, observedBody.radius * 900)
+              .addScaledVector(side, observedBody.radius * 900),
+            power: 1,
+            color: new THREE.Color(1, 0.96, 0.9),
+          },
+        ],
+        createLocalLights(),
+      );
+      for (let step = 0; step < 24; step++)
+        observed.update(
+          [
+            {
+              identity: observedBody,
+              position: observedPosition,
+              pixels: 320,
+              distanceInRadii: 3.2,
+              cameraPosition: camera.position.clone(),
+              lights,
+            },
+          ],
+          time + step * 0.1,
+          0.2,
+        );
+      draw();
+      return observedPosition.clone().project(camera);
+    },
     pixels() {
       const gl = renderer.getContext();
       const pixels = new Uint8Array(
@@ -117,6 +182,73 @@ export function createLensingLab(host: HTMLElement = document.body) {
         pixels,
       );
       return pixels;
+    },
+    /**
+     * The same frame twice, with and without the optical field in it: outside
+     * the field's influence the composite must hand back the canvas it was
+     * given, byte for byte. Anything else means the black hole is repainting
+     * the rest of the scene — the night side of a body included.
+     *
+     * `pullBack` moves the camera away so the influence stays a small central
+     * disc; `keepOut` is the radius of the disc left out of the comparison,
+     * as a fraction of the frame height.
+     */
+    neutrality({ pullBack = 6, keepOut = 0.25 } = {}) {
+      const saved = camera.position.clone();
+      camera.position.multiplyScalar(pullBack);
+      // The observed body follows the camera, so re-place it from here.
+      if (observedGroup.visible) lab.observe(true);
+      const frame = (subject: Parameters<typeof lens.render>[3]) => {
+        lens.render(
+          renderer,
+          scene,
+          camera,
+          subject,
+          (wall += 0.016),
+          time,
+          (c) => c.update(renderer, skyScene),
+        );
+        return lab.pixels();
+      };
+      const plain = frame(null);
+      const lensed = frame({ body, group, fade: 1 });
+      camera.position.copy(saved);
+      if (observedGroup.visible) lab.observe(true);
+      draw();
+      const gl = renderer.getContext();
+      const width = gl.drawingBufferWidth,
+        height = gl.drawingBufferHeight;
+      const excluded = (keepOut * height) ** 2;
+      let sampled = 0,
+        changed = 0,
+        worst = 0,
+        total = 0;
+      let at: Record<string, unknown> | null = null;
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          const dx = x - width / 2,
+            dy = y - height / 2;
+          if (dx * dx + dy * dy <= excluded) continue;
+          const i = (y * width + x) * 4;
+          const delta = Math.max(
+            Math.abs(plain[i] - lensed[i]),
+            Math.abs(plain[i + 1] - lensed[i + 1]),
+            Math.abs(plain[i + 2] - lensed[i + 2]),
+          );
+          sampled++;
+          total += delta;
+          if (delta > 0) changed++;
+          if (delta > worst) {
+            worst = delta;
+            at = {
+              x,
+              y,
+              plain: [plain[i], plain[i + 1], plain[i + 2]],
+              lensed: [lensed[i], lensed[i + 1], lensed[i + 2]],
+            };
+          }
+        }
+      return { sampled, changed, worst, mean: total / sampled, at };
     },
     async benchmark(count = 20) {
       const gl = renderer.getContext();
@@ -150,6 +282,7 @@ export function createLensingLab(host: HTMLElement = document.body) {
     },
     dispose() {
       lens.dispose();
+      observed.dispose();
       geometry.dispose();
       material.dispose();
       foreground.geometry.dispose();

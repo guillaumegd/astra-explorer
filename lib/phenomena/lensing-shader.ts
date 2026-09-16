@@ -111,7 +111,10 @@ vec3 lens(vec2 uv,vec3 original){
     float critical=max(abs(impact-2.598),.08);
     float magnification=mix(1.,max(1.,radius/critical),1.-smoothstep(3.,8.,impact));
     float lod=max(0.,log2(max(1.,skyFootprint*magnification)));
-    light+=transmission*textureCubeLodEXT(uSky,skyDirection,lod).rgb;
+    // The cube holds the scene as the canvas would show it; bring it into the
+    // working space the integrator's own emission lives in, so the single
+    // encode below leaves the catalogue exactly as bright as it is unlensed.
+    light+=transmission*sRGBTransferEOTF(textureCubeLodEXT(uSky,skyDirection,lod)).rgb;
   }
   // Reconstruct linear distance from scene depth. Foreground meshes and point cores
   // were rendered into this target before composition, independently of the lens.
@@ -139,7 +142,13 @@ vec3 lens(vec2 uv,vec3 original){
   return mix(original,light,(1.-smoothstep(zone*.9,zone,impact))*uFade);
 }
 void main(){
-  vec3 original=texture2D(uScene,vUv).rgb;
+  // The scene target holds display-ready colour, exactly what the canvas would
+  // have received. Decode it once here: everything downstream — the disc, the
+  // jets, the lensed sky — is mixed in the working space and the closing
+  // colourspace_fragment encodes the result once. Handing the sampled scene
+  // straight to that encode is what lifted every dark pixel of the frame,
+  // night sides included, the moment a black hole became the lens subject.
+  vec3 original=sRGBTransferEOTF(texture2D(uScene,vUv)).rgb;
   vec4 ray=uInverseProjection*vec4(vUv*2.-1.,1.,1.);
   vec3 d=normalize(mat3(uLocal)*mat3(uCameraWorld)*ray.xyz);
   skyFootprint=max(length(dFdx(d)),length(dFdy(d)))*uSkySize*.5;

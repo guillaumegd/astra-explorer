@@ -10,10 +10,19 @@ export function phenomenonVisibility(pixels: number) {
 }
 /** No controller wired in: creation stays unthrottled, as it always was. */
 const UNCONSTRAINED_CREATIONS = { budget: { creationsPerFrame: Infinity } };
-/** Four reserved cache slots; ordinary bodies retain eight, total never exceeds twelve. */
+/**
+ * Four reserved cache slots; ordinary bodies retain eight, total never exceeds twelve.
+ *
+ * `locate` writes a body's current position in the parent's space. Candidates
+ * carry their own position, but an entry that has just left them keeps fading
+ * — and, for a black hole, keeps lensing — for a few seconds: without it that
+ * entry would stay where it was last seen while the galaxy moves on, and the
+ * lens would appear to rush away across the screen until it faded.
+ */
 export function createPhenomenaManager(
   parent: THREE.Group,
   quality: { budget: { creationsPerFrame: number } } = UNCONSTRAINED_CREATIONS,
+  locate?: (id: number, out: THREE.Vector3) => void,
 ) {
   const entries = new Map<
     number,
@@ -85,7 +94,10 @@ export function createPhenomenaManager(
       }
       const fades: { id: number; fade: number }[] = [];
       for (const [id, entry] of entries) {
-        if (!ids.has(id)) entry.fade *= Math.exp(-dt / 0.4);
+        if (!ids.has(id)) {
+          entry.fade *= Math.exp(-dt / 0.4);
+          locate?.(id, entry.renderer.group.position);
+        }
         entry.renderer.update(
           simulationTime,
           entry.fade,

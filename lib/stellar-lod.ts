@@ -31,6 +31,67 @@ export function surfaceVisibility(
   );
 }
 
+/** Ring extent in planetary radii; the shader draws exactly this annulus. */
+export const RING_INNER = 1.35;
+export const RING_OUTER = 2.1;
+
+/**
+ * Polygon radii that fully contain the drawn annulus. Vertices of a regular
+ * polygon lie on its circle, so its chords cut inside: pushing the outer
+ * vertices out by 1/cos(π/n) and letting the fragment shader clip at the true
+ * radii keeps the silhouette identical whatever segment count a tier uses.
+ * The inner chords already fall inside the hole, where the shader discards.
+ */
+export function ringGeometryRadii(segments: number) {
+  return {
+    inner: RING_INNER,
+    outer: RING_OUTER / Math.cos(Math.PI / segments),
+  };
+}
+
+const ringVertex = /* glsl */ `
+varying vec2 vPlane;
+varying vec3 vView;
+varying vec3 vCenter;
+void main(){
+  vPlane = position.xy;
+  vec4 view = modelViewMatrix * vec4(position, 1.0);
+  // Planet-radius units: the ring's model scale is the planet radius.
+  float radius = length(modelViewMatrix[0].xyz);
+  vView = view.xyz / radius;
+  vCenter = (modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz / radius;
+  gl_Position = projectionMatrix * view;
+}`;
+
+const ringFragment = /* glsl */ `
+uniform vec3 uColor;
+uniform float uFade;
+varying vec2 vPlane;
+varying vec3 vView;
+varying vec3 vCenter;
+void main(){
+  float r = length(vPlane);
+  float aa = max(fwidth(r), 1e-5);
+  float edge = smoothstep(${RING_INNER.toFixed(2)} - aa, ${RING_INNER.toFixed(2)} + aa, r)
+    * (1.0 - smoothstep(${RING_OUTER.toFixed(2)} - aa, ${RING_OUTER.toFixed(2)} + aa, r));
+  if (edge <= 0.0) discard;
+  // 0.3 + 0.4 sin²(95r) = 0.5 - 0.2 cos(190r). Box-filtering the cosine over
+  // the pixel footprint (a sinc) lets distant bands settle on their mean
+  // instead of shimmering into moiré.
+  float w = 190.0 * aa;
+  float filtered = w < 1e-3 ? 1.0 : max(0.0, sin(0.5 * w) / (0.5 * w));
+  float bands = 0.5 - 0.2 * cos(190.0 * r) * filtered;
+  // The planet only writes depth once fully opaque. Until then, hide the arc
+  // behind it analytically, in proportion to the planet's own opacity, so the
+  // far side never shows through during the fade or at mid-distance.
+  vec3 ray = normalize(vView);
+  float along = dot(ray, vCenter);
+  float miss = length(vCenter - ray * along);
+  float cover = (1.0 - smoothstep(1.0 - fwidth(miss), 1.0 + fwidth(miss), miss))
+    * step(along, length(vView));
+  gl_FragColor = vec4(uColor * 0.7, bands * edge * uFade * (1.0 - uFade * cover));
+}`;
+
 export function surfaceLevel(ratio: number, current = 2): number {
   if (ratio < 1.04 || (current >= 5 && ratio < 1.06)) return 5;
   if (ratio < 1.18 || (current >= 4 && ratio < 1.24)) return 4;
@@ -376,7 +437,8 @@ export function createBodyLOD(
     const segments = quality.budget.ringSegments;
     let geometry = ringGeometries.get(segments);
     if (!geometry) {
-      geometry = new THREE.RingGeometry(1.35, 2.1, segments);
+      const { inner, outer } = ringGeometryRadii(segments);
+      geometry = new THREE.RingGeometry(inner, outer, segments);
       ringGeometries.set(segments, geometry);
     }
     return geometry;
@@ -625,10 +687,8 @@ export function createBodyLOD(
                 uColor: { value: new THREE.Color(body.color) },
                 uFade: { value: 0 },
               },
-              vertexShader:
-                'varying vec3 vP; void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-              fragmentShader:
-                'uniform vec3 uColor;uniform float uFade;varying vec3 vP;void main(){float r=length(vP.xy);float bands=0.3+0.4*pow(sin(r*95.0),2.0);gl_FragColor=vec4(uColor*0.7,bands*uFade);}',
+              vertexShader: ringVertex,
+              fragmentShader: ringFragment,
             });
             entry.ring = new THREE.Mesh(ringGeometryFor(), ringMaterial);
             entry.ring.rotation.x = -1.05;
@@ -743,7 +803,8 @@ export function createBodyLOD(
               entry!.mesh.onBeforeRender(...args);
             entry.patch.frustumCulled = false;
             entry.group.add(entry.patch);
-            if (renderer && camera) void renderer.compileAsync(entry.patch, camera);
+            if (renderer && camera)
+              void renderer.compileAsync(entry.patch, camera);
           }
         }
         if (close && entry.patch) {

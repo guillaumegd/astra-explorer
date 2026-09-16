@@ -29,6 +29,10 @@ La cubemap couvre six directions et utilise les mêmes géométries, mouvements 
 
 Le picking suit les trajectoires CPU, puis oriente une passe d’identifiants vers la direction d’échappement. Les images multiples d’un astre suivent la même convention. L’opacité cumulée du disque détermine si son bord transparent laisse sélectionner le fond. Les sprites de cette passe conservent leur taille réelle, avec une tolérance de deux pixels de cubemap.
 
+## Espace colorimétrique de la composition
+
+La présence d’un trou noir ne change pas l’apparence du reste de la scène. La cible hors écran ne déclare aucun espace colorimétrique : elle reçoit exactement ce que les nuanceurs écrivent, comme le tampon du canevas, donc une atmosphère, un océan ou un halo additif se mélangent au même endroit dans les deux cas. La composition décode une fois la scène échantillonnée et la cubemap, mélange l’émission du disque et des jets dans cet espace de travail, puis encode une seule fois en sortie. Hors influence optique, l’image composée est identique, au pixel près, à l’image tracée directement sur le canevas.
+
 ## Cadence et qualité
 
 Le ciel évolutif est capturé à chaque image du moteur, indépendamment de la vitesse de simulation. Le coût mesuré ajuste la résolution plutôt que la cadence : passage de 512 à 256 après huit moyennes au-dessus de 3 ms, remontée après 180 moyennes sous 0,6 ms. La taille angulaire des étoiles est préservée.
@@ -45,10 +49,19 @@ lab.view(0);                    // profil
 lab.view(Math.PI / 2);          // face
 lab.background('star');         // source ponctuelle
 lab.foreground(true);           // objet au premier plan
+lab.observe(true);              // planète éclairée, avec terminateur et face nuit
+lab.draw(false);                // la même image sans trou noir au cadre
+lab.neutrality();               // écart entre les deux, hors influence optique
 lab.time(3600);                 // stabilité à temps long
 await lab.benchmark();          // mesure GPU si disponible
 lab.dispose();
 ```
+
+`neutrality()` rend deux fois la même image, avec puis sans le trou noir, et
+compare tout ce qui se trouve hors du disque central laissé de côté. Le rendu
+est neutre quand `changed` vaut 0 : la composition n’a alors rien repeint de la
+scène. Avant la correction du bug d’éclairage, les 603 791 pixels comparés
+changeaient, d’un écart moyen de 53 et maximal de 75 sur 255.
 
 Les tests automatisés vérifient notamment le seuil critique, le faible champ `2rs/b`, la convergence vers un pas huit fois plus fin, les images secondaires, les bords transparents, la cadence, l’hystérésis et la libération des cibles.
 
