@@ -62,6 +62,41 @@ La chevelure et les queues s’intensifient à proximité de l’étoile. La que
 
 Un écoulement de 128 grains anime la chevelure et le départ de la queue de poussière, avec naissance et disparition progressives. La pause et le mouvement réduit figent cet écoulement. Les quatre langues et une légère coloration sonore sont intégrées. La recette visuelle et la mesure GPU restent à exécuter : [lot 6](local/phenomenes/LOT-6-COMETES.md).
 
+## Éruptions stellaires
+
+Vue de près, une étoile porte une couronne et des éruptions (#25) décrites dans [`lib/stellar-activity.ts`](../lib/stellar-activity.ts). Tout se calcule à partir de la graine de l’étoile et du temps de simulation : une étoile évincée du cache puis recréée rejoue le même ciel.
+
+**Couronne et vent.** Les jets coronaux ne dépendent que de la direction : ils restent radiaux, sans le damier des sinus haute fréquence d’avant. L’octave la plus fine s’efface quand elle crénellerait. Le vent n’est plus une passe de lignes : ce sont des condensations qui s’éloignent lentement le long des jets. La couronne s’éclaire autour d’un site en éruption.
+
+**Déroulé d’une éruption.** Chaque cycle tire un nouveau site, à ±35° de latitude, avec une orientation d’arche propre. Les phases sont exprimées en fraction de la durée de l’événement :
+
+1. **Montée** : un faisceau de filaments torsadés entre deux pieds s’illumine, avec un plasma qui coule le long des brins.
+2. **Impulsion** : les pieds flambent et deux rubans s’allument sur la photosphère, de part et d’autre de la ligne neutre. L’éclair monte en 0,3 s au moins, sans clignotement.
+3. **Éjection** : le sommet de la corde monte avec le cœur de la bulle, puis se déchire ; les jambes retombent. La bulle, une coque épaisse et optiquement mince, est intégrée analytiquement le long du regard. On voit un front brillant en ampoule de profil et un halo de face, sans contour dur, autour d’une cavité et d’un cœur chaud. Elle s’étend jusqu’à environ trois rayons en perdant de l’éclat.
+4. **Déclin** : une arcade de boucles post-éruptives luit bas entre les rubans, qui s’écartent. Une pluie coronale redescend le long des jambes en refroidissant.
+
+**Rythme par type.** Trois sites se partagent l’étoile :
+
+| Type | Durée | Écart moyen | Arche |
+| --- | --- | --- | --- |
+| Naine rouge | ~7 s | ~13 s | référence |
+| Géante | ~14 s | ~25 s | × 1,35 |
+| Étoile bleue | ~8 s | ~30 s | × 0,9 |
+| Naine blanche | ~6 s | ~60 s | × 0,7, faible |
+
+**Qualité.** Le champ `flareDetail` du budget (3 à 0) ne fait que déplacer des plages de dessin et des commutateurs de shader : les géométries sont construites une fois, au détail maximal, et partagées par les trois sites. Un changement de palier s’applique donc aux étoiles déjà visibles.
+
+| `flareDetail` | Paliers | Brins | Boucles d’arcade | Gouttes | Couronne | Filaments de la bulle |
+| --- | --- | --- | --- | --- | --- | --- |
+| 3 | ultra-60, high-60 | 8 | 7 | 72 | 3 octaves, vent | 2 octaves |
+| 2 | high-entry, balanced-60 | 6 | 6 | 48 | 2 octaves, vent | 1 octave |
+| 1 | balanced-30, economy-30 | 4 | 4 | 24 | 1 octave, vent | 1 octave |
+| 0 | economy-floor, rescue | 2 | 3 | aucune | 1 octave, figée | lisse |
+
+Au palier 0, l’éruption reste lisible : arche, éclair, rubans et bulle. Une couche éteinte n’est pas dessinée. Hors éruption, il ne reste que la couronne, soit une passe de moins qu’avant la reprise.
+
+**Chargement.** Le module (6,4 ko gzip) ne fait pas partie du chemin de la première image : il se charge quand une première étoile obtient une surface détaillée, et se greffe à elle dès qu’il est prêt. L’effet n’apparaît qu’à partir de 35 px de rayon, donc bien après. Le contrôle de budget compte désormais le bloc three.js que ce découpage isole, pour ne pas s’alléger en trompe-l’œil.
+
 ## Rendu et ressources
 
 Huit candidats détaillés sont partagés entre les corps ordinaires et les phénomènes. Le cache réserve huit entrées ordinaires et quatre phénomènes, soit douze au maximum. Le détail apparaît à six pixels de rayon projeté, avec conservation jusqu’à 4,8 pixels et fondu de 0,4 seconde.

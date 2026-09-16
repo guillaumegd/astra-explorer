@@ -6,8 +6,10 @@ import { join, basename } from 'node:path';
 // engine (three.js + lib/galaxy.ts) is dynamically imported but still
 // indispensable before the galaxy can render — splitting it out does not
 // exempt it from this budget. Only chunks that are NOT needed before first
-// render (ambient audio, the catalogue growth worker) are excluded.
-const CRITICAL_PREFIXES = ['index-', 'galaxy-'];
+// render (ambient audio, the catalogue growth worker, stellar activity) are
+// excluded. A deferred chunk that also imports three.js makes the bundler
+// split three.js out on its own; it stays on the critical path.
+const CRITICAL_PREFIXES = ['index-', 'galaxy-', 'three.module-'];
 // Temporary non-regression ceiling for the critical path. The issue's 250 kB
 // target needs further byte attribution (icon set, three.js footprint) on
 // top of this lot's chunk split — tracked as a follow-up, not met yet.
