@@ -26,7 +26,7 @@ test('system index returns whole systems for camera-relative precision', () => {
   const out = [];
   assert.deepEqual(index.systemsNear(0.7, 0, 0, 0.35, out), [systems[0]]);
   assert.deepEqual(
-    index.systemsNear(1.3, 0, 0, 1, out).map((s) => s.rootId).sort(),
+    index.systemsNear(1.3, 0, 0, 1, out).map((s) => s.rootId).sort((a, b) => a - b),
     [0, 2],
   );
   // `near` keeps its own scratch list: the caller's array is not clobbered.
