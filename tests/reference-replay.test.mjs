@@ -25,7 +25,16 @@ test('versioned route contains valid stable destinations within each population'
 });
 test('visual-fidelity reference set covers ice, ringed gas and both diffuse volume families', () => {
   const names = new Set(REFERENCE_SCENES.map((scene) => scene.name));
-  for (const name of ['ice', 'ringed-gas', 'nebula-crossing', 'remnant'])
+  for (const name of [
+    'ice',
+    'ringed-gas',
+    // Each volume family is checked both crossed and at a distance, at the
+    // same relative stand-off, so their apparent scales stay comparable.
+    'nebula-crossing',
+    'nebula-distant',
+    'remnant',
+    'remnant-distant',
+  ])
     assert.ok(names.has(name), `missing visual reference scene: ${name}`);
 });
 test('reference pose depends only on scene and frame, preserves all fixed inputs', () => {

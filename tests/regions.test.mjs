@@ -16,8 +16,10 @@ import {
   NEBULA_CELL,
   NEBULA_PROBABILITY,
   NEBULA_RADIUS_SPAN,
+  REMNANT_HOST_LIMIT,
+  REMNANT_HOST_MARGIN,
   REMNANT_PROBABILITY,
-  REMNANT_SIZE_SPAN,
+  REMNANT_RADIUS_SPAN,
 } from '../lib/catalogue/config.ts';
 import { galacticShear, shearAngle } from '../lib/particle-motion.ts';
 import {
@@ -93,12 +95,21 @@ test('remnants follow their pulsar host, in share and in size', () => {
     assert.equal(remnant.hostSystem, index);
     assert.equal(remnant.hostBodyId, system.bodies[0].id);
     assert.deepEqual(remnant.center, system.anchor);
-    const floor = system.bodies[0].pulsar.envelope * 3;
-    assert.ok(remnant.radius >= Math.min(floor, remnant.radius));
+    // Size is drawn on the galactic ladder, exactly as a nebula's is, and only
+    // ever raised by the two floors the host imposes.
+    const wind = system.bodies[0].pulsar.envelope * 3;
+    const clearance =
+      Math.min(system.envelope, REMNANT_HOST_LIMIT) * REMNANT_HOST_MARGIN;
+    assert.ok(remnant.radius >= wind - 1e-12);
+    assert.ok(remnant.radius >= clearance - 1e-12);
+    assert.ok(remnant.radius >= REMNANT_RADIUS_SPAN[0] * NEBULA_CELL - 1e-12);
     assert.ok(
-      remnant.radius <= Math.max(floor, system.envelope * REMNANT_SIZE_SPAN[1]),
+      remnant.radius <=
+        Math.max(REMNANT_RADIUS_SPAN[1] * NEBULA_CELL, wind, clearance) + 1e-12,
     );
-    assert.ok(remnant.radius >= floor - 1e-12);
+    // A richer pulsar system must no longer buy itself a bigger shell: below
+    // the clearance floor the draw alone decides, and the floor is capped.
+    assert.ok(remnant.radius <= REMNANT_HOST_LIMIT * REMNANT_HOST_MARGIN);
   }
   assert.ok(pulsars > 200);
   const p = REMNANT_PROBABILITY;
@@ -263,4 +274,36 @@ test('a region is never a body: no index, no budget, no pick', () => {
     assert.equal(cat.resolveRegion(region.regionId, 65000), region);
   }
   assert.equal(cat.resolveRegion('v2:region:nebula:999999', 65000), null);
+});
+
+test('nebulae and remnants share one scale ladder, with remnants the smaller family', () => {
+  const catalogue = new RuntimeCatalogue();
+  const median = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)];
+  };
+  const nebulae = catalogue.listNebulae().map((r) => r.radius);
+  const remnants = catalogue.getRemnants(120000);
+  const radii = remnants.map((r) => r.radius);
+  assert.ok(nebulae.length > 0 && radii.length > 0);
+  // Both families are a fraction of the galactic diameter, and a remnant never
+  // reaches even the smallest nebula: the whole point of issue #12.
+  assert.ok(Math.max(...radii) < Math.min(...nebulae));
+  // Astronomically a H II complex is roughly four times a pulsar-bearing
+  // remnant. The clearance floor on outsized host systems softens that to ~3.
+  const ratio = median(nebulae) / median(radii);
+  assert.ok(ratio > 2.5 && ratio < 4.5, `ratio des médianes ${ratio}`);
+  // No family may span orders of magnitude: the former law reached 217x
+  // because it multiplied whatever envelope the host system happened to have.
+  assert.ok(Math.max(...radii) / Math.min(...radii) < 4);
+  // The shell still encloses the system it surrounds, except for the few hosts
+  // the clearance cap deliberately stops following.
+  const outside = remnants.filter(
+    (r) => catalogue.getSystem(r.hostSystem).envelope > r.envelope,
+  );
+  assert.ok(outside.length <= remnants.length * 0.05);
+  for (const remnant of outside)
+    assert.ok(
+      catalogue.getSystem(remnant.hostSystem).envelope > REMNANT_HOST_LIMIT,
+    );
 });

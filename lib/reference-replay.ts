@@ -47,22 +47,25 @@ export const REFERENCE_SCENES: ReferenceScene[] = [
       elevation,
     })),
   ),
-  {
-    name: 'nebula-crossing',
-    density: 65000,
-    regionId: 'v2:region:nebula:000004',
-    distanceRatio: 0.5,
-    elevation: 0.2,
-    azimuth: 0.6,
-  },
-  {
-    name: 'remnant',
-    density: 65000,
-    regionId: 'v2:region:remnant:000711',
-    distanceRatio: 0.8,
-    elevation: 0.2,
-    azimuth: 0.6,
-  },
+  // Both volume families, each seen twice: crossed from inside, and from far
+  // enough out to judge apparent size against the star field (issue #12). A
+  // region's distanceRatio counts its own envelopes, so 8 is the same relative
+  // stand-off for a nebula and for the remnant a quarter of its size.
+  ...[
+    ['nebula-crossing', 'v2:region:nebula:000004', 0.5],
+    ['nebula-distant', 'v2:region:nebula:000004', 8],
+    ['remnant', 'v2:region:remnant:000711', 0.8],
+    ['remnant-distant', 'v2:region:remnant:000711', 8],
+  ].map(
+    ([name, regionId, distanceRatio]): ReferenceScene => ({
+      name: name as string,
+      density: 65000,
+      regionId: regionId as string,
+      distanceRatio: distanceRatio as number,
+      elevation: 0.2,
+      azimuth: 0.6,
+    }),
+  ),
   body('pulsar', 'v2:system:000462:body:000', 15),
   body('comet', 'v2:system:000037:body:018', 15),
   body('binary', 'v2:system:000006:body:000', 25),

@@ -6,9 +6,11 @@ import {
   NEBULA_PROBABILITY,
   NEBULA_RADIUS_SPAN,
   REGION_ENVELOPE_MARGIN,
+  REMNANT_HOST_LIMIT,
+  REMNANT_HOST_MARGIN,
   REMNANT_PALETTES,
   REMNANT_PROBABILITY,
-  REMNANT_SIZE_SPAN,
+  REMNANT_RADIUS_SPAN,
 } from './config.ts';
 import { stream, subSeed } from './random.ts';
 import type { RegionDefinition, SystemDefinition } from './types.ts';
@@ -95,11 +97,17 @@ export function remnantFor(system: SystemDefinition): RegionDefinition | null {
   const draw = stream(subSeed(system.seed, 'region:remnant'), 'presence');
   if (draw() >= REMNANT_PROBABILITY) return null;
   const host = system.bodies[0];
-  const span = REMNANT_SIZE_SPAN[1] - REMNANT_SIZE_SPAN[0];
-  // A planetless pulsar still deserves a visible shell.
+  const span = REMNANT_RADIUS_SPAN[1] - REMNANT_RADIUS_SPAN[0];
+  // Size comes from the galactic ladder the nebulae use, not from the host:
+  // how many planets a pulsar drew must not decide how large its shell looks.
+  // The host only raises two floors — the pulsar wind the cavity has to hold
+  // (a planetless pulsar still deserves a visible shell), and the clearance
+  // that keeps the system it surrounds inside the shell. Past
+  // REMNANT_HOST_LIMIT the clearance stops following an outsized system.
   const radius = Math.max(
+    (REMNANT_RADIUS_SPAN[0] + draw() * span) * NEBULA_CELL,
     (host.pulsar?.envelope ?? host.radius) * 3,
-    system.envelope * (REMNANT_SIZE_SPAN[0] + draw() * span),
+    Math.min(system.envelope, REMNANT_HOST_LIMIT) * REMNANT_HOST_MARGIN,
   );
   const palette =
     REMNANT_PALETTES[Math.floor(draw() * REMNANT_PALETTES.length)];

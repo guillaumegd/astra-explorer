@@ -28,6 +28,22 @@ Un vestige de supernova entoure environ un système à pulsar sur sept : une coq
 
 Le nuage est dessiné comme un vrai volume traversé pas à pas, de seize à quatre pas selon la charge, après que la résolution a atteint son plancher. Toutes les nébuleuses restent présentes, même hors du budget détaillé : quatre pas sous six pixels, huit en vue intermédiaire, jusqu’à seize pour les deux régions prioritaires suffisamment proches. Le cache des vestiges conserve deux entrées. Les régions s’activent depuis le menu. La région activée se signale dans la scène elle-même, sans rien dessiner par-dessus : son volume monte en luminance et ses filaments se renforcent, en fondu à l’entrée comme à la sortie. Sa transparence, elle, ne bouge pas — les étoiles situées derrière restent aussi lisibles qu’avant. L'ambiance sonore de la région se mélange à celle de l'astre observé, sans jamais la remplacer : on peut être dans une nébuleuse tout en regardant une planète. Fiches et catégories sont traduites dans les quatre langues.
 
+### Échelle apparente des régions
+
+Les deux familles sont tirées sur une seule échelle : une fraction du diamètre du disque galactique. La taille d'un vestige ne dépend plus du nombre de planètes tirées par son pulsar hôte.
+
+| Famille | Diamètre réel | Repères | Plage tirée (% du disque) | Observé au catalogue complet |
+| --- | --- | --- | --- | --- |
+| Disque galactique | ~100 000 al | Voie lactée | — | 100 % |
+| Nébuleuse | 20–350 al | Orion 24 al, Aigle 70 al, W51 350 al | 0,5–1,4 % | 0,58–1,21 % (9 nuages) |
+| Vestige de supernova | 8–40 al | Crabe 11 al, Cassiopée A 16 al | 0,12–0,26 % | 0,14–0,45 % (126 coques) |
+
+**Principe.** Les deux plages sont comprimées et agrandies pour la navigation — d'environ onze fois — mais par le même facteur, si bien que le rapport entre les familles survit : un complexe de nébuleuse vaut à peu près quatre fois un vestige à pulsar. Le rapport des rayons médians rendus est de 3,4, et le plus gros vestige atteint 78 % de la plus petite nébuleuse : un vestige est toujours la plus petite des deux. Un vestige s'étale d'un facteur 3,2 d'un bout à l'autre du catalogue, une nébuleuse d'un facteur 2,1.
+
+**Systèmes hôtes.** Les systèmes rendus sont, eux, agrandis bien davantage — l'application n'a pas d'échelle métrique unique entre étoiles, systèmes et galaxie. Une coque doit malgré tout envelopper le système qu'elle entoure : c'est un plancher de dégagement, pas la loi de taille, et il est plafonné. Au-delà, c'est le système rendu qui est hors d'échelle, et la coque cesse de le suivre : trois hôtes sur cent vingt-six laissent alors leurs corps les plus lointains à l'extérieur.
+
+Le cadrage est le même pour les deux familles — la distance de cadrage de l'enveloppe — et n'entrait donc pas dans la disproportion. Les plages précédentes faisaient varier le rayon d'un vestige d'un facteur 217 selon son hôte, jusqu'à 2,1 % du disque, soit 1,7 fois la plus grande nébuleuse.
+
 ## Étoiles doubles
 
 Le lot 5 active la seconde source réservée en V2, sur 5 % des systèmes. Les deux composantes partagent un barycentre invisible, une vitesse angulaire et une inclinaison, et tournent en phases opposées sur des rayons pondérés par des masses artistiques. Leur séparation est donc constante, et le compagnon contraste en couleur avec l’étoile principale trois fois sur quatre.

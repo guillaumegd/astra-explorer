@@ -110,6 +110,10 @@ test('nebulae occupy at most 1.4 percent of the galaxy diameter and keep a low L
     manager = createRegionManager(parent);
   for (const region of list)
     assert.ok(region.radius / GALAXY_ENVELOPE.radius <= 0.01400001);
+  // Remnants read as the smaller family from every distance, so they sit well
+  // under the nebulae's own share of the disc (issue #12).
+  for (const region of catalogue.getRemnants(120000))
+    assert.ok(region.radius / GALAXY_ENVELOPE.radius <= 0.0045);
   manager.update(
     list.map((region) => ({
       region,

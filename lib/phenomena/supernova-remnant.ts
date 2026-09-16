@@ -6,7 +6,8 @@ import { volumeChunk, volumeVertex } from './volume-shader.ts';
 const inverse = new THREE.Matrix4();
 
 /**
- * A fragmented shell around a hollow cavity, sized from its pulsar host. The
+ * A fragmented shell around a hollow cavity, sized on the same galactic ladder
+ * as the nebulae (see REMNANT_RADIUS_SPAN) rather than on its host system. The
  * shock filaments stay steady; the envelope never expands, so the catalogue and
  * the framing stay fixed.
  */
