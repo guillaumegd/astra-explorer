@@ -6,6 +6,10 @@ import { catalogue } from '../lib/catalogue/runtime.ts';
 import { listNebulae } from '../lib/catalogue/regions.ts';
 import { createRegionManager } from '../lib/phenomena/region-manager.ts';
 import { createComet } from '../lib/phenomena/comet.ts';
+import {
+  BLUE_NOISE_SIZE,
+  blueNoiseRanks,
+} from '../lib/phenomena/blue-noise.ts';
 import { createBodyLOD } from '../lib/stellar-lod.ts';
 
 const candidate = (region, pixels = 100) => ({
@@ -174,19 +178,80 @@ test('a framed region eases into focus and lets go of it just as gradually', () 
 test('region focus brightens the volume and never thickens it', () => {
   const read = (path) =>
     readFileSync(new URL('../' + path, import.meta.url), 'utf8');
-  assert.match(
-    read('lib/phenomena/volume-shader.ts'),
-    /uniform float [^;]*\buFocus\b/,
-  );
+  const shared = read('lib/phenomena/volume-shader.ts');
+  assert.match(shared, /uniform float [^;]*\buFocus\b/);
+  // The one shared output lifts the light, and its alpha never sees the focus.
+  assert.ok(shared.includes('focusLift(light * VOLUME_EXPOSURE)'));
+  assert.doesNotMatch(shared, /alpha [*]?= [^;]*uFocus/);
   for (const path of [
     'lib/phenomena/nebula.ts',
     'lib/phenomena/supernova-remnant.ts',
   ]) {
     const source = read(path);
-    assert.ok(source.includes('focusLift(colour / max(rawAlpha, 0.0001))'));
-    // Raising the alpha of a framed cloud would turn the veil into a wall and
-    // hide the stars behind it — the one thing the volumes must never do.
-    assert.doesNotMatch(source, /float alpha = [^;]*uFocus/);
-    assert.doesNotMatch(source, /rawAlpha[^;]*uFocus/);
+    assert.match(source, /volumeOutput\(colour, 1\.0 - transmittance, 0\.\d+\)/);
+    // Raising the occlusion of a framed cloud would turn the veil into a wall
+    // and hide the stars behind it — the one thing the volumes must never do.
+    assert.doesNotMatch(source, /transmittance \*= [^;]*uFocus/);
   }
+});
+
+test('the march dither is blue noise: every rank once, early ranks spread apart', () => {
+  const ranks = blueNoiseRanks();
+  assert.equal(ranks.length, BLUE_NOISE_SIZE * BLUE_NOISE_SIZE);
+  assert.equal(new Set(ranks).size, ranks.length);
+  assert.ok(Math.min(...ranks) === 0 && Math.max(...ranks) === ranks.length - 1);
+  // The first sixty-four ranks fill the tile evenly: no two of them touch,
+  // across the wrap too, where white noise clumps within a few draws.
+  const first = [];
+  ranks.forEach((rank, i) => {
+    if (rank < 64) first.push([i % BLUE_NOISE_SIZE, Math.floor(i / BLUE_NOISE_SIZE)]);
+  });
+  const wrap = (d) => Math.min(Math.abs(d), BLUE_NOISE_SIZE - Math.abs(d));
+  let closest = Infinity;
+  for (let a = 0; a < first.length; a++)
+    for (let b = a + 1; b < first.length; b++)
+      closest = Math.min(
+        closest,
+        Math.hypot(wrap(first[a][0] - first[b][0]), wrap(first[a][1] - first[b][1])),
+      );
+  assert.ok(closest >= 2.5, `closest early ranks ${closest}`);
+  assert.deepEqual(blueNoiseRanks(), ranks);
+});
+
+test('volumes spend their samples where matter can be and dither with blue noise', () => {
+  const read = (path) =>
+    readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+  const nebula = read('lib/phenomena/nebula.ts');
+  const remnant = read('lib/phenomena/supernova-remnant.ts');
+  for (const source of [nebula, remnant]) {
+    assert.ok(source.includes('marchDither() * dt'));
+    assert.doesNotMatch(source, /hash13\(vec3\(gl_FragCoord/);
+  }
+  // The nebula marches its gas sphere, not the wider envelope.
+  assert.ok(nebula.includes('sphereSpan(uEye, rd, GAS_RADIUS * uRadius, t0, t1)'));
+  assert.ok(nebula.includes('1.-smoothstep(.86,1.04,length(q))'));
+  // The remnant marches its shell band and skips the cavity.
+  assert.ok(remnant.includes('sphereSpan(uEye, rd, SHELL_OUTER * uRadius, a0, a1)'));
+  assert.ok(remnant.includes('sphereSpan(uEye, rd, SHELL_INNER * uRadius, b0, b1)'));
+  // A sheet is never thinner than the step, and keeps its column.
+  assert.ok(remnant.includes('float sheet = 0.055 / width;'));
+});
+
+test('a region impostor fades out once the eye is inside the volume', () => {
+  const parent = new THREE.Group();
+  const manager = createRegionManager(parent);
+  const [region] = listNebulae();
+  const alpha = (inside) => {
+    manager.update(
+      [{ region, position: new THREE.Vector3(...region.center), pixels: 900, inside, focused: false }],
+      0,
+      0,
+      0,
+    );
+    return manager.impostorPoints.geometry.attributes.aAlpha.array[0];
+  };
+  assert.ok(alpha(0) > 0);
+  assert.ok(alpha(0.5) < alpha(0));
+  assert.equal(alpha(1), 0);
+  manager.dispose();
 });

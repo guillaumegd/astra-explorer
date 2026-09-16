@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { RegionDefinition } from '../catalogue/types.ts';
 import { shearAngle } from '../particle-motion.ts';
+import { blueNoiseTexture } from './blue-noise.ts';
 import { volumeChunk, volumeVertex } from './volume-shader.ts';
 
 const inverse = new THREE.Matrix4();
@@ -26,6 +27,7 @@ export function createNebula(region: RegionDefinition, steps = 16) {
     uGlow: { value: new THREE.Color(region.palette[0]) },
     uFilament: { value: new THREE.Color(region.palette[1]) },
     uPocket: { value: new THREE.Color(region.palette[2]) },
+    uDither: { value: blueNoiseTexture() },
   };
   const shaderOptions = {
     uniforms,
@@ -40,6 +42,11 @@ export function createNebula(region: RegionDefinition, steps = 16) {
     blendDst: THREE.OneMinusSrcAlphaFactor,
     fragmentShader: `
       ${volumeChunk}
+      // Where the morphology is cut, in radii (see its last line).
+      const float GAS_RADIUS = 1.04;
+      // Emitted light per unit of glowing gas, matched by eye to the former
+      // coverage-weighted colour so a cloud keeps its overall brightness.
+      const float NEBULA_EMISSION = 0.7;
       // Three asymmetric morphologies, all strictly inside the integration bound.
       float morphology(vec3 q) {
         float angle = uSeed * 2.39996;
@@ -66,11 +73,19 @@ export function createNebula(region: RegionDefinition, steps = 16) {
         return field * (1.-smoothstep(.86,1.04,length(q)));
       }
       void main() {
+        // The morphology is cut at GAS_RADIUS, inside the envelope: the ray
+        // is clipped there so no sample is spent where there is never gas.
         vec3 rd = normalize(vLocal - uEye);
         float t0, t1;
-        if (!volumeSpan(rd, t0, t1)) discard;
+        if (!sphereSpan(uEye, rd, GAS_RADIUS * uRadius, t0, t1)) discard;
         float dt = (t1 - t0) / float(STEPS);
-        float jitter = hash13(vec3(gl_FragCoord.xy, uSeed)) * dt;
+        float jitter = marchDither() * dt;
+        // How much coarser than the reference (16 steps across a diameter)
+        // this ray samples. Thin ridges and dust edges widen with it, so a
+        // coarse tier softens the folds instead of breaking them into grain.
+        float coarse = clamp(dt / uRadius / 0.13 - 1.0, 0.0, 4.0);
+        float ridgeWidth = 0.15 * (1.0 + coarse * 0.5);
+        float dustEdge = 0.82 + coarse * 0.05;
         vec3 colour = vec3(0.0);
         float transmittance = 1.0;
         for (int i = 0; i < STEPS; i++) {
@@ -85,33 +100,41 @@ export function createNebula(region: RegionDefinition, steps = 16) {
           // Coherent folds, rather than a spherical cloud of independent blobs.
           vec3 warp = vec3(shape, valueNoise(q * 2.1 + uSeed + 17.0),
                            valueNoise(q * 2.1 + uSeed + 39.0)) - 0.5;
-          float n = fbm(q * vec3(3.4, 5.8, 3.4) + warp * 2.4 + uSeed +
-                       vec3(0.0, uTime * 0.0015, uTime * 0.001));
-          float dust = smoothstep(0.59, 0.82, n);
-          float ridge = 1.0 - smoothstep(0.035, 0.15, abs(n - 0.48));
+          vec3 folded = q * vec3(3.4, 5.8, 3.4) + warp * 2.4 + uSeed +
+                        vec3(0.0, uTime * 0.0015, uTime * 0.001);
+          float n = fbm(folded);
+          #if STEPS >= 12
+          // Crossing a cloud puts gas a fraction of a radius from the eye,
+          // where the three base octaves span a hundred pixels and the fold
+          // reads as fog. Two finer octaves, faded in with proximity, give the
+          // near gas the grain of its own filaments. Rich tiers only: a coarse
+          // march could not resolve them anyway.
+          float near = 1.0 - smoothstep(0.25, 1.1, (t0 + float(i) * dt) / uRadius);
+          if (near > 0.0)
+            n += ((valueNoise(folded * 8.3) - 0.5) * 0.16 +
+                  (valueNoise(folded * 17.1) - 0.5) * 0.08) * near;
+          #endif
+          float dust = smoothstep(0.59, dustEdge, n);
+          float ridge = 1.0 - smoothstep(0.035, ridgeWidth, abs(n - 0.48));
           float gas = smoothstep(0.25, 0.52, n) * (1.0 - dust * 0.8);
-          float density = uDensity * falloff * (gas * 0.55 + dust * 1.2);
-          float coverage = 1.0 - exp(-density * dt * 4.8 / uRadius);
+          // Gas glows and barely dims what lies behind it; dust glows faintly
+          // and hides the background. Keeping the two apart is what gives the
+          // cloud depth: a lane in front of a bright fold darkens it, where a
+          // single coverage term only ever averaged their colours.
+          float emitted = 1.0 - exp(-uDensity * falloff * gas * 0.55 * dt * 4.8 / uRadius);
+          float veiled = 1.0 - exp(-uDensity * falloff * (gas * 0.2 + dust * 1.2) * dt * 4.8 / uRadius);
           float excitation = smoothstep(.3,.7,valueNoise(q*2.8+uSeed+51.));
           vec3 tint = mix(uGlow, uFilament, excitation);
-          // Dust removes background light; it is not a dark luminous gas.
           // Focus sharpens the filament ridges before it touches anything
           // else: what a framed cloud gains is structure, not bulk.
-          tint = mix(tint * (0.85 + ridge * (1.2 + uFocus * 0.9)),
-                     uPocket * 0.12, dust);
-          colour += tint * coverage * transmittance;
-          transmittance *= 1.0 - coverage;
+          tint *= 0.85 + ridge * (1.2 + uFocus * 0.9);
+          colour += (tint * emitted * NEBULA_EMISSION + uPocket * 0.12 * veiled) *
+                    transmittance;
+          transmittance *= 1.0 - veiled;
         }
         // Seen from the core the cloud fills the whole field, so it has to stay
         // a veil: stars must remain readable and this must never be a wall.
-        float rawAlpha = 1.0 - transmittance;
-        float alpha = min(0.55, rawAlpha) * uFade;
-        if (alpha < 0.004) discard;
-        // Convert straight emitted colour, then premultiply for the custom blend.
-        gl_FragColor = vec4(focusLift(colour / max(rawAlpha, 0.0001)), alpha);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-        gl_FragColor.rgb *= alpha;
+        gl_FragColor = volumeOutput(colour, 1.0 - transmittance, 0.55);
       }`,
   };
   const viewMaterial = new THREE.ShaderMaterial({

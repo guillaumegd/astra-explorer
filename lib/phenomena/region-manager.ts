@@ -144,11 +144,15 @@ export function createRegionManager(
             // full detail (a soft halo behind the volumetric cloud).
             // The framed region lifts its halo too, so the answer to a
             // selection is legible before the raymarch detail arrives.
+            // From inside, a point sprite has nothing left to stand for and
+            // only grows into a flat wash the GPU clamps to its size limit:
+            // it fades out as the eye enters the volume.
             presence: referenceVolumes
               ? 0
               : regionVisibility(c.pixels, c.inside) *
                 (0.15 + 0.85 * (1 - detailShare)) *
-                (1 + focusOf(c.region.regionId) * 0.5),
+                (1 + focusOf(c.region.regionId) * 0.5) *
+                (1 - c.inside),
           };
         }),
       );

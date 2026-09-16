@@ -278,10 +278,14 @@ export function createGalaxy(
   onQuality: (report: QualityReport) => void = () => {},
 ): GalaxyEngine {
   const diagnosticStart = performance.now();
+  const searchParams = new URLSearchParams(window.location.search);
   const diagnostics =
-    new URLSearchParams(window.location.search).get('diagnostics') === '1'
-      ? createDiagnostics()
-      : null;
+    searchParams.get('diagnostics') === '1' ? createDiagnostics() : null;
+  // Diagnostics only: replays the reference scenes at a degraded volume tier,
+  // so the Auto ladder can be captured as well as the full-detail contract.
+  const replayVolumeSteps = diagnostics
+    ? Number(searchParams.get('volumeSteps')) || 16
+    : 16;
   let lastRendered: number | null = null;
   let messages = initialMessages;
   let firstFrameRendered = false;
@@ -1698,7 +1702,7 @@ export function createGalaxy(
       dpr: 1,
       pixelCap: Infinity,
       targetFps: 60,
-      volumeSteps: 16,
+      volumeSteps: replayVolumeSteps,
       opticalResolution: 512,
       opticalSteps: 320,
     });
@@ -1720,7 +1724,7 @@ export function createGalaxy(
       warmupFrames: 60,
       sampleFrames: 120,
       dpr: 1,
-      volumeSteps: 16,
+      volumeSteps: replayVolumeSteps,
       seed: catalogue.seed,
     };
     diagnostics?.record('replay-scene', performance.now(), {
