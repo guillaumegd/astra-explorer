@@ -94,7 +94,14 @@ export function createLensing() {
       renderer.getDrawingBufferSize(size);
       if (!source) {
         source = new THREE.WebGLRenderTarget(size.x, size.y);
-        source.texture.colorSpace = THREE.SRGBColorSpace;
+        // The off-screen pass must be a stand-in for the canvas, byte for byte.
+        // Declaring the target sRGB gives it an SRGB8_ALPHA8 attachment, and the
+        // driver then decodes every destination pixel before blending and
+        // re-encodes afterwards — so an atmosphere, an ocean or an additive glow
+        // composited over a night side lands on a different colour than the same
+        // frame drawn straight to the canvas, whose buffer holds exactly what the
+        // shaders wrote. No colour space means no conversion on the way in or out.
+        source.texture.colorSpace = THREE.NoColorSpace;
         source.depthTexture = new THREE.DepthTexture(
           size.x,
           size.y,
