@@ -262,3 +262,34 @@ test('region creation is throttled by the quality budget: the impostor covers th
   assert.equal(manager.stats().persistent, list.length);
   manager.dispose();
 });
+
+test('a black hole leaving the frame keeps following the galaxy while it fades', () => {
+  // The candidate list only covers what is on screen. The entry it drops keeps
+  // fading, and keeps lensing, for a few seconds: frozen where it was last
+  // seen, it drifted away from the planet the camera follows — 6° after one
+  // second, 23° after two — and read as a black hole rushing off screen.
+  const parent = new THREE.Group();
+  const truth = new THREE.Vector3(0.4, 0, 0.1);
+  const manager = createPhenomenaManager(parent, undefined, (id, out) => {
+    assert.equal(id, body.id);
+    out.copy(truth);
+  });
+  const seen = {
+    identity: body,
+    position: truth.clone(),
+    pixels: 200,
+    distanceInRadii: 30,
+  };
+  manager.update([seen], 0, 0);
+  manager.update([seen], 0.5, 0);
+  const { group } = manager.lensSubject();
+  for (let frame = 1; frame <= 20; frame++) {
+    truth.x += 0.01;
+    manager.update([], 0.5 + frame * 0.05, 0);
+    const subject = manager.lensSubject();
+    assert.equal(subject.group, group);
+    assert.ok(subject.fade < 1);
+    assert.ok(group.position.distanceTo(truth) < 1e-12);
+  }
+  manager.dispose();
+});

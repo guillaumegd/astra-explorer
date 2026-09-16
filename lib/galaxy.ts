@@ -54,6 +54,7 @@ import {
   type BodyKind,
 } from './stellar-lod';
 import { galacticUnshear, particlePosition } from './particle-motion';
+import { frameReach, withinFrame } from './frame-reach';
 import { createSystemSpatialIndex } from './system-spatial-index';
 import {
   createLocalLights,
@@ -626,7 +627,18 @@ export function createGalaxy(
   };
   const bodyLOD = createBodyLOD(group, 8, surfaceQuality);
   const closeupVisits = createCloseupVisitTracker();
-  const phenomena = createPhenomenaManager(group, surfaceQuality);
+  const phenomena = createPhenomenaManager(group, surfaceQuality, (id, out) =>
+    particlePosition(
+      positions,
+      seeds,
+      id,
+      rotation,
+      elapsed,
+      out,
+      undefined,
+      orbits,
+    ),
+  );
   const regions = createRegionManager(group, surfaceQuality);
   group.add(regions.impostorPoints);
   const lensing = createLensing();
@@ -2114,18 +2126,21 @@ export function createGalaxy(
       viewPosition.copy(projected).applyMatrix4(camera.matrixWorldInverse);
       const depth = -viewPosition.z;
       projected.project(camera);
+      const body = catalogue.getBody(id);
       const pixels =
-        ((catalogue.getBody(id).comet?.envelope ?? bodyRadii[id]) *
-          projectionScale) /
+        ((body.comet?.envelope ?? bodyRadii[id]) * projectionScale) /
         Math.max(depth, 0.000001);
       return {
         d,
         pixels,
-        visible:
-          depth > camera.near &&
-          Math.abs(projected.x) < 1.2 &&
-          Math.abs(projected.y) < 1.2 &&
-          projected.z < 1,
+        visible: withinFrame(
+          projected,
+          depth,
+          d,
+          frameReach(body, bodyRadii[id]),
+          camera.near,
+          camera.projectionMatrix.elements,
+        ),
       };
     };
     if (distance < 3) {
