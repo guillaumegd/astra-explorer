@@ -33,12 +33,33 @@ export const NEBULA_CELL = (GALAXY_ENVELOPE.radius * 2) / 10;
 // The guide writes 1%, which over the ~79 eligible cells of this galaxy yields
 // 0.79 nebulae in total. The method is kept; only this rate is raised.
 export const NEBULA_PROBABILITY = 0.15;
+// Both region families are drawn on one ladder: a fraction of the nebula cell,
+// hence of the galactic diameter — a span × 0.2 is the rendered diameter as a
+// fraction of the disc's. Comparison points, as real diameters in light years:
+// galactic disc 100 000; H II complex 20–300 (Orion 24, Eagle 70, W51 350);
+// pulsar-bearing remnant 8–40 (Crab 11, Cassiopeia A 16). Both spans are
+// compressed and amplified for navigation, by the same factor, so the ratio
+// between the two families survives. See docs/PHENOMENES-SPATIAUX.md.
 // 0.5–1.4% of the galactic diameter: still enlarged for navigation, but
 // no longer galaxy-sized clouds (the former range occupied 7–13%).
 export const NEBULA_RADIUS_SPAN = [0.025, 0.07] as const;
 /** Of pulsar systems, so roughly 0.105% of all systems. */
 export const REMNANT_PROBABILITY = 0.15;
-export const REMNANT_SIZE_SPAN = [2, 4] as const;
+// 0.12–0.26% of the galactic diameter, so about a quarter of a nebula: the
+// astronomical ratio between the two families, on the nebulae's own ladder.
+// Used to be 2–4× the host system's envelope, which made the shell's size a
+// function of how many planets its pulsar happened to draw — a 217× spread
+// with no astronomical meaning, and remnants larger than any nebula.
+export const REMNANT_RADIUS_SPAN = [0.006, 0.013] as const;
+// A shell must still enclose the system it surrounds — rendered systems are
+// amplified far more than any region, so this clearance floor, not the span,
+// sets the size of most shells. It is a floor, not the scale law.
+export const REMNANT_HOST_MARGIN = 1.15;
+// Past this host envelope it is the rendered system that is out of scale, not
+// the shell: it stops following rather than growing to a nebula's size. About
+// one host in ten, and three in a hundred and twenty-six are then large enough
+// to leave their outermost bodies outside the shell's envelope.
+export const REMNANT_HOST_LIMIT = 0.05;
 /** Rigid rotation preserves the sphere; the margin only covers the edge fade. */
 export const REGION_ENVELOPE_MARGIN = 1.08;
 export const REGION_DETAIL_LIMIT = 2;

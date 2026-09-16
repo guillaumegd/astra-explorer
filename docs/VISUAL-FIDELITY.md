@@ -12,7 +12,7 @@ référence les répète sans dépendre du zoom ou de la sélection précédente
 | Monde glacé | `ice` | Relief, fractures, micro-grain et reflet directionnel de glace. Le reflet dépend de la normale et reste brisé par la texture ; il ne doit pas devenir un miroir uniforme. | Auto peut réduire les octaves fines, les normales par pixel et la géométrie de proximité, dans cet ordre. |
 | Relief et textures proches | `rocky-ground`, `ocean`, `volcano` | Grille rapprochée, normales de pente, grain et matériaux restent lisibles. Les côtes et la topographie ne changent pas entre paliers. | Auto baisse la grille et les octaves fines ; le relief de base, les côtes et les masques restent communs. |
 | Géante à anneaux | `ringed-gas` | Anneaux présents, fondus avec le corps et 72 segments radiaux. La silhouette est découpée dans le shader : elle ne dépend pas du nombre de segments. L’arc arrière reste masqué par la planète pendant son fondu, et les stries sont filtrées à distance au lieu de produire du moiré. | Auto abaisse graduellement à 64, 48 puis 32 segments (48 au plus lors d’une approche sur appareil contraint) ; aucun palier ne supprime les anneaux ni ne modifie leur contour. |
-| Nébuleuse et vestige | `nebula-crossing`, `remnant` | Raymarch de 16 pas, morphologie interne, filaments/poussières et profondeur lors de la traversée. Ultra rétablit aussi la priorité volumétrique de référence. | Auto répartit 12, 8, 4 puis 2 pas entre régions et utilise un imposteur doux pendant la transition, jamais un nuage plat de remplacement. |
+| Nébuleuse et vestige | `nebula-crossing`, `nebula-distant`, `remnant`, `remnant-distant` | Raymarch de 16 pas borné à la matière : la sphère de gaz pour la nébuleuse, la bande de la coque (cavité exclue) pour le vestige. Le gaz émet sans presque masquer le fond, la poussière et le choc masquent : bandes sombres devant les plis lumineux, coque creuse au bord plus brillant que le centre. Tramage par bruit bleu, sans grain. À 12 pas et plus, deux octaves fines donnent du grain au gaz proche pendant la traversée. Ultra rétablit aussi la priorité volumétrique de référence. | Auto répartit 12, 8, 4 puis 2 pas entre régions. Un palier grossier floute au lieu de granuler : feuillets et crêtes s'élargissent au pas en gardant leur quantité de lumière. Sous 8 pas, les filaments du vestige laissent place à la colonne analytique de sa coque, qui garde cavité et bord brillant. L'imposteur doux couvre l'attente d'une création et s'efface dès que l'œil entre dans le volume. |
 
 Un profil manuel (Économie, Équilibré, Élevé ou Ultra) est fixe. Seul Auto
 peut ajuster ce budget, avec le repli de sécurité explicite en cas de surcharge
@@ -32,7 +32,12 @@ Comparer chaque capture avec la dernière validation sur la même machine :
   traverse jamais, y compris aux premières images de la scène, avant que la
   planète soit opaque ;
 - les volumes conservent leur cavité, leurs filaments ou leurs poches pendant
-  la transition 16 → 12 → 8 → 4 pas.
+  la transition 16 → 12 → 8 → 4 → 2 pas ; un palier bas est plus flou, jamais
+  granuleux, et le vestige vu à distance reste un anneau au centre plus sombre.
+
+Le parcours de référence fige les volumes à 16 pas. En mode diagnostic, le
+paramètre `volumeSteps` le rejoue à un palier dégradé :
+`/?diagnostics=1&volumeSteps=4` montre ce que reçoit Auto sous contrainte.
 
 Les tests de `reference-replay` garantissent que ces quatre destinations,
 leurs identifiants et leurs poses restent disponibles. Les tests de LOD et de

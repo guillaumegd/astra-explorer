@@ -14,6 +14,7 @@ export const volumeChunk = `
   uniform vec3 uEye;
   uniform float uEnvelope, uRadius, uFade, uDensity, uTime, uSeed, uFocus;
   uniform vec3 uGlow, uFilament, uPocket;
+  uniform sampler2D uDither;
   varying vec3 vLocal;
 
   float hash13(vec3 p) {
@@ -36,15 +37,26 @@ export const volumeChunk = `
            valueNoise(p * 2.03) * 0.3 +
            valueNoise(p * 4.11) * 0.16;
   }
-  /** Entry and exit of the view ray through the bounding sphere. */
-  bool volumeSpan(vec3 rd, out float t0, out float t1) {
-    float b = dot(uEye, rd);
-    float h = b * b - (dot(uEye, uEye) - uEnvelope * uEnvelope);
+  /** Entry and exit of a ray through a sphere at the origin, clamped to t >= 0. */
+  bool sphereSpan(vec3 ro, vec3 rd, float radius, out float t0, out float t1) {
+    float b = dot(ro, rd);
+    float h = b * b - (dot(ro, ro) - radius * radius);
     if (h < 0.0) return false;
     h = sqrt(h);
     t0 = max(-b - h, 0.0);
     t1 = -b + h;
     return t1 > t0;
+  }
+  /**
+   * Per-pixel start offset for the march, from a tiled blue-noise pattern
+   * (blue-noise.ts). A white hash turned undersampling into salt-and-pepper
+   * grain, and interleaved gradient noise into a visible checkerboard, since
+   * nothing here accumulates frames. The seed shifts the tile, so two
+   * overlapping regions never dither in lockstep.
+   */
+  float marchDither() {
+    vec2 shift = floor(fract(vec2(uSeed * 0.618034, uSeed * 0.754878)) * 32.0);
+    return texture2D(uDither, (gl_FragCoord.xy + shift) / 32.0).r;
   }
   /**
    * How a framed region answers its selection: it brightens and saturates,
@@ -58,6 +70,28 @@ export const volumeChunk = `
     return max(vec3(0.0),
                mix(vec3(lum), straight, 1.0 + uFocus * 0.45)) *
            (1.0 + uFocus * 0.4);
+  }
+  /**
+   * Output of a march for the premultiplied blend: emitted light, plus how
+   * much of the background the gas hides. The occlusion is capped so a cloud
+   * stays a veil, and the light is scaled down with it, never up. The light
+   * is encoded as it is rather than divided by alpha and multiplied back:
+   * mostly transparent glow would otherwise be darkened by the output curve
+   * and lose exactly the faint, optically thin light a volume is made of.
+   */
+  // Calibrated against the former look (straight colour encoded, then
+  // multiplied by alpha): a dense veil keeps its brightness, and thin glow
+  // gains what that order used to take from it.
+  const float VOLUME_EXPOSURE = 0.5;
+  vec4 volumeOutput(vec3 light, float occlusion, float cap) {
+    float alpha = min(cap, occlusion);
+    light *= (alpha / max(occlusion, 0.0001)) * uFade;
+    alpha *= uFade;
+    if (alpha < 0.004 && max(light.r, max(light.g, light.b)) < 0.004) discard;
+    gl_FragColor = vec4(focusLift(light * VOLUME_EXPOSURE), alpha);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+    return gl_FragColor;
   }
   /** Base-space offset from the region centre; uShear is (cos, sin) of the
       centre's own rotation. p is already relative to the animated host;
