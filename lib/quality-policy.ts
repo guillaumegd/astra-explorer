@@ -24,6 +24,8 @@ export type QualityBudget = {
   ringSegments: number;
   cloudSteps: number;
   volumeSteps: number;
+  /** Stellar eruption and corona detail, 3 being the full effect. */
+  flareDetail: number;
   /** Replays the pre-performance per-region volumetric allocation in Ultra. */
   referenceVolumes: boolean;
   opticalResolution: number;
@@ -55,6 +57,7 @@ const tier = (
   opticalSteps: number,
   population: number,
   creationsPerFrame: number,
+  flareDetail: number,
 ): QualityBudget => ({
   tier: 0,
   label,
@@ -72,6 +75,7 @@ const tier = (
   opticalSteps,
   population,
   creationsPerFrame,
+  flareDetail,
 });
 
 /** Engineering starting values from the profile table of the parent issue. */
@@ -95,14 +99,15 @@ export const QUALITY_TIERS: readonly QualityBudget[] = [
     320,
     65000,
     Infinity,
+    3,
   ),
-  tier('high-60', 60, 1.5, 8e6, 10, 8, 192, 72, 6, 16, false, 512, 320, 65000, 5),
-  tier('high-entry', 60, 1.25, 5e6, 8, 8, 128, 72, 6, 16, false, 512, 320, 65000, 4),
-  tier('balanced-60', 60, 1.25, 3e6, 8, 6, 128, 72, 4, 12, false, 512, 240, 40000, 3),
-  tier('balanced-30', 30, 1, 2e6, 10, 4, 64, 72, 4, 8, false, 512, 192, 20000, 2),
-  tier('economy-30', 30, 1, 1e6, 10, 2, 64, 64, 2, 4, false, 256, 128, 20000, 2),
-  tier('economy-floor', 30, 0.8, 1e6, 10, 2, 32, 48, 0, 4, false, 256, 96, 10000, 1),
-  tier('rescue', 30, 0.7, 7e5, 12, 1, 32, 32, 0, 2, false, 128, 64, 10000, 1),
+  tier('high-60', 60, 1.5, 8e6, 10, 8, 192, 72, 6, 16, false, 512, 320, 65000, 5, 3),
+  tier('high-entry', 60, 1.25, 5e6, 8, 8, 128, 72, 6, 16, false, 512, 320, 65000, 4, 2),
+  tier('balanced-60', 60, 1.25, 3e6, 8, 6, 128, 72, 4, 12, false, 512, 240, 40000, 3, 2),
+  tier('balanced-30', 30, 1, 2e6, 10, 4, 64, 72, 4, 8, false, 512, 192, 20000, 2, 1),
+  tier('economy-30', 30, 1, 1e6, 10, 2, 64, 64, 2, 4, false, 256, 128, 20000, 2, 1),
+  tier('economy-floor', 30, 0.8, 1e6, 10, 2, 32, 48, 0, 4, false, 256, 96, 10000, 1, 0),
+  tier('rescue', 30, 0.7, 7e5, 12, 1, 32, 32, 0, 2, false, 128, 64, 10000, 1, 0),
 ].map((budget, index) => ({ ...budget, tier: index }));
 
 const RESCUE = QUALITY_TIERS.length - 1;

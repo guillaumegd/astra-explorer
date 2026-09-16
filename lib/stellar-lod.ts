@@ -4,10 +4,21 @@ import { localLighting } from './light-shaders.ts';
 import { sculptAsteroid } from './asteroid-shape.ts';
 import { createSurfaceActivity } from './surface-activity.ts';
 import { planetWeather } from './planet-weather.ts';
-import { createStellarActivity } from './stellar-activity.ts';
+import type { createStellarActivity } from './stellar-activity.ts';
 import { compileOrbitChain, orbitalOffset } from './orbits.ts';
 import { terrainNoise, terrainVertex } from './terrain-shaders.ts';
 import { QUALITY_TIERS, type QualityBudget } from './quality-policy.ts';
+
+// Coronae and eruptions only matter close to a star: their shaders stay out
+// of the first-canvas chunk and load once a star first earns a surface.
+let stellarActivity: typeof import('./stellar-activity.ts') | null = null;
+let stellarActivityLoad: Promise<void> | null = null;
+export function loadStellarActivity() {
+  stellarActivityLoad ??= import('./stellar-activity.ts').then((module) => {
+    stellarActivity = module;
+  });
+  return stellarActivityLoad;
+}
 
 /** Richest tier, creation unthrottled: the default when no controller is wired in. */
 const UNCONSTRAINED_BUDGET: QualityBudget = {
@@ -486,6 +497,7 @@ export function createBodyLOD(
           entry.atmosphere.material.uniforms.uCloudSteps.value =
             budget.cloudSteps;
         if (entry.ring) entry.ring.geometry = ringGeometryFor();
+        entry.activity?.setDetail(budget.flareDetail);
       }
       lastCreations = 0;
       const active = candidates
@@ -605,14 +617,7 @@ export function createBodyLOD(
             body.color,
           );
           if (entry.surfaceActivity) group.add(entry.surfaceActivity.mesh);
-          if (body.type === 0) {
-            entry.activity = createStellarActivity(
-              body.seed,
-              body.color,
-              body.kind,
-            );
-            group.add(entry.activity.group);
-          }
+          if (body.type === 0) void loadStellarActivity();
           if (body.type === 1 || body.type === 4) {
             const oceanMaterial = new THREE.ShaderMaterial({
               vertexShader,
@@ -739,6 +744,17 @@ export function createBodyLOD(
         if (entry.surfaceActivity) {
           entry.surfaceActivity.mesh.rotation.copy(entry.mesh.rotation);
           entry.surfaceActivity.update(activityTime, fade, pixels);
+        }
+        if (body.type === 0 && !entry.activity && stellarActivity) {
+          entry.activity = stellarActivity.createStellarActivity(
+            body.seed,
+            body.color,
+            body.kind,
+            budget.flareDetail,
+          );
+          entry.group.add(entry.activity.group);
+          if (renderer && camera)
+            void renderer.compileAsync(entry.activity.group, camera);
         }
         if (entry.activity) {
           entry.activity.group.rotation.copy(entry.mesh.rotation);

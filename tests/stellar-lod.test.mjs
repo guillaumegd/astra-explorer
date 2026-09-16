@@ -16,6 +16,7 @@ import {
   ringGeometryRadii,
   RING_INNER,
   RING_OUTER,
+  loadStellarActivity,
 } from '../lib/stellar-lod.ts';
 import { QUALITY_TIERS } from '../lib/quality-policy.ts';
 import { closeupBudget } from '../lib/closeup-policy.ts';
@@ -576,5 +577,34 @@ test('cloud step budget updates every frame on already-created atmospheres', () 
   quality.budget = { ...quality.budget, cloudSteps: 0 };
   lod.update([candidate], 0.1, 0);
   assert.equal(atmosphere.material.uniforms.uCloudSteps.value, 0);
+  lod.dispose();
+});
+
+test('flare detail follows the budget on stars that are already visible', async () => {
+  await loadStellarActivity();
+  const parent = new THREE.Group();
+  const quality = { budget: { ...QUALITY_TIERS[0] } };
+  const lod = createBodyLOD(parent, MAX_DETAILED_BODIES, quality);
+  const star = Array.from({ length: 200 }, (_, i) => describeBody(i)).find(
+    (b) => b.type === 0 && b.capabilities.renderClass === 'ordinary',
+  );
+  assert.ok(star, 'fixture assumption: at least one ordinary star');
+  const candidate = {
+    identity: star,
+    position: new THREE.Vector3(),
+    pixels: 300,
+    distanceInRadii: 5,
+    cameraPosition: new THREE.Vector3(0, 0, 5),
+  };
+  lod.update([candidate], 0, 0);
+  const activity = parent.children[0].children.find(
+    (child) => child.isGroup && child.children[0]?.material?.uniforms?.uOctaves,
+  );
+  assert.ok(activity);
+  const octaves = activity.children[0].material.uniforms.uOctaves;
+  assert.equal(octaves.value, 3);
+  quality.budget = QUALITY_TIERS.at(-1);
+  lod.update([candidate], 0.1, 0);
+  assert.equal(octaves.value, 1);
   lod.dispose();
 });

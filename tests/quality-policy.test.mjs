@@ -49,6 +49,7 @@ test('the budget contract is complete and ordered from rich to modest', () => {
     'opticalSteps',
     'population',
     'creationsPerFrame',
+    'flareDetail',
   ];
   QUALITY_TIERS.forEach((budget, index) => {
     assert.equal(budget.tier, index);
