@@ -54,6 +54,11 @@ export function sampleOpening(elapsed: number, reducedMotion = false) {
 // element becomes legible instead.
 const ONSET = 0.4;
 const APERTURE_ONSET = 0.2;
+// The title's notes read early even anchored to their own fade start: at this
+// pace the first hint of a letter is on screen before the ear places the note
+// on it. Measured by ear on the opening, in the elapsed milliseconds the
+// player counts, so it is not rescaled by PACE.
+const LETTER_DELAY = 250;
 const onset = (range: readonly [number, number], fraction: number) =>
   range[0] + (range[1] - range[0]) * fraction;
 
@@ -67,9 +72,10 @@ export function openingCues(reducedMotion = false) {
     // the next letter's beat because these slow fades overlap.
     // Reduced motion brings the whole title in at once, so it earns one cue, not six.
     letters: reducedMotion
-      ? [at(onset(REDUCED_LETTERS, ONSET))]
-      : Array.from({ length: TITLE_PARTS }, (_, index) =>
-          at(letterStart(index)),
+      ? [at(onset(REDUCED_LETTERS, ONSET)) + LETTER_DELAY]
+      : Array.from(
+          { length: TITLE_PARTS },
+          (_, index) => at(letterStart(index)) + LETTER_DELAY,
         ),
     invitation: at(onset(INVITATION_IN, ONSET)),
     credit: at(onset(CREDIT_IN, ONSET)),
