@@ -13,8 +13,12 @@ import {
   selectStellarLevel,
   surfaceVisibility,
   surfaceDetailFor,
+  ringGeometryRadii,
+  RING_INNER,
+  RING_OUTER,
 } from '../lib/stellar-lod.ts';
 import { QUALITY_TIERS } from '../lib/quality-policy.ts';
+import { closeupBudget } from '../lib/closeup-policy.ts';
 
 test('LOD uses hysteresis in both directions', () => {
   assert.equal(selectStellarLevel(79, 0), 0);
@@ -458,6 +462,69 @@ test('ring geometry follows the active quality profile without recreating the bo
   quality.budget = QUALITY_TIERS[5];
   lod.update([candidate], 0.1, 0);
   assert.equal(ring.geometry.parameters.thetaSegments, 64);
+  lod.dispose();
+});
+
+test('every ring resolution contains the same drawn annulus', () => {
+  const resolutions = new Set([
+    ...QUALITY_TIERS.map((tier) => tier.ringSegments),
+    ...QUALITY_TIERS.map((tier) => closeupBudget(tier, true, 1).ringSegments),
+  ]);
+  for (const segments of resolutions) {
+    const { inner, outer } = ringGeometryRadii(segments);
+    // Chord midpoints are the polygon's closest points to the centre.
+    assert.ok(outer * Math.cos(Math.PI / segments) >= RING_OUTER - 1e-12);
+    assert.ok(inner <= RING_INNER);
+  }
+});
+
+test('a selected ringed giant keeps its ring through every profile transition', () => {
+  let ringed;
+  for (let id = 0; id < 2000 && !ringed; id++) {
+    const body = describeBody(id);
+    if (body.rings) ringed = body;
+  }
+  assert.ok(ringed, 'fixture assumption: at least one ringed body in range');
+  const parent = new THREE.Group();
+  const quality = { budget: QUALITY_TIERS[0] };
+  const lod = createBodyLOD(parent, MAX_DETAILED_BODIES, quality);
+  const candidate = {
+    identity: ringed,
+    position: new THREE.Vector3(),
+    pixels: 200,
+    distanceInRadii: 5,
+  };
+  const ladder = [...QUALITY_TIERS.keys()];
+  const sweep = [...ladder, ...ladder.reverse()];
+  let time = 0;
+  const ring = () =>
+    parent.children[0].children.find(
+      (mesh) => mesh.geometry?.type === 'RingGeometry',
+    );
+  lod.update([candidate], time, 0);
+  const first = ring();
+  for (const index of sweep) {
+    quality.budget = QUALITY_TIERS[index];
+    // The engine hands the LOD at most detailBodies candidates; the selected
+    // body sorts first, so even the rescue tier keeps it.
+    lod.update(
+      [candidate].slice(0, quality.budget.detailBodies),
+      (time += 0.1),
+      0,
+    );
+    assert.equal(ring(), first, 'the ring mesh is never rebuilt or dropped');
+    assert.ok(parent.children[0].visible);
+    const { thetaSegments, outerRadius } = first.geometry.parameters;
+    assert.equal(thetaSegments, quality.budget.ringSegments);
+    assert.ok(
+      outerRadius * Math.cos(Math.PI / thetaSegments) >= RING_OUTER - 1e-12,
+    );
+    assert.equal(
+      first.material.uniforms.uFade.value,
+      parent.children[0].children[0].material.uniforms.uFade.value,
+    );
+  }
+  assert.ok(first.material.uniforms.uFade.value > 0.9);
   lod.dispose();
 });
 
