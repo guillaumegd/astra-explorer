@@ -54,7 +54,16 @@ import {
   type BodyKind,
 } from './stellar-lod';
 import { galacticUnshear, particlePosition } from './particle-motion';
-import { createSystemSpatialIndex } from './system-spatial-index';
+import {
+  createSystemSpatialIndex,
+  type IndexedSystem,
+} from './system-spatial-index';
+import {
+  createLocalPrecision,
+  localPrecisionGLSL,
+  LOCAL_REACH,
+  selectLocalSystems,
+} from './local-precision';
 import {
   createLocalLights,
   mixLocalLights,
@@ -137,6 +146,7 @@ const vertexShader = `
   attribute vec4 aOrbit1;
   attribute vec4 aOrbit2;
   ${orbitalGLSL}
+  ${localPrecisionGLSL}
   attribute float aSize;
   attribute float aSeed;
   attribute float aId;
@@ -171,6 +181,8 @@ const vertexShader = `
     vec3 orbitalDelta=orbitPosition(aOrbit0,uRotation,aEccentricity.x)+orbitPosition(aOrbit1,uRotation,aEccentricity.y)+orbitPosition(aOrbit2,uRotation,aEccentricity.z);
     p += orbitalDelta;
     vLightDirection=mat3(modelViewMatrix)*(length(orbitalDelta)>0.?-orbitalDelta:vec3(1.,0.,0.));
+    // Camera-relative from here on: see lib/local-precision.ts.
+    p = anchorToCamera(aId, p);
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
     gl_Position = projectionMatrix * mv;
     float physicalRadius = aBodyRadius * uProjectionScale / max(-mv.z, 0.0000001);
@@ -482,6 +494,11 @@ export function createGalaxy(
   systemIndex.sync(catalogue.systems);
   const nearbySystemIds: number[] = [];
   const unshearedCamera = new THREE.Vector3();
+  const localPrecision = createLocalPrecision();
+  const localOrigin = new THREE.Vector3(),
+    unshearedOrigin = new THREE.Vector3(),
+    localCandidates: IndexedSystem[] = [],
+    localSystems: IndexedSystem[] = [];
   const replacements = Array.from(
     { length: 12 },
     () => new THREE.Vector2(-1, 0),
@@ -497,6 +514,7 @@ export function createGalaxy(
         .getParameter(renderer.getContext().ALIASED_POINT_SIZE_RANGE)[1],
     },
     uReplacements: { value: replacements },
+    ...localPrecision.uniforms,
     uTime: { value: 0 },
     uRotation: { value: 0 },
     uPixelRatio: { value: renderer.getPixelRatio() },
@@ -576,7 +594,8 @@ export function createGalaxy(
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  group.add(new THREE.Points(dustGeometry, dustMaterial));
+  const dust = new THREE.Points(dustGeometry, dustMaterial);
+  group.add(dust);
   // Radial sprite adds an extended photographic halo around the central cluster.
   const haloCanvas = document.createElement('canvas');
   haloCanvas.width = haloCanvas.height = 128;
@@ -656,9 +675,13 @@ export function createGalaxy(
     uniforms.uProjectionScale.value = 256;
     uniforms.uPixelRatio.value = cube.renderTarget.width / 512;
     uniforms.uContextStrength.value = 0;
+    // The sky copies stay at the group origin; directional capture does not
+    // need the camera-relative path.
+    const restorePrecision = localPrecision.suspend();
     try {
       regions.captureSky(skyGroup, () => cube.update(renderer, skyScene));
     } finally {
+      restorePrecision();
       uniforms.uProjectionScale.value = projection;
       uniforms.uPixelRatio.value = ratio;
       uniforms.uContextStrength.value = strength;
@@ -764,6 +787,9 @@ export function createGalaxy(
   const pickPoints = new THREE.Points(geometry, pickMaterial);
   pickPoints.frustumCulled = false;
   pickGroup.add(pickPoints);
+  // Every points object drawn with the shared vertex shader, the sky copies
+  // excepted, sits at the camera-relative origin of lib/local-precision.ts.
+  const cameraAnchored = [stars, impostors, dust, pointDepth, pickPoints];
   let pickTarget: THREE.WebGLRenderTarget | null = null;
   // The projection is cropped to this target. A scissor on a full-window
   // target saves fragments but still allocates and clears the whole texture.
@@ -2018,6 +2044,47 @@ export function createGalaxy(
     camera.updateProjectionMatrix();
     camera.lookAt(cameraTarget);
     camera.updateMatrixWorld();
+    localOrigin.copy(camera.position);
+    group.worldToLocal(localOrigin);
+    for (const points of cameraAnchored) points.position.copy(localOrigin);
+    galacticUnshear(
+      localOrigin.x,
+      localOrigin.y,
+      localOrigin.z,
+      rotation,
+      unshearedOrigin,
+    );
+    selectLocalSystems(
+      systemIndex.systemsNear(
+        unshearedOrigin.x,
+        unshearedOrigin.y,
+        unshearedOrigin.z,
+        LOCAL_REACH,
+        localCandidates,
+      ),
+      unshearedOrigin.x,
+      unshearedOrigin.y,
+      unshearedOrigin.z,
+      settings.density,
+      selected?.rootId ?? null,
+      localSystems,
+    );
+    localPrecision.update(
+      localSystems,
+      localOrigin,
+      settings.density,
+      (id, out) =>
+        particlePosition(
+          positions,
+          seeds,
+          id,
+          rotation,
+          elapsed,
+          out,
+          undefined,
+          orbits,
+        ),
+    );
     if (now - lastPointingReport > (diagnostics ? 200 : 500)) {
       lastPointingReport = now;
       const r = camera.position.length();
@@ -2846,6 +2913,7 @@ export function createGalaxy(
       regions.dispose();
       lensing.dispose();
       pointDepthMaterial.dispose();
+      localPrecision.dispose();
       debris.dispose();
       marker.remove();
       pickMaterial.dispose();
