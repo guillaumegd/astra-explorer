@@ -289,3 +289,48 @@ export function nextDriftStep(
     },
   };
 }
+
+/**
+ * The occasional descent over relief, in seconds after arrival: hold the
+ * framing while orbiting, glide down, hover over the terrain, then rise
+ * again. Slow on purpose — contemplative, never a swoop.
+ */
+export const DRIFT_DESCENT = {
+  hold: 6,
+  descend: 22,
+  hover: 14,
+  ascend: 18,
+  rest: 8,
+} as const;
+export const DRIFT_DESCENT_SECONDS = Object.values(DRIFT_DESCENT).reduce(
+  (sum, seconds) => sum + seconds,
+  0,
+);
+/** Only for bodies with relief; a stop in two, so it stays an event. */
+export const DRIFT_DESCENT_CHANCE = 0.5;
+
+/** Low enough for the surface view to lean toward the horizon, never into the ground. */
+export const descentLowRatio = (minimumRatio: number) =>
+  Math.max(minimumRatio + 0.05, 1.1);
+
+const smooth = (t: number) => {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+};
+// Distance ratios glide in log space: the last metres take as long as the first.
+const glide = (from: number, to: number, t: number) =>
+  Math.exp(Math.log(from) + (Math.log(to) - Math.log(from)) * smooth(t));
+
+/** Camera distance, as a multiple of the body radius, `seconds` into the descent. */
+export function descentRatio(
+  seconds: number,
+  from: number,
+  low: number,
+  high: number,
+) {
+  const { hold, descend, hover, ascend } = DRIFT_DESCENT;
+  if (seconds < hold) return from;
+  if (seconds < hold + descend) return glide(from, low, (seconds - hold) / descend);
+  if (seconds < hold + descend + hover) return low;
+  return glide(low, high, (seconds - hold - descend - hover) / ascend);
+}

@@ -133,3 +133,33 @@ test('an empty world falls back to a galaxy breath without throwing', () => {
     state = next.state;
   }
 });
+
+test('the descent over relief is slow, continuous and never grazes the ground', async () => {
+  const {
+    DRIFT_DESCENT,
+    DRIFT_DESCENT_SECONDS,
+    descentLowRatio,
+    descentRatio,
+  } = await import('../lib/drift.ts');
+  const from = 4.2;
+  const low = descentLowRatio(1.018);
+  const high = 2.6;
+  assert.ok(low >= 1.1);
+  assert.equal(descentLowRatio(1.12), 1.12 + 0.05);
+  assert.equal(descentRatio(0, from, low, high), from);
+  assert.ok(Math.abs(descentRatio(DRIFT_DESCENT_SECONDS, from, low, high) - high) < 1e-9);
+  let previous = from;
+  let minimum = Infinity;
+  for (let t = 0; t <= DRIFT_DESCENT_SECONDS; t += 0.05) {
+    const ratio = descentRatio(t, from, low, high);
+    // No jumps: at most a few percent of distance per frame-sized step.
+    assert.ok(Math.abs(Math.log(ratio / previous)) < 0.02, `t=${t}`);
+    minimum = Math.min(minimum, ratio);
+    previous = ratio;
+  }
+  assert.ok(Math.abs(minimum - low) < 1e-9);
+  // The hover really holds at the low point.
+  const hoverStart = DRIFT_DESCENT.hold + DRIFT_DESCENT.descend;
+  assert.equal(descentRatio(hoverStart + 1, from, low, high), low);
+  assert.ok(DRIFT_DESCENT_SECONDS >= 60);
+});

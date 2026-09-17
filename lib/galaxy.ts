@@ -170,6 +170,7 @@ const vertexShader = `
   attribute float aSystemRoot;
   attribute float aPhenomenon;
   varying float vPhenomenon;
+  varying float vSign;
   attribute float aBodyRadius;
   attribute float aBodyType;
   attribute vec3 aBodyColor;
@@ -214,6 +215,9 @@ const vertexShader = `
     vDiscScale=min(1.0,diameter/gl_PointSize);
     vBodyType=aBodyType;vBodyColor=aBodyColor;
     vPhenomenon=aPhenomenon;
+    // Far signs only while the body is a speck: they must never dress a
+    // phenomenon the visitor can already make out.
+    vSign=1.0-smoothstep(4.0,8.0,gl_PointSize/uPixelRatio);
     vId = aId;
     vFade = 1.0;
     for(int i=0;i<12;i++) { if(abs(uReplacements[i].x-aId)<0.1) vFade = 1.0-uReplacements[i].y; }
@@ -231,6 +235,7 @@ const fragmentShader = `
   varying float vRadius;
   varying float vSeed;
   varying float vPhenomenon;
+  varying float vSign;
   uniform float uSigns;
   void main() {
     float d = length(gl_PointCoord - 0.5) * 2.0;
@@ -245,15 +250,16 @@ const fragmentShader = `
     if (vPhenomenon > 1.5 && vPhenomenon < 2.5) {
       // A pulsar's beam crossing the line of sight: a brief flash every few seconds.
       float period = 4.0 + 6.0 * fract(vSeed * 7.13);
-      float beam = pow(max(0.0, cos(6.2831853 * (uTime / period + vSeed))), 48.0) * uSigns;
-      shimmer *= 1.0 + beam * 2.4;
+      float beam = pow(max(0.0, cos(6.2831853 * (uTime / period + vSeed))), 48.0) * uSigns * vSign;
+      // Strong, because it only ever lights a one- or two-pixel speck.
+      shimmer *= 1.0 + beam * 6.0;
       color = mix(color, vec3(0.84, 0.92, 1.0), beam);
     } else if (vPhenomenon > 0.5 && vPhenomenon < 1.5) {
-      // A black hole: a darker heart inside a thin, warm, slowly wavering rim.
-      float rim = smoothstep(0.1, 0.28, d) * (1.0 - smoothstep(0.32, 0.6, d));
-      glow = glow * smoothstep(0.05, 0.3, d) * 0.6 + rim * 0.75;
-      shimmer = 0.9 + 0.1 * sin(uTime * 0.9 + vSeed * 40.0) * uSigns;
-      color = mix(color, vec3(1.0, 0.74, 0.46), 0.55);
+      // A black hole: a warmer, dimmer, slowly wavering speck. No ring: drawn
+      // as a ring it read as a pulsar once it grew past a few pixels.
+      glow *= 1.0 - 0.3 * vSign;
+      shimmer = mix(shimmer, 0.85 + 0.15 * sin(uTime * 0.9 + vSeed * 40.0) * uSigns, vSign);
+      color = mix(color, vec3(1.0, 0.72, 0.44), 0.6 * vSign);
     }
     gl_FragColor = vec4(color, glow * shimmer * uOpacity * vFade * (1.0-vSurface));
   }
@@ -327,6 +333,8 @@ export function createGalaxy(
   const driftScale = diagnostics
     ? Number(searchParams.get('driftScale')) || 1
     : 1;
+  // Diagnostics only: every eligible planet stop plays its descent.
+  const forceDescent = !!diagnostics && searchParams.get('driftDescent') === '1';
   let lastRendered: number | null = null;
   let messages = initialMessages;
   let firstFrameRendered = false;
@@ -1456,9 +1464,18 @@ export function createGalaxy(
     phase: 'arriving' | 'dwelling';
     clock: number;
     dwell: number;
+    /** Distance ratios of an occasional descent over relief, when one plays. */
+    descent: { from: number; low: number; high: number } | null;
   } | null = null;
   const DRIFT_ARRIVAL_TIMEOUT = 14;
-  const DRIFT_AZIMUTH_SPEED = 0.02;
+  // About seventy seconds a turn: every stop shows its body from several sides.
+  const DRIFT_ORBIT_SPEED = 0.09;
+  // A slow rise and fall of the viewpoint, so the orbit is not a flat circle.
+  const DRIFT_ELEVATION_SWING = 0.18;
+  const DRIFT_ELEVATION_PERIOD = 80;
+  // Near the ground the camera rides the surface: glide along it more slowly.
+  const DRIFT_SURFACE_SPEED = 0.035;
+  const spinAxis = new THREE.Vector3(0, 1, 0);
   const visitBody = (id: number) => {
     const origin = focus.clone();
     const from = selected;
@@ -1481,6 +1498,8 @@ export function createGalaxy(
     drift.type = step.type;
     drift.phase = 'arriving';
     drift.clock = 0;
+    drift.descent = null;
+    setHostData('driftDescent', '');
     drift.dwell =
       driftDwellSeconds(step.type, Math.random, reduced.matches) * driftScale;
     if (step.type === 'galaxy') overview();
@@ -1502,14 +1521,50 @@ export function createGalaxy(
       if (!settled && drift.clock < DRIFT_ARRIVAL_TIMEOUT) return;
       drift.phase = 'dwelling';
       drift.clock = 0;
-      // Half the planet stops skim low over the surface instead of framing it.
-      if (drift.type === 'planet' && selected && Math.random() < 0.5)
-        targetDistance =
-          selected.radius * Math.max(minimumOrbitRatio(selected), 1.6);
+      // Now and then, a body with relief earns a slow descent over its terrain.
+      if (
+        driftModule &&
+        drift.type === 'planet' &&
+        selected?.capabilities.hasSolidSurface &&
+        !reduced.matches &&
+        (forceDescent || Math.random() < driftModule.DRIFT_DESCENT_CHANCE)
+      ) {
+        const low = driftModule.descentLowRatio(minimumOrbitRatio(selected));
+        drift.descent = {
+          from: Math.max(distance / selected.radius, low),
+          low,
+          high: Math.max(2.6, low * 1.5),
+        };
+        drift.dwell = driftModule.DRIFT_DESCENT_SECONDS * driftScale;
+        setHostData('driftDescent', selected.kind);
+      }
       return;
     }
-    if (!travel && !surfaceAnchor && !reduced.matches)
-      azimuth += dt * DRIFT_AZIMUTH_SPEED;
+    if (drift.descent && selected && driftModule)
+      targetDistance =
+        selected.radius *
+        driftModule.descentRatio(
+          drift.clock / driftScale,
+          drift.descent.from,
+          drift.descent.low,
+          drift.descent.high,
+        );
+    if (!travel && !reduced.matches) {
+      if (surfaceAnchor)
+        surfaceAnchor.applyAxisAngle(spinAxis, dt * DRIFT_SURFACE_SPEED);
+      else {
+        azimuth += dt * DRIFT_ORBIT_SPEED;
+        elevation = THREE.MathUtils.clamp(
+          elevation +
+            dt *
+              DRIFT_ELEVATION_SWING *
+              ((2 * Math.PI) / DRIFT_ELEVATION_PERIOD) *
+              Math.cos((wallTime * 2 * Math.PI) / DRIFT_ELEVATION_PERIOD),
+          -1.2,
+          1.2,
+        );
+      }
+    }
     if (drift.clock >= drift.dwell) takeDriftStep();
   };
   const startDrift = () => {
@@ -1520,6 +1575,7 @@ export function createGalaxy(
       phase: 'dwelling',
       clock: 0,
       dwell: 0,
+      descent: null,
     };
     onDrift(true);
     invalidateRender('drift');
