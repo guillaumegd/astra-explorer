@@ -39,3 +39,72 @@ test('destination is fully centered before its apparent size starts growing', ()
     assert.equal(actualDistance, flight.distance);
   }
 });
+
+test('the drift flight lingers where the departing and arriving bodies are seen', async () => {
+  const { sampleContemplativeTravel, contemplativeTravelSeconds } = await import(
+    '../lib/drift.ts'
+  );
+  const start = 0.0004,
+    cruise = 15,
+    end = 0.0003;
+  const sample = (t) => sampleContemplativeTravel(t, start, cruise, end);
+  assert.ok(Math.abs(sample(0).distance - start) < 1e-12);
+  assert.ok(Math.abs(sample(1).distance - end) < 1e-12);
+  assert.equal(sample(0).progress, 0);
+  assert.equal(sample(1).progress, 1);
+  // The body stays a disc (within ~20x its framing distance) for a real share
+  // of the flight at both ends, not a few frames.
+  const seen = (d, ref) => d < ref * 20;
+  let departing = 0,
+    arriving = 0;
+  let previous = sample(0);
+  for (let i = 1; i <= 1000; i++) {
+    const t = i / 1000;
+    const current = sample(t);
+    if (seen(current.distance, start) && t < 0.3) departing++;
+    if (seen(current.distance, end) && t > 0.5) arriving++;
+    // Continuous: no jump in log distance between samples.
+    assert.ok(Math.abs(Math.log(current.distance / previous.distance)) < 0.2, `t=${t}`);
+    assert.ok(current.progress >= previous.progress);
+    previous = current;
+  }
+  assert.ok(departing / 1000 > 0.1, `departing ${departing}`);
+  assert.ok(arriving / 1000 > 0.2, `arriving ${arriving}`);
+  // The pan happens at cruise distance, between retreat and approach.
+  const retreatEnd = (0.78 * Math.log(cruise / start)) /
+    (Math.log(cruise / start) + Math.log(cruise / end));
+  assert.equal(sample(retreatEnd - 1e-6).progress, 0);
+  assert.ok(Math.abs(sample(retreatEnd + 0.11).distance - cruise) < 1e-9);
+  assert.equal(sample(retreatEnd + 0.22).progress, 1);
+  const seconds = contemplativeTravelSeconds(start, cruise, end);
+  assert.ok(seconds >= 8 && seconds <= 16);
+  assert.equal(contemplativeTravelSeconds(1, 1.1, 1), 8);
+});
+
+test('a drift flight spends no time on phases it does not need', async () => {
+  const { sampleContemplativeTravel } = await import('../lib/drift.ts');
+  // Zooming out to a system view already centred: no pan, the whole flight zooms.
+  const out = (t) => sampleContemplativeTravel(t, 0.0004, 0.27, 0.27, 0);
+  assert.ok(out(0.5).distance > 0.0004 && out(0.5).distance < 0.27);
+  assert.ok(out(0.9).distance < 0.27);
+  assert.ok(Math.abs(out(1).distance - 0.27) < 1e-9);
+  // No pan phase: the view stays on the departing body until it is halfway out.
+  const halfway = Math.sqrt(0.0004 * 0.27);
+  for (let i = 0; i <= 100; i++) {
+    const sample = out(i / 100);
+    if (sample.distance < halfway) assert.equal(sample.progress, 0, `t=${i / 100}`);
+  }
+  assert.equal(out(1).progress, 1);
+  // Closing in, the recentring is complete by halfway.
+  const into2 = (t) => sampleContemplativeTravel(t, 29.4, 29.4, 0.3, 0);
+  for (let i = 0; i <= 100; i++) {
+    const sample = into2(i / 100);
+    if (sample.distance < Math.sqrt(29.4 * 0.3)) assert.equal(sample.progress, 1);
+  }
+  // Zooming in from cruise distance: no idle retreat before the approach.
+  const into = (t) => sampleContemplativeTravel(t, 0.27, 0.27, 0.0001);
+  assert.ok(into(0.35).distance < 0.27);
+  assert.ok(Math.abs(into(1).distance - 0.0001) < 1e-12);
+  // The zoom out lingers early, where the departing body is still a disc.
+  assert.ok(Math.log(out(0.3).distance / 0.0004) < Math.log(0.27 / 0.0004) * 0.2);
+});

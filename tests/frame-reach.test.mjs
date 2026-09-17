@@ -11,14 +11,12 @@ const holes = catalogue.bodies.filter((b) => b.kind === 'black-hole');
 
 test('a black hole reaches the frame as far as its lens blends out', () => {
   // The same zone the composite fades over, in horizon radii.
-  assert.ok(lensingFragment.includes('float zone=max(uOuter*2.,uJets*40.);'));
-  assert.ok(holes.some((b) => b.phenomenon.jets));
-  assert.ok(holes.some((b) => !b.phenomenon.jets));
+  assert.ok(lensingFragment.includes('float zone=uOuter*2.;'));
+  // Black holes have no jets: they read as pulsars.
+  assert.ok(holes.every((b) => !('jets' in b.phenomenon)));
+  assert.ok(!lensingFragment.includes('uJets'));
   for (const hole of holes) {
-    const zone = Math.max(
-      (hole.phenomenon.diskOuter / hole.radius) * 2,
-      hole.phenomenon.jets ? 40 : 0,
-    );
+    const zone = (hole.phenomenon.diskOuter / hole.radius) * 2;
     assert.ok(
       Math.abs(
         frameReach(hole, hole.phenomenon.envelope) - zone * hole.radius,
@@ -30,7 +28,7 @@ test('a black hole reaches the frame as far as its lens blends out', () => {
 });
 
 test('a lens stays in the frame until its whole reach has left it', () => {
-  const hole = holes.find((b) => !b.phenomenon.jets);
+  const [hole] = holes;
   const reach = frameReach(hole, hole.phenomenon.envelope);
   const camera = new THREE.PerspectiveCamera(48, 1.6, 0.000001, 180);
   camera.updateMatrixWorld();

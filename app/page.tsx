@@ -33,6 +33,14 @@ import { type BodyIdentity } from '@/lib/stellar-lod';
 import { catalogue } from '@/lib/catalogue/runtime';
 import type { RegionDefinition } from '@/lib/catalogue/types';
 import { localSystemRoot } from '@/lib/system-framing';
+import {
+  bodyDiscoveryKey,
+  isRevealAll,
+  loadDiscoveries,
+  regionDiscoveryKey,
+  saveDiscoveries,
+  type DiscoveryKey,
+} from '@/lib/discoveries';
 // The engine (three.js + lib/galaxy.ts) and the ambient audio are not
 // needed to paint the shell: they load as their own chunk, in parallel,
 // once the mount effect runs, instead of blocking the very first render.
@@ -53,6 +61,18 @@ import {
 import { formatNumber, locales, localeNames } from '@/lib/i18n';
 import { useLocale } from '@/lib/i18n/use-locale';
 import type { Dictionary } from '@/lib/i18n/types';
+
+/** The kind a notebook key names, as the discovery notice announces it. */
+function discoveryLabel(key: DiscoveryKey, t: Dictionary): string | null {
+  if (key.startsWith('region:')) {
+    const regionId = key.slice('region:'.length);
+    const nebula = catalogue.listNebulae().some((r) => r.regionId === regionId);
+    return nebula ? t.regions.nebula : t.regions.remnant;
+  }
+  const body = catalogue.resolveReference(key.slice('body:'.length));
+  if (!body) return null;
+  return body.binary ? t.binary.label : t.bodyKinds[body.kind];
+}
 
 function buildGalaxyMessages(t: Dictionary): GalaxyMessages {
   return {
@@ -172,6 +192,19 @@ export default function Home() {
   const languageButton = useRef<HTMLButtonElement>(null);
   const immersiveButton = useRef<HTMLButtonElement>(null);
   const [notice, setNotice] = useState('');
+  const [drifting, setDrifting] = useState(false);
+  // Read lazily like the quality profile: the notebook is never part of the
+  // first paint, so the server's empty set cannot disagree with it.
+  const [discoveries, setDiscoveries] = useState<ReadonlySet<DiscoveryKey>>(
+    () => loadDiscoveries(),
+  );
+  const [revealAll] = useState(
+    () => typeof window !== 'undefined' && isRevealAll(window.location.search),
+  );
+  const [discoveryNotice, setDiscoveryNotice] = useState<{
+    key: DiscoveryKey;
+    label: string;
+  } | null>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const panelSurface = useRef<HTMLDivElement>(null);
@@ -290,13 +323,14 @@ export default function Home() {
             (body) => {
               setSelected(body);
             },
-            (value, kind, pulse, binaryAngle, region) =>
+            (value, kind, pulse, binaryAngle, region, distant) =>
               soundtrack.current?.setProximity(
                 value,
                 kind,
                 pulse,
                 binaryAngle,
                 region,
+                distant,
               ),
             (view) => {
               setSystemView(view);
@@ -314,6 +348,17 @@ export default function Home() {
               setEconomyActive(economy);
             },
             setQualityStatus,
+            (key) => {
+              setDiscoveries((current) => {
+                if (current.has(key)) return current;
+                const next = new Set(current).add(key);
+                saveDiscoveries(next);
+                return next;
+              });
+              const label = discoveryLabel(key, tRef.current);
+              if (label) setDiscoveryNotice({ key, label });
+            },
+            setDrifting,
           );
           // The import resolves after React effects have run, so apply the
           // already-selected persisted profile to this newly created engine.
@@ -375,7 +420,8 @@ export default function Home() {
           dock.current?.contains(document.activeElement) &&
           document.activeElement?.matches(':focus-visible');
         if (!panel && !focusedControl && !opening) setIdle(true);
-      }, 10000);
+        // The drift is for watching: its interface steps aside much sooner.
+      }, drifting ? 2000 : 10000);
     };
     wake();
     const events = [
@@ -390,7 +436,7 @@ export default function Home() {
       clearTimeout(timer);
       events.forEach((type) => window.removeEventListener(type, wake));
     };
-  }, [panel, opening]);
+  }, [panel, opening, drifting]);
   // A tab left for another goes quiet the same way the mute button does, and
   // comes back the same way. A visitor who muted on purpose stays muted.
   useEffect(() => {
@@ -429,10 +475,22 @@ export default function Home() {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !panel && !event.defaultPrevented)
         setImmersive(false);
+      // After a click on Découvrir focus sits on the button, not the scene:
+      // the drift's arrows must still work. The scene handles its own first
+      // and marks the event, so a focused canvas never skips twice.
+      if (
+        drifting &&
+        !panel &&
+        !event.defaultPrevented &&
+        (event.key === 'ArrowRight' || event.key === 'ArrowLeft')
+      ) {
+        event.preventDefault();
+        engine.current?.nextBody(event.key === 'ArrowRight' ? 1 : -1);
+      }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [panel]);
+  }, [panel, drifting]);
   useEffect(() => {
     if (panel) panelHeading.current?.focus();
   }, [panel]);
@@ -441,6 +499,14 @@ export default function Home() {
     const timer = setTimeout(() => setNotice(''), 6000);
     return () => clearTimeout(timer);
   }, [notice]);
+  useEffect(() => {
+    engine.current?.setDiscoveries(discoveries);
+  }, [discoveries, ready]);
+  useEffect(() => {
+    if (!discoveryNotice) return;
+    const timer = setTimeout(() => setDiscoveryNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [discoveryNotice]);
   useEffect(() => {
     if (!dock.current) return;
     const observer = new ResizeObserver(() =>
@@ -515,12 +581,14 @@ export default function Home() {
   const rareDestinations = useMemo(() => {
     const fromBody = (body: BodyIdentity) => ({
       id: body.bodyId,
+      key: bodyDiscoveryKey(body, catalogue.getSystem(body.systemId)),
       name: body.name,
       kindLabel: t.bodyKinds[body.kind],
       open: () => engine.current?.inspectBody(body.id),
     });
     const fromRegion = (region: RegionDefinition, kindLabel: string) => ({
       id: region.regionId,
+      key: regionDiscoveryKey(region),
       name: region.name,
       kindLabel,
       open: () => engine.current?.frameRegion(region.regionId),
@@ -568,6 +636,11 @@ export default function Home() {
       },
     ];
   }, [density, t]);
+  const foundCount = rareDestinations.reduce(
+    (sum, { all }) =>
+      sum + all.filter((entry) => discoveries.has(entry.key!)).length,
+    0,
+  );
   // A pulsar reaches its own remnant, and the remnant reaches back.
   const selectedRemnant = useMemo(
     () =>
@@ -591,7 +664,7 @@ export default function Home() {
     panel === 'language' ? t.language.label : panel ? t.controls[panel] : '';
   return (
     <main
-      className={`observatory ${hidden ? 'is-quiet' : ''} ${openingVisible ? 'is-opening' : ''} ${economyActive ? 'is-economy' : ''}`}
+      className={`observatory ${hidden ? 'is-quiet' : ''} ${openingVisible ? 'is-opening' : ''} ${economyActive ? 'is-economy' : ''} ${drifting ? 'is-drifting' : ''}`}
     >
       <div
         ref={mount}
@@ -664,17 +737,25 @@ export default function Home() {
               variant="ghost"
               className="destination-control"
               onClick={() => {
-                if (selected) {
+                if (drifting) engine.current?.stopDrift();
+                else if (selected) {
                   setPanel(null);
                   engine.current?.overview();
-                } else engine.current?.approach();
+                } else engine.current?.startDrift();
               }}
+              aria-pressed={drifting}
               aria-label={
-                selected ? t.inspector.backToGalaxy : t.inspector.discoverBody
+                drifting
+                  ? t.inspector.stopDrift
+                  : selected
+                    ? t.inspector.backToGalaxy
+                    : t.inspector.discoverBody
               }
             >
-              {selected ? <ChevronLeft /> : <Orbit />}
-              <span>{selected ? t.controls.galaxy : t.controls.discover}</span>
+              {selected && !drifting ? <ChevronLeft /> : <Orbit />}
+              <span>
+                {selected && !drifting ? t.controls.galaxy : t.controls.discover}
+              </span>
             </Button>
             {selected && (
               <>
@@ -908,13 +989,33 @@ export default function Home() {
               )}
               {panel === 'phenomena' && (
                 <div className="option-list">
+                  {!revealAll && (
+                    <p className="discovery-count">
+                      {t.discoveries.count(foundCount)}
+                    </p>
+                  )}
                   {rareDestinations.map(({ key, label, all, limit }) => {
-                    const destinations = all.slice(0, limit);
-                    if (!destinations.length) return null;
+                    // The notebook lists only what this visitor has reached;
+                    // ?reveal restores the full catalogue with its counts.
+                    const found = revealAll
+                      ? all
+                      : all.filter((entry) => discoveries.has(entry.key!));
+                    const destinations = found.slice(0, limit);
+                    if (!all.length) return null;
+                    if (!destinations.length)
+                      return (
+                        <p
+                          className="phenomenon-category is-unknown"
+                          key={key}
+                          aria-label={t.discoveries.unknown}
+                        >
+                          ???
+                        </p>
+                      );
                     return (
                       <details className="phenomenon-category" key={key}>
                         <summary>
-                          {label} · {all.length}
+                          {label} · {found.length}
                         </summary>
                         <div className="option-list">
                           {destinations.map((entry) => (
@@ -938,8 +1039,12 @@ export default function Home() {
                       </details>
                     );
                   })}
-                  {rareDestinations.every(({ all }) => !all.length) && (
-                    <p>{t.phenomena.empty}</p>
+                  {revealAll &&
+                    rareDestinations.every(({ all }) => !all.length) && (
+                      <p>{t.phenomena.empty}</p>
+                    )}
+                  {!revealAll && !foundCount && (
+                    <p className="reading-copy">{t.discoveries.empty}</p>
                   )}
                 </div>
               )}
@@ -1336,6 +1441,14 @@ export default function Home() {
       {(musicError || notice) && (
         <output className="status-notice">{musicError || notice}</output>
       )}
+      {/* Outside the dock, so the quiet interface dims it instead of hiding it. */}
+      <output className="discovery-notice" aria-live="polite">
+        {discoveryNotice && !openingVisible && (
+          <span key={discoveryNotice.key}>
+            {t.discoveries.found(discoveryNotice.label)}
+          </span>
+        )}
+      </output>
       {openingVisible && (
         <CinematicIntro
           key={openingRun}

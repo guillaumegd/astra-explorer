@@ -1,7 +1,6 @@
 import type { BodyKind } from './types.ts';
 export const CATALOGUE_VERSION = 'v2';
 export const ARCHITECTURE_WEIGHTS = [94, 5, 0.7, 0.3] as const;
-export const JET_PROBABILITY = 0.15;
 export const COMET_PROBABILITY = 0.02;
 // Separation is drawn in combined stellar radii, then clipped to a third of the
 // first planetary orbit: the circumbinary rule holds without moving any orbit.

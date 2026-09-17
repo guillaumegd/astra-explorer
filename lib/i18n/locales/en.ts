@@ -9,7 +9,7 @@ export const en: Dictionary = {
     preparing: 'Preparing the sky…',
   },
   controls: {
-    phenomena: 'Rare phenomena',
+    phenomena: 'Discoveries',
     satellites: 'Moons',
     members: 'System members',
     options: 'Options',
@@ -36,7 +36,7 @@ export const en: Dictionary = {
     aboutText:
       'An artistic, procedural universe made for contemplation and discovery.',
     helpText:
-      'Click or tap a star to select it. Double-click or choose Approach to get closer. Drag to orbit; scroll, pinch or use −/+ to zoom. With keyboard focus on the scene, arrow keys change bodies, Enter approaches and Home returns to the galaxy. Escape closes options or exits immersive mode.',
+      'Click or tap a star to select it. Double-click or choose Approach to get closer. Drag to orbit; scroll, pinch or use −/+ to zoom. With keyboard focus on the scene, arrow keys change bodies, Enter approaches and Home returns to the galaxy. Escape closes options or exits immersive mode. Discover lets the sky carry you from one place to the next, endlessly; the arrow keys move on to the next stop, and any other gesture takes the controls back.',
     system: 'System',
   },
   quality: {
@@ -95,7 +95,8 @@ export const en: Dictionary = {
     previousBody: 'Previous body',
     nextBody: 'Next body',
     exploreBody: 'Explore this body',
-    discoverBody: 'Discover a body',
+    discoverBody: 'Let the sky carry you',
+    stopDrift: 'Take the controls back',
     tilt: 'Tilt',
     tiltAuto: 'Auto · 60° max',
     tiltMax: (deg) => `${deg}° max`,
@@ -188,6 +189,17 @@ export const en: Dictionary = {
     central: 'Central compact object',
     orbit: 'Orbits the black hole',
     empty: 'No phenomena in the active catalogue.',
+  },
+  discoveries: {
+    count: (n) =>
+      n === 0
+        ? 'No discoveries yet'
+        : n === 1
+          ? '1 discovery'
+          : `${n} discoveries`,
+    unknown: 'Not yet discovered',
+    empty: 'The notebook is still empty.',
+    found: (kind) => `New discovery · ${kind}`,
   },
   binary: {
     label: 'Double star',

@@ -8,7 +8,7 @@ uniform sampler2D uScene,uDepth;
 uniform samplerCube uSky;
 uniform mat4 uInverseProjection,uCameraWorld,uLocal,uWorld;
 uniform vec3 uEye,uTint;
-uniform float uRadius,uInner,uOuter,uFade,uTime,uSeed,uJets;
+uniform float uRadius,uInner,uOuter,uFade,uTime,uSeed;
 uniform vec2 uResolution;
 uniform float uSkySize;
 uniform float uIntegratorSteps;
@@ -51,7 +51,7 @@ vec3 lens(vec2 uv,vec3 original){
   vec3 d=normalize(mat3(uLocal)*worldDirection),o=uEye;
   float radius=length(o),forward=-dot(o,d);
   float impact=length(cross(o,d));
-  float zone=max(uOuter*2.,uJets*40.);
+  float zone=uOuter*2.;
   if(forward<=0. || impact>=zone || radius<=1.)return original;
   float weight=1.-smoothstep(uOuter*1.25,uOuter*2.,impact);
   vec3 er=o/radius;float cosine=dot(d,er);
@@ -125,26 +125,12 @@ vec3 lens(vec2 uv,vec3 original){
   // Finite-distance local background bodies retain their direct image when no
   // disc/capture occludes them; only the distant catalogue is treated as infinity.
   if(depth<.999999 && escaped && firstHit && surfaceDistance<radius+uOuter*4.)light=original;
-  if(uJets>.5){
-    float span=sqrt(max(0.,1600.-impact*impact));
-    float ds=2.*span/16.;
-    vec3 jetColor=mix(uTint,vec3(.45,.65,1.),.7);
-    for(int j=0;j<16;j++){
-      float distance=max(0.,forward-span)+(float(j)+.5)*ds;
-      vec3 p=o+d*distance;float height=abs(p.y);
-      if(height>8. && height<36. && (depth>=.999999 || distance<surfaceDistance)){
-        float width=.06*height;
-        float density=exp(-dot(p.xz,p.xz)/(width*width))*sin((height-8.)/28.*3.14159265);
-        light+=jetColor*density*ds*.025;
-      }
-    }
-  }
   return mix(original,light,(1.-smoothstep(zone*.9,zone,impact))*uFade);
 }
 void main(){
   // The scene target holds display-ready colour, exactly what the canvas would
-  // have received. Decode it once here: everything downstream — the disc, the
-  // jets, the lensed sky — is mixed in the working space and the closing
+  // have received. Decode it once here: everything downstream — the disc and
+  // the lensed sky — is mixed in the working space and the closing
   // colourspace_fragment encodes the result once. Handing the sampled scene
   // straight to that encode is what lifted every dark pixel of the frame,
   // night sides included, the moment a black hole became the lens subject.

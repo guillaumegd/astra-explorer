@@ -9,7 +9,7 @@ export const ptPT: Dictionary = {
     preparing: 'A preparar o céu…',
   },
   controls: {
-    phenomena: 'Fenómenos raros',
+    phenomena: 'Descobertas',
     satellites: 'Satélites',
     members: 'Membros do sistema',
     options: 'Opções',
@@ -36,7 +36,7 @@ export const ptPT: Dictionary = {
     aboutText:
       'Um universo artístico e procedimental, feito para contemplar e descobrir.',
     helpText:
-      'Clique ou toque numa estrela para a selecionar. Faça duplo clique ou escolha Aproximar para se aproximar. Arraste para rodar; use a roda, o gesto de pinça ou −/+ para o zoom. Com o foco do teclado na cena, as setas mudam de astro, Enter aproxima e Home regressa à galáxia. Escape fecha as opções ou sai do modo imersivo.',
+      'Clique ou toque numa estrela para a selecionar. Faça duplo clique ou escolha Aproximar para se aproximar. Arraste para rodar; use a roda, o gesto de pinça ou −/+ para o zoom. Com o foco do teclado na cena, as setas mudam de astro, Enter aproxima e Home regressa à galáxia. Escape fecha as opções ou sai do modo imersivo. Descobrir deixa o céu levá-lo de um lugar para outro, sem fim; as setas passam para a paragem seguinte e qualquer outro gesto devolve-lhe o controlo.',
     system: 'Sistema',
   },
   quality: {
@@ -95,7 +95,8 @@ export const ptPT: Dictionary = {
     previousBody: 'Astro anterior',
     nextBody: 'Astro seguinte',
     exploreBody: 'Explorar este astro',
-    discoverBody: 'Descobrir um astro',
+    discoverBody: 'Deixar-se levar pelo céu',
+    stopDrift: 'Retomar o controlo',
     tilt: 'Inclinação',
     tiltAuto: 'Auto · 60° máx.',
     tiltMax: (deg) => `${deg}° máx.`,
@@ -189,6 +190,17 @@ export const ptPT: Dictionary = {
     central: 'Objeto compacto central',
     orbit: 'Orbita em torno do buraco negro',
     empty: 'Não há fenómenos no catálogo ativo.',
+  },
+  discoveries: {
+    count: (n) =>
+      n === 0
+        ? 'Nenhuma descoberta'
+        : n === 1
+          ? '1 descoberta'
+          : `${n} descobertas`,
+    unknown: 'Ainda por descobrir',
+    empty: 'O caderno ainda está vazio.',
+    found: (kind) => `Nova descoberta · ${kind}`,
   },
   binary: {
     label: 'Estrela dupla',

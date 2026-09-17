@@ -523,6 +523,77 @@ summary:focus-visible {
   font-size: 12px;
   line-height: 1.6;
 }
+/* A discovery is announced in the sky's own voice: small, centred, brief.
+   Sitting outside the dock, the quiet interface dims it rather than hiding it. */
+.discovery-notice {
+  position: absolute;
+  z-index: 40;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  pointer-events: none;
+  text-align: center;
+}
+.discovery-notice > span {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #0c111ecc;
+  border: 1px solid #aecaff1f;
+  color: #dbe7f7;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  animation: discovery-in 6s ease forwards;
+  transition:
+    opacity 0.8s ease,
+    background-color 0.8s ease,
+    border-color 0.8s ease;
+}
+.is-quiet .discovery-notice > span {
+  opacity: 0.55;
+  background: transparent;
+  border-color: transparent;
+  font-size: 11px;
+}
+@keyframes discovery-in {
+  0% {
+    translate: 0 -4px;
+    filter: opacity(0);
+  }
+  12%,
+  82% {
+    translate: 0 0;
+    filter: opacity(1);
+  }
+  100% {
+    filter: opacity(0);
+  }
+}
+/* The drift frames systems for watching, not for clicking. */
+.is-drifting.is-quiet .system-marker:not(:focus-visible) {
+  opacity: 0;
+  pointer-events: none;
+}
+.destination-control[aria-pressed='true'] svg {
+  animation: drift-orbit 12s linear infinite;
+}
+@keyframes drift-orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+.discovery-count {
+  padding: 6px 8px 2px;
+  color: #9fb2cc;
+  font-size: 12px;
+}
+.phenomenon-category.is-unknown {
+  padding: 14px 8px;
+  min-height: 48px;
+  color: #9fb2cc66;
+  letter-spacing: 0.3em;
+}
 .loading {
   position: absolute;
   z-index: 70;

@@ -108,26 +108,6 @@ export function createBlackHole(body: BodyIdentity) {
   disk.rotation.x = -Math.PI / 2;
   disk.userData.bodyId = shadow.userData.bodyId = body.id;
   group.add(shadow, disk);
-  const jetMaterial = new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    uniforms,
-    vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-    fragmentShader: `varying vec2 vUv;uniform float uFade,uTime;uniform vec3 uColor;void main(){float a=smoothstep(0.,.12,vUv.y)*(1.-smoothstep(.25,1.,vUv.y));gl_FragColor=vec4(mix(uColor,vec3(.6,.75,1.),.6),a*uFade*.11);}`,
-  });
-  const jets: THREE.Mesh[] = [];
-  if (p.jets)
-    for (const sign of [-1, 1]) {
-      const jet = new THREE.Mesh(
-        new THREE.ConeGeometry(body.radius * 2, body.radius * 32, 24, 1, true),
-        jetMaterial,
-      );
-      jet.position.y = sign * body.radius * 20;
-      jet.rotation.z = sign > 0 ? Math.PI : 0;
-      jets.push(jet);
-      group.add(jet);
-    }
   return {
     group,
     update(time: number, fade: number, reducedMotion = false) {
@@ -145,8 +125,6 @@ export function createBlackHole(body: BodyIdentity) {
       shadow.material.dispose();
       disk.geometry.dispose();
       disk.material.dispose();
-      jets.forEach((j) => j.geometry.dispose());
-      jetMaterial.dispose();
       group.removeFromParent();
     },
   };

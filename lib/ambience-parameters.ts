@@ -225,3 +225,40 @@ export const soundProfiles: Record<
     sparkle: 0.032,
   },
 };
+
+/** Beyond this, a phenomenon is out of earshot: about one system spacing. */
+export const DISTANT_HEARING_RANGE = 0.25;
+/** Inside this, the phenomenon is as loud as a distant voice ever gets. */
+export const DISTANT_HEARING_NEAR = 0.03;
+/** A distant atmosphere stays a hint under whatever is being observed. */
+export const DISTANT_ATMOSPHERE_GAIN = 0.35;
+
+/**
+ * The sound before the image: an unselected phenomenon nearby lets its own
+ * atmosphere rise faintly, so a curious ear can follow it. Galactic units.
+ */
+export function distantPresence(distance: number): number {
+  if (!Number.isFinite(distance)) return 0;
+  return (
+    1 -
+    ease(
+      (distance - DISTANT_HEARING_NEAR) /
+        (DISTANT_HEARING_RANGE - DISTANT_HEARING_NEAR),
+    )
+  );
+}
+
+/** The gain of one atmosphere layer, mixing the observed body and a distant one. */
+export function atmosphereGain(
+  layer: BodyKind,
+  observed: BodyKind | null,
+  local: number,
+  distant: { kind: BodyKind; presence: number } | null,
+) {
+  return Math.max(
+    layer === observed ? local : 0,
+    distant && layer === distant.kind
+      ? Math.min(1, Math.max(0, distant.presence)) * DISTANT_ATMOSPHERE_GAIN
+      : 0,
+  );
+}
