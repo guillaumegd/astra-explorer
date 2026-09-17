@@ -1150,6 +1150,7 @@ export function createGalaxy(
      * a frozen origin let the departing body slide out of frame at once.
      */
     fromId: number | null;
+    fromRegion: RegionDefinition | null;
     /** How far the departing body has carried the origin since takeoff. */
     carried: THREE.Vector3;
     startDistance: number;
@@ -1159,24 +1160,44 @@ export function createGalaxy(
     startTarget: THREE.Vector3;
   } | null = null;
   const departurePoint = new THREE.Vector3();
-  /** Keeps a flight's origin on the body it leaves, wherever the galaxy has turned it. */
-  const departureOrigin = (fromId: number | null, origin: THREE.Vector3) => {
-    if (fromId === null || fromId >= settings.density) return;
-    particlePosition(
-      positions,
-      seeds,
-      fromId,
-      rotation,
-      elapsed,
-      departurePoint,
-      undefined,
-      orbits,
-    );
+  /** The focus the last rendered camera was built around. */
+  const renderedFocus = new THREE.Vector3();
+  /**
+   * Keeps a flight's origin on the body or framed region it leaves, wherever
+   * the galaxy has turned it since.
+   */
+  const departureOrigin = (
+    fromId: number | null,
+    fromRegion: RegionDefinition | null,
+    origin: THREE.Vector3,
+  ) => {
+    if (fromRegion)
+      animatedRegionCenter(
+        fromRegion,
+        positions,
+        seeds,
+        rotation,
+        elapsed,
+        departurePoint,
+      );
+    else if (fromId !== null && fromId < settings.density)
+      particlePosition(
+        positions,
+        seeds,
+        fromId,
+        rotation,
+        elapsed,
+        departurePoint,
+        undefined,
+        orbits,
+      );
+    else return;
     origin.copy(departurePoint.applyMatrix4(group.matrixWorld));
   };
   const startTravel = (
     origin: THREE.Vector3,
     previous: BodyIdentity | null,
+    fromRegion: RegionDefinition | null = null,
   ) => {
     if (!selected) return;
     targetDistance =
@@ -1194,6 +1215,7 @@ export function createGalaxy(
       pan: 0,
       origin,
       fromId: previous?.id ?? null,
+      fromRegion,
       carried: new THREE.Vector3(),
       startDistance: distance,
       cruiseDistance: Math.max(
@@ -1211,6 +1233,13 @@ export function createGalaxy(
           Math.max(selected.radius, distance),
         ),
     };
+    // The drift starts flights mid-frame, after focus has already followed
+    // its body for this frame while the camera still holds the last one. The
+    // galaxy moves a body ~0.003 units a frame: dozens of body-distances up
+    // close, so the flight opened on empty sky and swung back over 1.25 s.
+    const lag = origin.clone().sub(renderedFocus);
+    travel.startPosition.add(lag);
+    travel.startTarget.add(lag);
   };
   /**
    * Every member shares the system anchor, so the base position with no orbital
@@ -1503,12 +1532,15 @@ export function createGalaxy(
   const DRIFT_ARRIVAL_TIMEOUT = 24;
   const galaxyCentre = new THREE.Vector3();
   // About seventy seconds a turn: every stop shows its body from several sides.
-  const DRIFT_ORBIT_SPEED = 0.09;
+  // Negative, against the bodies' spin: the camera outruns a planet's slow
+  // rotation about sevenfold, so orbiting along it made the surface appear to
+  // turn backwards. Against it, the planet keeps visibly turning its own way.
+  const DRIFT_ORBIT_SPEED = -0.09;
   // A slow rise and fall of the viewpoint, so the orbit is not a flat circle.
   const DRIFT_ELEVATION_SWING = 0.18;
   const DRIFT_ELEVATION_PERIOD = 80;
   // Near the ground the camera rides the surface: glide along it more slowly.
-  const DRIFT_SURFACE_SPEED = 0.035;
+  const DRIFT_SURFACE_SPEED = -0.035;
   const spinAxis = new THREE.Vector3(0, 1, 0);
   // A comet framed on its whole tail envelope leaves the nucleus a speck:
   // the drift frames the coma and the start of the tail instead.
@@ -1516,9 +1548,10 @@ export function createGalaxy(
   const visitBody = (id: number) => {
     const origin = focus.clone();
     const from = selected;
+    const fromRegion = selected ? null : regionFocus;
     select(id);
     // select() only flies between bodies; from the galaxy the drift flies too.
-    if (!from && !travel) startTravel(origin, null);
+    if (!from && !travel) startTravel(origin, null, fromRegion);
     approach();
     if (selected?.comet)
       targetDistance = framingDistance(
@@ -1547,17 +1580,23 @@ export function createGalaxy(
     time: number;
     origin: THREE.Vector3;
     fromId: number | null;
+    /** A framed region being left drifts with the galaxy just like a body. */
+    fromRegion: RegionDefinition | null;
     startDistance: number;
     cruiseDistance: number | null;
     duration: number;
     pan: number;
   } | null = null;
-  const startGlide = (fromId: number | null) => {
+  const startGlide = (
+    fromId: number | null,
+    fromRegion: RegionDefinition | null,
+  ) => {
     travel = null;
     glide = {
       time: 0,
       origin: focus.clone(),
       fromId,
+      fromRegion,
       startDistance: distance,
       cruiseDistance: null,
       duration: 8,
@@ -1582,7 +1621,7 @@ export function createGalaxy(
         targetDistance,
       );
     }
-    departureOrigin(glide.fromId, glide.origin);
+    departureOrigin(glide.fromId, glide.fromRegion, glide.origin);
     glide.time += reduced.matches ? dt * (glide.duration / 0.35) : dt;
     const t = Math.min(1, glide.time / glide.duration);
     const flight = driftModule!.sampleContemplativeTravel(
@@ -1616,18 +1655,19 @@ export function createGalaxy(
       driftDwellSeconds(step.type, Math.random, reduced.matches) * driftScale;
     glide = null;
     const fromId = selected?.id ?? null;
+    const fromRegion = selected ? null : regionFocus;
     if (step.type === 'galaxy') {
       overview();
-      startGlide(fromId);
+      startGlide(fromId, fromRegion);
     } else if ('regionId' in step) {
       frameRegion(step.regionId);
-      startGlide(fromId);
+      startGlide(fromId, fromRegion);
     } else if (step.type === 'system') {
       if (selected?.systemId !== catalogue.getBody(step.bodyIndex).systemId)
         visitBody(step.bodyIndex);
       else {
         frameSystem('stellar');
-        startGlide(fromId);
+        startGlide(fromId, fromRegion);
       }
     } else visitBody(step.bodyIndex);
     diagnostics?.record('drift-step', performance.now(), { type: step.type });
@@ -2205,10 +2245,16 @@ export function createGalaxy(
     uniforms.uRotation.value = rotation;
     const damping = 1 - Math.exp(-dt * 2);
     if (!selected) {
+      // Pointer parallax is a galaxy-scale effect. Up close — leaving a body
+      // for the galaxy, or framing a region — tilting the whole galaxy moved
+      // the subject hundreds of its own distances a frame, out of view.
+      const parallax = damping * THREE.MathUtils.smoothstep(distance, 4, 20);
       group.rotation.x +=
-        ((reduced.matches ? 0 : pointer.y * 0.07) - group.rotation.x) * damping;
+        ((reduced.matches ? 0 : pointer.y * 0.07) - group.rotation.x) *
+        parallax;
       group.rotation.y +=
-        ((reduced.matches ? 0 : pointer.x * 0.1) - group.rotation.y) * damping;
+        ((reduced.matches ? 0 : pointer.x * 0.1) - group.rotation.y) *
+        parallax;
     }
     uniforms.uInner.value.lerp(targetInner, damping);
     uniforms.uOuter.value.lerp(targetOuter, damping);
@@ -2277,7 +2323,7 @@ export function createGalaxy(
           ? dt * (travel.duration / 0.35)
           : dt;
         travel.carried.copy(travel.origin);
-        departureOrigin(travel.fromId, travel.origin);
+        departureOrigin(travel.fromId, travel.fromRegion, travel.origin);
         travel.carried.subVectors(travel.origin, travel.carried);
         travel.startPosition.add(travel.carried);
         travel.startTarget.add(travel.carried);
@@ -2471,6 +2517,7 @@ export function createGalaxy(
     camera.updateProjectionMatrix();
     camera.lookAt(cameraTarget);
     camera.updateMatrixWorld();
+    renderedFocus.copy(focus);
     localOrigin.copy(camera.position);
     group.worldToLocal(localOrigin);
     for (const points of cameraAnchored) points.position.copy(localOrigin);

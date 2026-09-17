@@ -68,7 +68,6 @@ export type BodyIdentity = {
     diskOuter: number;
     envelope: number;
     exclusion: number;
-    jets: boolean;
     tilt: number;
   };
 };

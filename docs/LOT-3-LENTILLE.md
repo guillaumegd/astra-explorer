@@ -19,7 +19,7 @@ Références : [Éric Bruneton, Real-time High-Quality Rendering of Non-Rotating
 
 `lib/phenomena/geodesic.ts` et `lensing-shader.ts` utilisent une intégration RK4 directe, sans tables précalculées. Le pas maximal est de 0,04 radian pour 320 étapes au plus, avec réduction du pas pour les rayons presque radiaux. `body.radius` correspond au rayon d’horizon.
 
-Les trajectoires rencontrent un disque d’épaisseur 0,36 rayon d’horizon. L’émission est accumulée avant capture ou échappement. Les images secondaires résultent de ces trajectoires, sans géométrie d’anneaux croisés. Le disque combine advection bornée, décalage gravitationnel, Doppler d’orbites circulaires locales et amplification bolométrique en `g⁴`. La palette thermique et les jets restent artistiques.
+Les trajectoires rencontrent un disque d’épaisseur 0,36 rayon d’horizon. L’émission est accumulée avant capture ou échappement. Les images secondaires résultent de ces trajectoires, sans géométrie d’anneaux croisés. Le disque combine advection bornée, décalage gravitationnel, Doppler d’orbites circulaires locales et amplification bolométrique en `g⁴`. La palette thermique reste artistique. Les jets ont été retirés le 17 septembre 2026 : dessinés comme deux cônes lumineux, ils faisaient passer le trou noir pour un pulsar.
 
 Le rendu utilise un, deux ou quatre sous-échantillons selon la région, avec quatre près de l’ombre. Le filtrage du ciel emploie un niveau de mipmap explicite : l’empreinte du rayon est calculée avant les branches et élargie près du rayon critique. Cela évite le cercle crénelé que provoquait le filtrage implicite au changement d’échantillonnage.
 
@@ -31,7 +31,7 @@ Le picking suit les trajectoires CPU, puis oriente une passe d’identifiants ve
 
 ## Espace colorimétrique de la composition
 
-La présence d’un trou noir ne change pas l’apparence du reste de la scène. La cible hors écran ne déclare aucun espace colorimétrique : elle reçoit exactement ce que les nuanceurs écrivent, comme le tampon du canevas, donc une atmosphère, un océan ou un halo additif se mélangent au même endroit dans les deux cas. La composition décode une fois la scène échantillonnée et la cubemap, mélange l’émission du disque et des jets dans cet espace de travail, puis encode une seule fois en sortie. Hors influence optique, l’image composée est identique, au pixel près, à l’image tracée directement sur le canevas.
+La présence d’un trou noir ne change pas l’apparence du reste de la scène. La cible hors écran ne déclare aucun espace colorimétrique : elle reçoit exactement ce que les nuanceurs écrivent, comme le tampon du canevas, donc une atmosphère, un océan ou un halo additif se mélangent au même endroit dans les deux cas. La composition décode une fois la scène échantillonnée et la cubemap, mélange l’émission du disque dans cet espace de travail, puis encode une seule fois en sortie. Hors influence optique, l’image composée est identique, au pixel près, à l’image tracée directement sur le canevas.
 
 ## Cadence et qualité
 

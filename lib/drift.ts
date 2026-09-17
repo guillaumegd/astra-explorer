@@ -403,13 +403,22 @@ export function sampleContemplativeTravel(
       : t >= 1
         ? 1
         : 0;
+  const distance =
+    t < retreatEnd || approachStart >= 1
+      ? logMix(start, cruise, retreat)
+      : logMix(cruise, end, approach);
+  if (pan > 0)
+    return { progress: smoother((t - retreatEnd) / pan), distance };
+  // With no pan phase of its own, the recentring follows the zoom, not the
+  // clock: leaving a body it waits until the camera is halfway out (in log
+  // distance) and the body a speck; closing in it is done by halfway. Driven
+  // by the clock, a galaxy glide slid a pulsar out of frame while still close.
+  const span = Math.log(end / start);
+  if (Math.abs(span) < 1e-9) return { progress: smoother(t), distance };
+  const covered = Math.log(distance / start) / span;
   return {
-    // With no real pan, the small recentring rides along with the zoom.
-    progress: pan > 0 ? smoother((t - retreatEnd) / pan) : smoother(t),
-    distance:
-      t < retreatEnd || approachStart >= 1
-        ? logMix(start, cruise, retreat)
-        : logMix(cruise, end, approach),
+    progress: smoother(span > 0 ? (covered - 0.5) * 2 : covered * 2),
+    distance,
   };
 }
 

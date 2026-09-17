@@ -88,6 +88,19 @@ test('a drift flight spends no time on phases it does not need', async () => {
   assert.ok(out(0.5).distance > 0.0004 && out(0.5).distance < 0.27);
   assert.ok(out(0.9).distance < 0.27);
   assert.ok(Math.abs(out(1).distance - 0.27) < 1e-9);
+  // No pan phase: the view stays on the departing body until it is halfway out.
+  const halfway = Math.sqrt(0.0004 * 0.27);
+  for (let i = 0; i <= 100; i++) {
+    const sample = out(i / 100);
+    if (sample.distance < halfway) assert.equal(sample.progress, 0, `t=${i / 100}`);
+  }
+  assert.equal(out(1).progress, 1);
+  // Closing in, the recentring is complete by halfway.
+  const into2 = (t) => sampleContemplativeTravel(t, 29.4, 29.4, 0.3, 0);
+  for (let i = 0; i <= 100; i++) {
+    const sample = into2(i / 100);
+    if (sample.distance < Math.sqrt(29.4 * 0.3)) assert.equal(sample.progress, 1);
+  }
   // Zooming in from cruise distance: no idle retreat before the approach.
   const into = (t) => sampleContemplativeTravel(t, 0.27, 0.27, 0.0001);
   assert.ok(into(0.35).distance < 0.27);

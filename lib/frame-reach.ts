@@ -4,18 +4,14 @@ import type { BodyIdentity } from './catalogue/types.ts';
  * How far from its centre a body still changes the picture, in world units.
  *
  * A black hole bends light well beyond its disc: the lens composite blends its
- * image out over `max(2 × diskOuter, 40 horizon radii with jets)`, the `zone`
+ * image out over `2 × diskOuter`, the `zone`
  * of lensing-shader.ts. Everything else reaches no further than the envelope
  * the engine already sizes it by.
  */
 export function frameReach(body: BodyIdentity, envelope: number) {
   const hole = body.phenomenon;
   if (!hole) return body.comet?.envelope ?? envelope;
-  return Math.max(
-    envelope,
-    hole.diskOuter * 2,
-    hole.jets ? body.radius * 40 : 0,
-  );
+  return Math.max(envelope, hole.diskOuter * 2);
 }
 
 /**

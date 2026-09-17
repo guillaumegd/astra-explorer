@@ -6,7 +6,6 @@ import {
   BINARY_SEPARATION_LIMIT,
   BINARY_SEPARATION_SPAN,
   BINARY_SPEED_SPAN,
-  JET_PROBABILITY,
   COMET_PROBABILITY,
   CATALOGUE_SEED,
   CATALOGUE_VERSION,
@@ -119,14 +118,15 @@ export function generateSystem(
     central.color =
       palette < 0.7 ? '#ffc47d' : palette < 0.9 ? '#ff8658' : '#b8dbff';
     const diskOuter = central.radius * (12 + 8 * draw());
-    const jets = stream(seed, 'activity:jets')() < JET_PROBABILITY;
+    // No jets: drawn as two bright cones, they made a black hole read as a
+    // pulsar. The removed 'activity:jets' stream was independent, so no other
+    // draw moved.
     central.phenomenon = {
       shadowRadius: central.radius * 2.6,
       diskInner: central.radius * 3,
       diskOuter,
-      envelope: jets ? central.radius * 40 : diskOuter,
+      envelope: diskOuter,
       exclusion: diskOuter * 1.12,
-      jets,
       tilt: draw() * 0.35 - 0.175,
     };
     central.kind = 'black-hole';

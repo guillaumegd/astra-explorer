@@ -38,7 +38,6 @@ export function createLensing() {
     uRadius: { value: 1 },
     uInner: { value: 3 },
     uOuter: { value: 20 },
-    uJets: { value: 0 },
     uTime: { value: 0 },
     uSeed: { value: 0 },
     uFade: { value: 0 },
@@ -136,7 +135,6 @@ export function createLensing() {
       uniforms.uOuter.value = p.diskOuter / body.radius;
       uniforms.uTint.value.set(body.color);
       uniforms.uSeed.value = body.seed;
-      uniforms.uJets.value = p.jets ? 1 : 0;
       uniforms.uTime.value = simulationTime;
       uniforms.uFade.value = fade;
       uniforms.uIntegratorSteps.value = THREE.MathUtils.clamp(
