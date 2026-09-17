@@ -335,6 +335,8 @@ export function createGalaxy(
     : 1;
   // Diagnostics only: every eligible planet stop plays its descent.
   const forceDescent = !!diagnostics && searchParams.get('driftDescent') === '1';
+  // Diagnostics only: every drift stop is a comet, to judge its framing.
+  const forceComet = !!diagnostics && searchParams.get('driftComet') === '1';
   let lastRendered: number | null = null;
   let messages = initialMessages;
   let firstFrameRendered = false;
@@ -1544,7 +1546,11 @@ export function createGalaxy(
   const spinAxis = new THREE.Vector3(0, 1, 0);
   // A comet framed on its whole tail envelope leaves the nucleus a speck:
   // the drift frames the coma and the start of the tail instead.
-  const DRIFT_COMET_FRAMING = 0.25;
+  // In nucleus radii. The coma is 8 across and, far from its star, the tail
+  // only ~26 long: even a quarter of the full 128-radius envelope left the
+  // comet small, and easing back out to reveal the tail made it small again.
+  // Frame the coma; an active tail runs off the edge, which suits it.
+  const DRIFT_COMET_FRAMING = 12;
   const visitBody = (id: number) => {
     const origin = focus.clone();
     const from = selected;
@@ -1555,7 +1561,7 @@ export function createGalaxy(
     approach();
     if (selected?.comet)
       targetDistance = framingDistance(
-        selected.comet.envelope * DRIFT_COMET_FRAMING,
+        selected.radius * DRIFT_COMET_FRAMING,
         camera.aspect,
       );
     if (travel) {
@@ -1639,12 +1645,21 @@ export function createGalaxy(
     if (!drift || !driftModule) return;
     const { buildDriftWorld, createDriftState, driftDwellSeconds, nextDriftStep } =
       driftModule;
-    const { step, state } = nextDriftStep(
-      buildDriftWorld(catalogue, settings.density),
+    const world = buildDriftWorld(catalogue, settings.density);
+    const next = nextDriftStep(
+      world,
       drift.state ?? createDriftState(),
       discovered,
       Math.random,
     );
+    const { state } = next;
+    let { step } = next;
+    if (forceComet) {
+      const comets = world.discoverables.filter((d) => d.category === 'comet');
+      const comet = comets[state.step % comets.length];
+      if (comet?.bodyIndex !== undefined)
+        step = { type: 'phenomenon', bodyIndex: comet.bodyIndex, key: comet.key };
+    }
     drift.state = state;
     drift.type = step.type;
     drift.phase = 'arriving';
