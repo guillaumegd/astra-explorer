@@ -55,7 +55,20 @@ export type DriftState = {
 /** Opening stops show ordinary sky only: discovery comes little by little. */
 export const DRIFT_OPENING_STEPS = 3;
 export const DRIFT_HISTORY = 20;
-export const DRIFT_PHENOMENON_SHARE = 0.25;
+export const DRIFT_PHENOMENON_SHARE = 1 / 3;
+/**
+ * Category weights for a phenomenon stop. The rarest, most striking sights
+ * come up most: with a flat draw, a visitor skipping stops met one black hole
+ * in dozens while double stars, far more common, kept coming back.
+ */
+export const DRIFT_CATEGORY_WEIGHTS: Record<string, number> = {
+  'black-hole': 3,
+  pulsar: 2.5,
+  remnant: 2,
+  comet: 1.5,
+  nebula: 1,
+  binary: 1,
+};
 /** Once everything is found, phenomena still come back, but rarely. */
 export const DRIFT_REVISIT_SHARE = 0.06;
 
@@ -127,7 +140,13 @@ export function driftDwellSeconds(
   rng: () => number,
   reducedMotion: boolean,
 ) {
-  const [low, high] = type === 'galaxy' ? [15, 25] : [25, 60];
+  // Short stops: the journey itself, now slower, carries the contemplation.
+  const [low, high] =
+    type === 'galaxy'
+      ? [8, 14]
+      : type === 'phenomenon' || type === 'region'
+        ? [20, 32]
+        : [14, 26];
   return (low + (high - low) * rng()) * (reducedMotion ? 1.5 : 1);
 }
 
@@ -179,7 +198,14 @@ function pickDiscoverable(
   if (!pool.length) return null;
   // Category first, so the many binaries never drown the few black holes.
   const categories = [...new Set(pool.map((d) => d.category))];
-  const category = pick(categories, rng);
+  const weight = (c: string) => DRIFT_CATEGORY_WEIGHTS[c] ?? 1;
+  let roll = rng() * categories.reduce((sum, c) => sum + weight(c), 0);
+  let category = categories[categories.length - 1];
+  for (const c of categories)
+    if ((roll -= weight(c)) < 0) {
+      category = c;
+      break;
+    }
   return pick(
     pool.filter((d) => d.category === category),
     rng,
@@ -296,11 +322,11 @@ export function nextDriftStep(
  * again. Slow on purpose — contemplative, never a swoop.
  */
 export const DRIFT_DESCENT = {
-  hold: 6,
-  descend: 22,
-  hover: 14,
-  ascend: 18,
-  rest: 8,
+  hold: 3,
+  descend: 16,
+  hover: 10,
+  ascend: 13,
+  rest: 4,
 } as const;
 export const DRIFT_DESCENT_SECONDS = Object.values(DRIFT_DESCENT).reduce(
   (sum, seconds) => sum + seconds,
@@ -333,4 +359,71 @@ export function descentRatio(
   if (seconds < hold + descend) return glide(from, low, (seconds - hold) / descend);
   if (seconds < hold + descend + hover) return low;
   return glide(low, high, (seconds - hold - descend - hover) / ascend);
+}
+
+// The drift's own flights, loaded with it: nothing on the first-canvas path.
+const smoother = (x: number) => {
+  x = Math.max(0, Math.min(1, x));
+  return x * x * x * (x * (x * 6 - 15) + 10);
+};
+const logMix = (a: number, b: number, k: number) =>
+  Math.exp(Math.log(a) * (1 - k) + Math.log(b) * k);
+// How much the ends of the zoom are stretched. A body is only a disc over the
+// first few e-folds of a retreat that may span ten: without this, it vanishes
+// in a fraction of a second and pops back in at the other end.
+const LINGER = 2.5;
+
+/** Share of a contemplative flight spent panning at cruise distance. */
+export const CONTEMPLATIVE_PAN = 0.22;
+
+/**
+ * The drift's slower flight: the departing body visibly recedes, the view
+ * pans at cruise distance, and the destination visibly grows. Each end
+ * lingers where the body is actually seen, and each phase gets time in
+ * proportion to the zoom it really covers: a retreat that is already at
+ * cruise distance, or a pan with nothing to cross (`pan` 0), takes none.
+ */
+export function sampleContemplativeTravel(
+  t: number,
+  start: number,
+  cruise: number,
+  end: number,
+  pan = CONTEMPLATIVE_PAN,
+) {
+  const out = Math.max(0, Math.log(cruise / start));
+  const back = Math.max(0, Math.log(cruise / end));
+  const zoom = out + back;
+  const retreatEnd = zoom > 1e-9 ? ((1 - pan) * out) / zoom : 0;
+  const approachStart = zoom > 1e-9 ? retreatEnd + pan : 1;
+  const retreat =
+    retreatEnd > 0 ? smoother(t / retreatEnd) ** LINGER : 1;
+  const approach =
+    approachStart < 1
+      ? 1 - (1 - smoother((t - approachStart) / (1 - approachStart))) ** LINGER
+      : t >= 1
+        ? 1
+        : 0;
+  return {
+    // With no real pan, the small recentring rides along with the zoom.
+    progress: pan > 0 ? smoother((t - retreatEnd) / pan) : smoother(t),
+    distance:
+      t < retreatEnd || approachStart >= 1
+        ? logMix(start, cruise, retreat)
+        : logMix(cruise, end, approach),
+  };
+}
+
+/** Whether a flight crosses enough ground, next to its zoom, to need its own pan. */
+export const contemplativePan = (separation: number, cruise: number) =>
+  separation * 1.5 >= cruise * 0.5 ? CONTEMPLATIVE_PAN : 0;
+
+/** Longer flights for longer zooms, within a contemplative range. */
+export function contemplativeTravelSeconds(
+  start: number,
+  cruise: number,
+  end: number,
+) {
+  const efolds =
+    Math.abs(Math.log(cruise / start)) + Math.abs(Math.log(cruise / end));
+  return Math.min(16, Math.max(8, 6 + efolds * 0.5));
 }

@@ -1140,13 +1140,40 @@ export function createGalaxy(
   };
   let travel: {
     time: number;
+    /** Seconds; the drift flies longer than a visitor's own jump. */
+    duration: number;
+    contemplative: boolean;
+    pan: number;
     origin: THREE.Vector3;
+    /**
+     * The body being left, if any. The galaxy keeps turning under a flight:
+     * a frozen origin let the departing body slide out of frame at once.
+     */
+    fromId: number | null;
+    /** How far the departing body has carried the origin since takeoff. */
+    carried: THREE.Vector3;
     startDistance: number;
     cruiseDistance: number;
     startPosition: THREE.Vector3;
     startUp: THREE.Vector3;
     startTarget: THREE.Vector3;
   } | null = null;
+  const departurePoint = new THREE.Vector3();
+  /** Keeps a flight's origin on the body it leaves, wherever the galaxy has turned it. */
+  const departureOrigin = (fromId: number | null, origin: THREE.Vector3) => {
+    if (fromId === null || fromId >= settings.density) return;
+    particlePosition(
+      positions,
+      seeds,
+      fromId,
+      rotation,
+      elapsed,
+      departurePoint,
+      undefined,
+      orbits,
+    );
+    origin.copy(departurePoint.applyMatrix4(group.matrixWorld));
+  };
   const startTravel = (
     origin: THREE.Vector3,
     previous: BodyIdentity | null,
@@ -1162,7 +1189,12 @@ export function createGalaxy(
         : selected.radius * 4.2;
     travel = {
       time: 0,
+      duration: 5,
+      contemplative: false,
+      pan: 0,
       origin,
+      fromId: previous?.id ?? null,
+      carried: new THREE.Vector3(),
       startDistance: distance,
       cruiseDistance: Math.max(
         distance,
@@ -1467,7 +1499,9 @@ export function createGalaxy(
     /** Distance ratios of an occasional descent over relief, when one plays. */
     descent: { from: number; low: number; high: number } | null;
   } | null = null;
-  const DRIFT_ARRIVAL_TIMEOUT = 14;
+  // Flights now last up to 16 s: arrival must not be declared mid-flight.
+  const DRIFT_ARRIVAL_TIMEOUT = 24;
+  const galaxyCentre = new THREE.Vector3();
   // About seventy seconds a turn: every stop shows its body from several sides.
   const DRIFT_ORBIT_SPEED = 0.09;
   // A slow rise and fall of the viewpoint, so the orbit is not a flat circle.
@@ -1476,6 +1510,9 @@ export function createGalaxy(
   // Near the ground the camera rides the surface: glide along it more slowly.
   const DRIFT_SURFACE_SPEED = 0.035;
   const spinAxis = new THREE.Vector3(0, 1, 0);
+  // A comet framed on its whole tail envelope leaves the nucleus a speck:
+  // the drift frames the coma and the start of the tail instead.
+  const DRIFT_COMET_FRAMING = 0.25;
   const visitBody = (id: number) => {
     const origin = focus.clone();
     const from = selected;
@@ -1483,6 +1520,81 @@ export function createGalaxy(
     // select() only flies between bodies; from the galaxy the drift flies too.
     if (!from && !travel) startTravel(origin, null);
     approach();
+    if (selected?.comet)
+      targetDistance = framingDistance(
+        selected.comet.envelope * DRIFT_COMET_FRAMING,
+        camera.aspect,
+      );
+    if (travel) {
+      travel.contemplative = true;
+      travel.pan = driftModule!.contemplativePan(
+        travel.origin.distanceTo(worldFocus),
+        travel.cruiseDistance,
+      );
+      travel.duration = driftModule!.contemplativeTravelSeconds(
+        travel.startDistance,
+        travel.cruiseDistance,
+        targetDistance,
+      );
+    }
+  };
+  /**
+   * Galaxy, region and system stops have no body flight of their own: without
+   * this their framing snapped over a fraction of a second. The glide retreats,
+   * pans and approaches like a body flight; its target is read every frame.
+   */
+  let glide: {
+    time: number;
+    origin: THREE.Vector3;
+    fromId: number | null;
+    startDistance: number;
+    cruiseDistance: number | null;
+    duration: number;
+    pan: number;
+  } | null = null;
+  const startGlide = (fromId: number | null) => {
+    travel = null;
+    glide = {
+      time: 0,
+      origin: focus.clone(),
+      fromId,
+      startDistance: distance,
+      cruiseDistance: null,
+      duration: 8,
+      pan: 0,
+    };
+  };
+  const applyGlide = (target: THREE.Vector3, dt: number) => {
+    if (!glide) return;
+    if (glide.cruiseDistance === null) {
+      glide.cruiseDistance = Math.max(
+        glide.startDistance,
+        targetDistance,
+        glide.origin.distanceTo(target) * 1.5,
+      );
+      glide.pan = driftModule!.contemplativePan(
+        glide.origin.distanceTo(target),
+        glide.cruiseDistance,
+      );
+      glide.duration = driftModule!.contemplativeTravelSeconds(
+        glide.startDistance,
+        glide.cruiseDistance,
+        targetDistance,
+      );
+    }
+    departureOrigin(glide.fromId, glide.origin);
+    glide.time += reduced.matches ? dt * (glide.duration / 0.35) : dt;
+    const t = Math.min(1, glide.time / glide.duration);
+    const flight = driftModule!.sampleContemplativeTravel(
+      t,
+      glide.startDistance,
+      glide.cruiseDistance,
+      targetDistance,
+      glide.pan,
+    );
+    distance = flight.distance;
+    focus.lerpVectors(glide.origin, target, flight.progress);
+    if (t >= 1) glide = null;
   };
   const takeDriftStep = () => {
     if (!drift || !driftModule) return;
@@ -1502,12 +1614,21 @@ export function createGalaxy(
     setHostData('driftDescent', '');
     drift.dwell =
       driftDwellSeconds(step.type, Math.random, reduced.matches) * driftScale;
-    if (step.type === 'galaxy') overview();
-    else if ('regionId' in step) frameRegion(step.regionId);
-    else if (step.type === 'system') {
+    glide = null;
+    const fromId = selected?.id ?? null;
+    if (step.type === 'galaxy') {
+      overview();
+      startGlide(fromId);
+    } else if ('regionId' in step) {
+      frameRegion(step.regionId);
+      startGlide(fromId);
+    } else if (step.type === 'system') {
       if (selected?.systemId !== catalogue.getBody(step.bodyIndex).systemId)
         visitBody(step.bodyIndex);
-      frameSystem('stellar');
+      else {
+        frameSystem('stellar');
+        startGlide(fromId);
+      }
     } else visitBody(step.bodyIndex);
     diagnostics?.record('drift-step', performance.now(), { type: step.type });
     setHostData('driftStep', `${state.step}:${step.type}`);
@@ -1517,7 +1638,9 @@ export function createGalaxy(
     drift.clock += dt;
     if (drift.phase === 'arriving') {
       const settled =
-        !travel && Math.abs(distance - targetDistance) <= targetDistance * 0.1;
+        !travel &&
+        !glide &&
+        Math.abs(distance - targetDistance) <= targetDistance * 0.1;
       if (!settled && drift.clock < DRIFT_ARRIVAL_TIMEOUT) return;
       drift.phase = 'dwelling';
       drift.clock = 0;
@@ -1590,6 +1713,7 @@ export function createGalaxy(
   const stopDrift = () => {
     if (!drift) return;
     drift = null;
+    glide = null;
     setHostData('driftStep', '');
     onDrift(false);
   };
@@ -2131,7 +2255,7 @@ export function createGalaxy(
       }
     }
     const baseDistance = mobile ? 40 : 29.4;
-    if (!travel)
+    if (!travel && !glide)
       distance += (targetDistance - distance) * (1 - Math.exp(-dt * 4));
     if (selected) {
       if (framed && framed.focus === null)
@@ -2149,17 +2273,37 @@ export function createGalaxy(
         );
       worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
       if (travel) {
-        travel.time += reduced.matches ? dt * (5 / 0.35) : dt;
-        const flight = sampleBodyTravel(
-          travel.time / 5,
-          travel.startDistance,
-          travel.cruiseDistance,
-          targetDistance,
-        );
+        travel.time += reduced.matches
+          ? dt * (travel.duration / 0.35)
+          : dt;
+        travel.carried.copy(travel.origin);
+        departureOrigin(travel.fromId, travel.origin);
+        travel.carried.subVectors(travel.origin, travel.carried);
+        travel.startPosition.add(travel.carried);
+        travel.startTarget.add(travel.carried);
+        const share = Math.min(1, travel.time / travel.duration);
+        const flight =
+          travel.contemplative && driftModule
+          ? driftModule.sampleContemplativeTravel(
+              share,
+              travel.startDistance,
+              travel.cruiseDistance,
+              targetDistance,
+              travel.pan,
+            )
+          : sampleBodyTravel(
+              share,
+              travel.startDistance,
+              travel.cruiseDistance,
+              targetDistance,
+            );
         distance = flight.distance;
         focus.lerpVectors(travel.origin, worldFocus, flight.progress);
         focusOffset.copy(focus).sub(worldFocus);
-        if (travel.time >= 5) travel = null;
+        if (travel.time >= travel.duration) travel = null;
+      } else if (glide) {
+        applyGlide(worldFocus, dt);
+        focusOffset.copy(focus).sub(worldFocus);
       } else {
         focusOffset.multiplyScalar(Math.exp(-dt * 4));
         focus.copy(worldFocus).add(focusOffset);
@@ -2174,9 +2318,15 @@ export function createGalaxy(
         localFocus,
       );
       worldFocus.copy(localFocus).applyMatrix4(group.matrixWorld);
-      focusOffset.multiplyScalar(Math.exp(-dt * 4));
-      focus.copy(worldFocus).add(focusOffset);
-    } else focus.lerp(new THREE.Vector3(), 1 - Math.exp(-dt * 4));
+      if (glide) {
+        applyGlide(worldFocus, dt);
+        focusOffset.copy(focus).sub(worldFocus);
+      } else {
+        focusOffset.multiplyScalar(Math.exp(-dt * 4));
+        focus.copy(worldFocus).add(focusOffset);
+      }
+    } else if (glide) applyGlide(galaxyCentre, dt);
+    else focus.lerp(galaxyCentre, 1 - Math.exp(-dt * 4));
     if (!settings.paused && !replay) advanceDrift(dt);
     cameraDirection.set(
       Math.sin(azimuth) * Math.cos(elevation),
@@ -2242,13 +2392,18 @@ export function createGalaxy(
         .normalize();
       cameraTarget.lerpVectors(travel.startTarget, focus, blend);
     }
+    const travelShare = travel ? travel.time / travel.duration : 0;
     setHostData('travelPhase', travel
-      ? travel.time < 1.25
-        ? 'retreat'
-        : travel.time < 2.25
-          ? 'transfer'
-          : 'approach'
-      : 'idle');
+      ? travel.contemplative
+        ? 'flight'
+        : travelShare < 0.25
+          ? 'retreat'
+          : travelShare < 0.45
+            ? 'transfer'
+            : 'approach'
+      : glide
+        ? 'glide'
+        : 'idle');
     if (selected && terrainView && surfaceTilt > 0.001) {
       const pose = surfaceCameraPose(
         focus,
@@ -2292,8 +2447,12 @@ export function createGalaxy(
     // Galaxy-view composition only. A framed region has no selected body but is
     // very much a subject, and this offset would push it out of frame.
     if (!selected && !regionFocus) {
-      cameraTarget.x += mobile ? 0 : 1.4;
-      cameraTarget.y += mobile ? -6 : 0;
+      // Only once the camera is back at galaxy scale: applied at once when
+      // leaving a planet, it swung the view units away from a body still
+      // fractions of a unit from the lens, which vanished in a single frame.
+      const composition = THREE.MathUtils.smoothstep(distance, 4, 20);
+      cameraTarget.x += (mobile ? 0 : 1.4) * composition;
+      cameraTarget.y += (mobile ? -6 : 0) * composition;
     }
     camera.near = Math.max(
       0.0000000001,
@@ -2525,10 +2684,21 @@ export function createGalaxy(
         if (!shortlist.includes(id)) shortlist.push(id);
       if (!shortlist.includes(selected.id)) shortlist.unshift(selected.id);
     }
+    // The body a flight leaves keeps its detail until it has visibly receded:
+    // once unselected it fills the screen, overran the pixel budget and fell
+    // back to a capped point, so it vanished the moment the flight began.
+    const departingId = travel?.fromId ?? glide?.fromId ?? null;
+    const keptInDetail = (id: number) =>
+      id === selected?.id || id === departingId;
+    if (departingId !== null && departingId < settings.density) {
+      const at = shortlist.indexOf(departingId);
+      if (at >= 0) shortlist.splice(at, 1);
+      shortlist.unshift(departingId);
+    }
     for (const id of shortlist) {
       const m = measure(id);
       if (
-        (m.visible || id === selected?.id) &&
+        (m.visible || keptInDetail(id)) &&
         m.pixels >=
           (catalogue.getBody(id).capabilities.renderClass !== 'ordinary'
             ? phenomena.detailThreshold(id)
@@ -2570,7 +2740,7 @@ export function createGalaxy(
           pixels: m.pixels,
           distanceInRadii: m.d / bodyRadii[id],
           cameraPosition:
-            id === selected?.id || catalogue.getBody(id).capabilities.emitsLight
+            keptInDetail(id) || catalogue.getBody(id).capabilities.emitsLight
               ? camera.position.clone()
               : undefined,
         });
@@ -2578,13 +2748,13 @@ export function createGalaxy(
     }
     candidates.sort(
       (a, b) =>
-        (b.identity.id === selected?.id ? 1 : 0) -
-          (a.identity.id === selected?.id ? 1 : 0) || b.pixels - a.pixels,
+        (keptInDetail(b.identity.id) ? 1 : 0) -
+          (keptInDetail(a.identity.id) ? 1 : 0) || b.pixels - a.pixels,
     );
     let pixelBudget = sizedWidth * renderHeight * 1.5;
     const visibleCandidates = candidates.filter((c) => {
       const area = Math.PI * c.pixels * c.pixels;
-      if (c.identity.id === selected?.id || area < pixelBudget) {
+      if (keptInDetail(c.identity.id) || area < pixelBudget) {
         pixelBudget -= area;
         return true;
       }

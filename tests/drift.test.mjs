@@ -62,14 +62,14 @@ test('a drift never opens on a phenomenon, a region or the first system', () => 
   }
 });
 
-test('about one stop in four is a phenomenon, favouring unseen ones', () => {
+test('about one stop in three is a phenomenon, favouring unseen ones', () => {
   const discovered = new Set(
     world.discoverables.filter((_, i) => i % 2 === 0).map((d) => d.key),
   );
   const steps = run(10000, discovered).slice(DRIFT_OPENING_STEPS);
   const phenomena = steps.filter(({ step }) => step.type === 'phenomenon');
   const share = phenomena.length / steps.length;
-  assert.ok(share > 0.18 && share < 0.3, `share ${share}`);
+  assert.ok(share > 0.26 && share < 0.4, `share ${share}`);
   // Unseen entries come first until the recent history exhausts them.
   const unseen = phenomena.filter(({ step }) => !discovered.has(step.key));
   assert.ok(unseen.length / phenomena.length > 0.9);
@@ -117,11 +117,13 @@ test('planet and system stops stay in the system the camera is in', () => {
 test('dwell times follow the stop type and stretch for reduced motion', () => {
   const low = () => 0;
   const high = () => 0.999999;
-  assert.equal(driftDwellSeconds('star', low, false), 25);
-  assert.ok(driftDwellSeconds('star', high, false) <= 60);
-  assert.equal(driftDwellSeconds('galaxy', low, false), 15);
-  assert.ok(driftDwellSeconds('galaxy', high, false) <= 25);
-  assert.equal(driftDwellSeconds('planet', low, true), 37.5);
+  assert.equal(driftDwellSeconds('star', low, false), 14);
+  assert.ok(driftDwellSeconds('star', high, false) <= 26);
+  assert.equal(driftDwellSeconds('phenomenon', low, false), 20);
+  assert.ok(driftDwellSeconds('phenomenon', high, false) <= 32);
+  assert.equal(driftDwellSeconds('galaxy', low, false), 8);
+  assert.ok(driftDwellSeconds('galaxy', high, false) <= 14);
+  assert.equal(driftDwellSeconds('planet', low, true), 21);
 });
 
 test('an empty world falls back to a galaxy breath without throwing', () => {
@@ -161,5 +163,18 @@ test('the descent over relief is slow, continuous and never grazes the ground', 
   // The hover really holds at the low point.
   const hoverStart = DRIFT_DESCENT.hold + DRIFT_DESCENT.descend;
   assert.equal(descentRatio(hoverStart + 1, from, low, high), low);
-  assert.ok(DRIFT_DESCENT_SECONDS >= 60);
+  assert.ok(DRIFT_DESCENT_SECONDS >= 40);
+});
+
+test('black holes and pulsars come up far more often than double stars', () => {
+  const steps = run(20000).filter(({ step }) => step.type === 'phenomenon');
+  const count = (category) =>
+    steps.filter(({ step }) =>
+      world.discoverables.some((d) => d.key === step.key && d.category === category),
+    ).length;
+  const blackHoles = count('black-hole');
+  const binaries = count('binary');
+  // A flat draw over six categories gave each about a sixth.
+  assert.ok(blackHoles / steps.length > 0.2, `black holes ${blackHoles / steps.length}`);
+  assert.ok(blackHoles > binaries * 2, `${blackHoles} vs ${binaries}`);
 });
