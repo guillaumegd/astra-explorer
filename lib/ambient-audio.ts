@@ -1,10 +1,13 @@
 import type { BodyKind } from './stellar-lod';
 import {
   ambienceMix,
+  atmosphereGain,
   binaryColour,
   regionAmbience,
   soundProfiles,
 } from './ambience-parameters.ts';
+
+export type DistantPhenomenon = { kind: BodyKind; presence: number };
 
 // Original slow progression and motif; no recordings or external audio assets.
 const CHORDS = [
@@ -198,7 +201,18 @@ export function buildAmbientGraph(
   let lastPulse: number | null = null;
   let regionPresence = -1;
   let regionKind: 'nebula' | 'remnant' | null = null;
+  let distant: DistantPhenomenon | null = null;
   const pulsarLayer = atmospheres.find((entry) => entry.kind === 'pulsar');
+  const applyAtmospheres = () => {
+    const local = ambienceMix(proximity).local;
+    atmospheres.forEach((layer) =>
+      smooth(
+        layer.output.gain,
+        atmosphereGain(layer.kind as BodyKind, bodyKind, local, distant),
+        2,
+      ),
+    );
+  };
   const smooth = (param: AudioParam, value: number, seconds: number) =>
     param.setTargetAtTime(value, context.currentTime, seconds);
   return {
@@ -243,9 +257,11 @@ export function buildAmbientGraph(
       smooth(pads.gain, mix.pad, 1.5);
       smooth(melody.gain, mix.melody, 1.5);
       smooth(wet.gain, mix.wet, 1.5);
-      atmospheres.forEach((layer) =>
-        smooth(layer.output.gain, layer.kind === kind ? mix.local : 0, 2),
-      );
+      applyAtmospheres();
+    },
+    setDistant(next: DistantPhenomenon | null) {
+      distant = next;
+      applyAtmospheres();
     },
     chord(index: number, at: number) {
       // Leave time for the audio renderer even when a frame delayed the timer.
@@ -344,6 +360,7 @@ export function createAmbientSoundtrack(
   let pulse = 0.5;
   let regionPresence = 0;
   let regionType: 'nebula' | 'remnant' | null = null;
+  let distant: DistantPhenomenon | null = null;
   let economy = false;
   let measuredFirstGesture = false;
   let nextChord = 0,
@@ -414,6 +431,7 @@ export function createAmbientSoundtrack(
         graph!.setProximity(proximity, bodyKind);
         graph!.setPulse(pulse);
         graph!.setRegion(regionPresence, regionType);
+        graph!.setDistant(distant);
         graph!.setVolume(volume);
         startTimer();
         if (!measuredFirstGesture) {
@@ -447,6 +465,7 @@ export function createAmbientSoundtrack(
       graph.setProximity(proximity, bodyKind);
       graph.setPulse(pulse);
       graph.setRegion(regionPresence, regionType);
+      graph.setDistant(distant);
       graph.setVolume(enabled ? volume : 0, 0.08);
       if (enabled) startTimer();
     },
@@ -456,6 +475,7 @@ export function createAmbientSoundtrack(
       modulation = 0.5,
       binaryAngle: number | null = null,
       region: { presence: number; type: 'nebula' | 'remnant' } | null = null,
+      far: DistantPhenomenon | null = null,
     ) {
       pulse = modulation;
       if (enabled) graph?.setPulse(pulse);
@@ -465,6 +485,18 @@ export function createAmbientSoundtrack(
       regionPresence = region?.presence ?? 0;
       regionType = region?.type ?? null;
       if (enabled) graph?.setRegion(regionPresence, regionType);
+      // Quantized: the engine reports every frame, the layer glides over seconds.
+      const nextDistant =
+        far && far.presence >= 0.02
+          ? { kind: far.kind, presence: Math.round(far.presence * 50) / 50 }
+          : null;
+      if (
+        nextDistant?.kind !== distant?.kind ||
+        nextDistant?.presence !== distant?.presence
+      ) {
+        distant = nextDistant;
+        if (enabled) graph?.setDistant(distant);
+      }
       value = Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
       if (Math.abs(value - proximity) < 0.01 && kind === bodyKind) return;
       proximity = value;

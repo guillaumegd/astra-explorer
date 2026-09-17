@@ -125,7 +125,7 @@ const configure = new Function(
   'palettes',
   'quality',
   'applyBudget',
-  `let calls=[]; const overview=()=>calls.push('overview'); const frameSystem=s=>calls.push(s); const invalidateRender=()=>{}; const configurationChanged=true; ${configureCode.replace(/\n    },\s*$/, '')} return {calls,regionFocus};`,
+  `let calls=[]; const overview=()=>calls.push('overview'); const frameSystem=s=>calls.push(s); const invalidateRender=()=>{}; const configurationChanged=true; const drift=globalThis.__drift ?? null; const takeDriftStep=()=>calls.push('drift'); ${configureCode.replace(/\n    },\s*$/, '')} return {calls,regionFocus};`,
 );
 const stubs = [
   { setDrawRange() {} },
@@ -270,4 +270,25 @@ test('every overlay moved by setMarkerPosition consumes the marker variables', (
   }
   // Two call sites, two classes: a new overlay must join the list above.
   assert.equal((source.match(/setMarkerPosition\(/g) ?? []).length, 2);
+});
+
+test('a density change under a drifting camera moves on to the next stop', () => {
+  const low = cat.activeCount(10000),
+    r = cat.getRemnants(120000).find((r) => r.hostBodyId >= low);
+  globalThis.__drift = {};
+  try {
+    const result = configure(
+      cat,
+      count,
+      { density: count },
+      null,
+      null,
+      r,
+      { density: 10000, palette: 0 },
+      ...stubs,
+    );
+    assert.deepEqual(result.calls, ['overview', 'drift']);
+  } finally {
+    delete globalThis.__drift;
+  }
 });

@@ -44,7 +44,18 @@ import {
   ORBIT_DEPTH,
 } from './orbits';
 import { createLocalDebris } from './local-debris';
-import { regionPresence, zoomProximity } from './ambience-parameters';
+import {
+  distantPresence,
+  regionPresence,
+  zoomProximity,
+} from './ambience-parameters';
+import {
+  bodyDiscoveryKey,
+  regionDiscoveryKey,
+  type DiscoveryKey,
+} from './discoveries';
+// The drift loads on the first « Découvrir », off the first-canvas path.
+import type { DriftState, DriftStepType } from './drift';
 import {
   createBodyLOD,
   describeBody,
@@ -138,6 +149,11 @@ export type GalaxyEngine = {
   overview: () => void;
   nextBody: (direction: number) => void;
   reset: () => void;
+  /** Starts the endless contemplative tour; any navigation gesture ends it. */
+  startDrift: () => void;
+  stopDrift: () => void;
+  /** The visitor's notebook, so the drift can favour what is still unseen. */
+  setDiscoveries: (keys: ReadonlySet<DiscoveryKey>) => void;
   dispose: () => void;
 };
 
@@ -214,6 +230,8 @@ const fragmentShader = `
   uniform float uOpacity;
   varying float vRadius;
   varying float vSeed;
+  varying float vPhenomenon;
+  uniform float uSigns;
   void main() {
     float d = length(gl_PointCoord - 0.5) * 2.0;
     if (d > 1.0) discard;
@@ -222,6 +240,21 @@ const fragmentShader = `
     vec3 color = mix(uInner, uOuter, smoothstep(0.2, 8.5, vRadius));
     color = mix(color, vec3(0.76, 0.86, 1.0), vSeed * 0.38);
     float shimmer = 0.84 + 0.16 * sin(uTime * (0.5 + vSeed) + vSeed * 80.0);
+    // Signs in the sky, never markers: a far phenomenon only looks odd enough
+    // to be worth a click. Distant halo only; the close-up draws its own.
+    if (vPhenomenon > 1.5 && vPhenomenon < 2.5) {
+      // A pulsar's beam crossing the line of sight: a brief flash every few seconds.
+      float period = 4.0 + 6.0 * fract(vSeed * 7.13);
+      float beam = pow(max(0.0, cos(6.2831853 * (uTime / period + vSeed))), 48.0) * uSigns;
+      shimmer *= 1.0 + beam * 2.4;
+      color = mix(color, vec3(0.84, 0.92, 1.0), beam);
+    } else if (vPhenomenon > 0.5 && vPhenomenon < 1.5) {
+      // A black hole: a darker heart inside a thin, warm, slowly wavering rim.
+      float rim = smoothstep(0.1, 0.28, d) * (1.0 - smoothstep(0.32, 0.6, d));
+      glow = glow * smoothstep(0.05, 0.3, d) * 0.6 + rim * 0.75;
+      shimmer = 0.9 + 0.1 * sin(uTime * 0.9 + vSeed * 40.0) * uSigns;
+      color = mix(color, vec3(1.0, 0.74, 0.46), 0.55);
+    }
     gl_FragColor = vec4(color, glow * shimmer * uOpacity * vFade * (1.0-vSurface));
   }
 `;
@@ -264,6 +297,7 @@ export function createGalaxy(
     pulse: number,
     binaryAngle: number | null,
     region: { presence: number; type: 'nebula' | 'remnant' } | null,
+    distant: { kind: BodyKind; presence: number } | null,
   ) => void,
   onSystemView: (view: SystemView | null) => void = () => {},
   onPointing: (pointing: SkyPointing) => void = () => {},
@@ -276,6 +310,9 @@ export function createGalaxy(
   onAudioEconomy: (economy: boolean) => void = () => {},
   /** Exposes the actual budget so Auto's changes are never invisible. */
   onQuality: (report: QualityReport) => void = () => {},
+  /** A notebook entry reached for the first time: body arrived at, region framed or entered. */
+  onDiscover: (key: DiscoveryKey) => void = () => {},
+  onDrift: (active: boolean) => void = () => {},
 ): GalaxyEngine {
   const diagnosticStart = performance.now();
   const searchParams = new URLSearchParams(window.location.search);
@@ -286,6 +323,10 @@ export function createGalaxy(
   const replayVolumeSteps = diagnostics
     ? Number(searchParams.get('volumeSteps')) || 16
     : 16;
+  // Diagnostics only: shortens drift dwells so a visual check can see many stops.
+  const driftScale = diagnostics
+    ? Number(searchParams.get('driftScale')) || 1
+    : 1;
   let lastRendered: number | null = null;
   let messages = initialMessages;
   let firstFrameRendered = false;
@@ -526,6 +567,8 @@ export function createGalaxy(
     uInner: { value: new THREE.Color('#ffbd85') },
     uOuter: { value: new THREE.Color('#7d9eff') },
     uOpacity: { value: 0.86 },
+    /** Far phenomenon signs; still under reduced motion. */
+    uSigns: { value: 1 },
   };
   const material = new THREE.ShaderMaterial({
     vertexShader,
@@ -1292,6 +1335,7 @@ export function createGalaxy(
       );
       marker.addEventListener('click', (event) => {
         event.stopPropagation();
+        stopDrift();
         select(member.id);
         approach();
       });
@@ -1400,6 +1444,145 @@ export function createGalaxy(
   let reportedAudioEconomy: boolean | null = null;
   let reportedCameraView: CameraView = 'overview';
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  // The contemplative drift: lib/drift.ts chooses each stop, this moves the
+  // camera there with the same select/approach/frame calls a visitor makes.
+  let discovered: ReadonlySet<DiscoveryKey> = new Set();
+  // Reported once per visit even before the page stores it back.
+  const announced = new Set<DiscoveryKey>();
+  let driftModule: typeof import('./drift') | null = null;
+  let drift: {
+    state: DriftState | null;
+    type: DriftStepType;
+    phase: 'arriving' | 'dwelling';
+    clock: number;
+    dwell: number;
+  } | null = null;
+  const DRIFT_ARRIVAL_TIMEOUT = 14;
+  const DRIFT_AZIMUTH_SPEED = 0.02;
+  const visitBody = (id: number) => {
+    const origin = focus.clone();
+    const from = selected;
+    select(id);
+    // select() only flies between bodies; from the galaxy the drift flies too.
+    if (!from && !travel) startTravel(origin, null);
+    approach();
+  };
+  const takeDriftStep = () => {
+    if (!drift || !driftModule) return;
+    const { buildDriftWorld, createDriftState, driftDwellSeconds, nextDriftStep } =
+      driftModule;
+    const { step, state } = nextDriftStep(
+      buildDriftWorld(catalogue, settings.density),
+      drift.state ?? createDriftState(),
+      discovered,
+      Math.random,
+    );
+    drift.state = state;
+    drift.type = step.type;
+    drift.phase = 'arriving';
+    drift.clock = 0;
+    drift.dwell =
+      driftDwellSeconds(step.type, Math.random, reduced.matches) * driftScale;
+    if (step.type === 'galaxy') overview();
+    else if ('regionId' in step) frameRegion(step.regionId);
+    else if (step.type === 'system') {
+      if (selected?.systemId !== catalogue.getBody(step.bodyIndex).systemId)
+        visitBody(step.bodyIndex);
+      frameSystem('stellar');
+    } else visitBody(step.bodyIndex);
+    diagnostics?.record('drift-step', performance.now(), { type: step.type });
+    setHostData('driftStep', `${state.step}:${step.type}`);
+  };
+  const advanceDrift = (dt: number) => {
+    if (!drift) return;
+    drift.clock += dt;
+    if (drift.phase === 'arriving') {
+      const settled =
+        !travel && Math.abs(distance - targetDistance) <= targetDistance * 0.1;
+      if (!settled && drift.clock < DRIFT_ARRIVAL_TIMEOUT) return;
+      drift.phase = 'dwelling';
+      drift.clock = 0;
+      // Half the planet stops skim low over the surface instead of framing it.
+      if (drift.type === 'planet' && selected && Math.random() < 0.5)
+        targetDistance =
+          selected.radius * Math.max(minimumOrbitRatio(selected), 1.6);
+      return;
+    }
+    if (!travel && !surfaceAnchor && !reduced.matches)
+      azimuth += dt * DRIFT_AZIMUTH_SPEED;
+    if (drift.clock >= drift.dwell) takeDriftStep();
+  };
+  const startDrift = () => {
+    if (drift) return;
+    drift = {
+      state: null,
+      type: 'galaxy',
+      phase: 'dwelling',
+      clock: 0,
+      dwell: 0,
+    };
+    onDrift(true);
+    invalidateRender('drift');
+    if (driftModule) takeDriftStep();
+    else
+      void import('./drift').then((module) => {
+        driftModule = module;
+        // A gesture during the load has already ended the drift: nothing to do.
+        takeDriftStep();
+      });
+  };
+  const stopDrift = () => {
+    if (!drift) return;
+    drift = null;
+    setHostData('driftStep', '');
+    onDrift(false);
+  };
+  /** Arrival, not the click: a body counts once the camera has reached it. */
+  const checkDiscovery = (view: CameraView) => {
+    if (replay) return;
+    const settled = Math.abs(distance - targetDistance) <= targetDistance * 0.25;
+    let key: DiscoveryKey | null = null;
+    if (selected && (view === 'close' || (view === 'system' && settled)))
+      key = bodyDiscoveryKey(selected, catalogue.getSystem(selected.systemId));
+    if (!key && regionFocus && settled) key = regionDiscoveryKey(regionFocus);
+    if (!key && insideRegion && insidePresence >= 0.5)
+      key = regionDiscoveryKey(insideRegion);
+    if (!key || discovered.has(key) || announced.has(key)) return;
+    announced.add(key);
+    diagnostics?.record('discovery', performance.now(), { key });
+    onDiscover(key);
+  };
+  // The sound before the image: the nearest unselected phenomenon, rescanned
+  // a few times a second over a list of a few hundred entries at most.
+  let distantReport: { kind: BodyKind; presence: number } | null = null;
+  let lastDistantScan = -Infinity;
+  const distantPoint = new THREE.Vector3();
+  const scanDistant = (now: number) => {
+    if (now - lastDistantScan < (reportedAudioEconomy ? 1000 : 500)) return;
+    lastDistantScan = now;
+    let nearest = Infinity;
+    let kind: BodyKind | null = null;
+    for (const body of catalogue.getPhenomena(settings.density)) {
+      if (body.id === selected?.id) continue;
+      particlePosition(
+        positions,
+        seeds,
+        body.id,
+        rotation,
+        elapsed,
+        distantPoint,
+        undefined,
+        orbits,
+      );
+      const gap = distantPoint.distanceTo(regionPoint);
+      if (gap < nearest) {
+        nearest = gap;
+        kind = body.kind;
+      }
+    }
+    const presence = distantPresence(nearest);
+    distantReport = kind && presence > 0 ? { kind, presence } : null;
+  };
   let wallTime = 0;
   let elapsed = 0,
     rotation = 0,
@@ -1492,6 +1675,7 @@ export function createGalaxy(
   };
   const wheel = (e: WheelEvent) => {
     e.preventDefault();
+    stopDrift();
     const delta =
       e.deltaY *
       (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? renderHeight : 1);
@@ -1529,6 +1713,7 @@ export function createGalaxy(
     if (id !== null) select(id);
   };
   const key = (e: KeyboardEvent) => {
+    if (!['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) stopDrift();
     if (e.key === '+' || e.key === '=') {
       e.preventDefault();
       changeZoom(1.3);
@@ -1585,6 +1770,8 @@ export function createGalaxy(
     startY = 0;
   const down = (e: PointerEvent) => {
     if (e.button !== 0) return;
+    // Any press on the sky hands control back where the drift has led.
+    stopDrift();
     if (touches.size === 0) {
       gesture = false;
       startX = e.clientX;
@@ -1827,6 +2014,7 @@ export function createGalaxy(
       surfaceAnchor = null;
     }
     uniforms.uTime.value = elapsed;
+    uniforms.uSigns.value = reduced.matches ? 0 : 1;
     uniforms.uRotation.value = rotation;
     const damping = 1 - Math.exp(-dt * 2);
     if (!selected) {
@@ -1926,6 +2114,7 @@ export function createGalaxy(
       focusOffset.multiplyScalar(Math.exp(-dt * 4));
       focus.copy(worldFocus).add(focusOffset);
     } else focus.lerp(new THREE.Vector3(), 1 - Math.exp(-dt * 4));
+    if (!settings.paused && !replay) advanceDrift(dt);
     cameraDirection.set(
       Math.sin(azimuth) * Math.cos(elevation),
       Math.sin(elevation),
@@ -2528,6 +2717,8 @@ export function createGalaxy(
       reportedCameraView = cameraView;
       onCameraView(cameraView);
     }
+    checkDiscovery(cameraView);
+    scanDistant(now);
     const renderStart = diagnostics ? performance.now() : 0;
     diagnostics?.record('cpu-phase', now, {
       phase: 'details-regions-dom',
@@ -2575,6 +2766,7 @@ export function createGalaxy(
       insideRegion
         ? { presence: insidePresence, type: insideRegion.type }
         : null,
+      distantReport,
     );
     if (process.env.NODE_ENV !== 'production') {
       setHostData('lenses', String(lensing.stats().active));
@@ -2832,15 +3024,21 @@ export function createGalaxy(
       if (quality.setMode(settings.quality, performance.now()))
         applyBudget(`mode:${settings.quality}`);
       if (selected && densityChanged) {
-        if (selected.id >= settings.density) overview();
-        else if (framed) frameSystem(framed.scope);
+        if (selected.id >= settings.density) {
+          overview();
+          // The drift moves on instead of leaving the visitor in the galaxy.
+          if (drift) takeDriftStep();
+        } else if (framed) frameSystem(framed.scope);
       }
       if (regionFocus && densityChanged) {
         regionFocus = catalogue.resolveRegion(
           regionFocus.regionId,
           settings.density,
         );
-        if (!regionFocus) overview();
+        if (!regionFocus) {
+          overview();
+          if (drift) takeDriftStep();
+        }
       }
       geometry.setDrawRange(0, settings.density);
       lensing.invalidate();
@@ -2885,24 +3083,49 @@ export function createGalaxy(
       });
       invalidateRender('language');
     },
-    zoom: changeZoom,
-    approach,
-    frameSystem,
-    frameRegion,
+    // A visitor's own navigation always ends the drift; the drift itself
+    // calls the internal functions directly.
+    zoom(factor) {
+      stopDrift();
+      changeZoom(factor);
+    },
+    approach() {
+      stopDrift();
+      approach();
+    },
+    frameSystem(scope) {
+      stopDrift();
+      frameSystem(scope);
+    },
+    frameRegion(regionId) {
+      stopDrift();
+      frameRegion(regionId);
+    },
     inspectBody(id) {
+      stopDrift();
       if (id >= 0 && id < settings.density) {
         select(id);
         approach();
       }
     },
-    overview,
+    overview() {
+      stopDrift();
+      overview();
+    },
+    startDrift,
+    stopDrift,
+    setDiscoveries(keys) {
+      discovered = keys;
+    },
     nextBody(direction) {
+      stopDrift();
       select(
         ((selected?.id ?? -1) + direction + settings.density) %
           settings.density,
       );
     },
     reset() {
+      stopDrift();
       overview();
       azimuth = 0;
       elevation = 0.62;
@@ -2910,6 +3133,7 @@ export function createGalaxy(
       pointer.set(0, 0);
     },
     dispose() {
+      drift = null;
       growthDisposed = true;
       worker?.terminate();
       if (idleHandle !== null) cancelIdle(idleHandle);

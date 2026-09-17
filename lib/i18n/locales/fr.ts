@@ -9,7 +9,7 @@ export const fr: Dictionary = {
     preparing: 'Préparation du ciel…',
   },
   controls: {
-    phenomena: 'Phénomènes rares',
+    phenomena: 'Découvertes',
     satellites: 'Satellites',
     members: 'Membres du système',
     options: 'Options',
@@ -36,7 +36,7 @@ export const fr: Dictionary = {
     aboutText:
       'Un univers artistique et procédural, conçu pour la contemplation et la découverte.',
     helpText:
-      'Cliquez ou touchez une étoile pour la sélectionner. Double-cliquez ou utilisez Approcher pour la rejoindre. Glissez pour tourner ; utilisez la molette, le pincement ou −/+ pour zoomer. Au clavier, placez le focus sur la scène : les flèches changent d’astre, Entrée rapproche, Début revient à la galaxie. Échap ferme les options ou quitte l’immersion.',
+      'Cliquez ou touchez une étoile pour la sélectionner. Double-cliquez ou utilisez Approcher pour la rejoindre. Glissez pour tourner ; utilisez la molette, le pincement ou −/+ pour zoomer. Au clavier, placez le focus sur la scène : les flèches changent d’astre, Entrée rapproche, Début revient à la galaxie. Échap ferme les options ou quitte l’immersion. Découvrir laisse le ciel vous emmener d’un lieu à l’autre, sans fin ; un geste suffit à reprendre la main.',
     system: 'Système',
   },
   quality: {
@@ -95,7 +95,8 @@ export const fr: Dictionary = {
     previousBody: 'Astre précédent',
     nextBody: 'Astre suivant',
     exploreBody: 'Explorer cet astre',
-    discoverBody: 'Découvrir un astre',
+    discoverBody: 'Se laisser porter par le ciel',
+    stopDrift: 'Reprendre la main',
     tilt: 'Inclinaison',
     tiltAuto: 'Auto · 60° max',
     tiltMax: (deg) => `${deg}° max`,
@@ -188,6 +189,17 @@ export const fr: Dictionary = {
     central: 'Objet compact central',
     orbit: 'Orbite autour du trou noir',
     empty: 'Aucun phénomène dans le catalogue actif.',
+  },
+  discoveries: {
+    count: (n) =>
+      n === 0
+        ? 'Aucune découverte'
+        : n === 1
+          ? '1 découverte'
+          : `${n} découvertes`,
+    unknown: 'Pas encore découvert',
+    empty: 'Le carnet est encore vide.',
+    found: (kind) => `Nouvelle découverte · ${kind}`,
   },
   binary: {
     label: 'Étoile double',

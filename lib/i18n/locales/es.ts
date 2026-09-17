@@ -9,7 +9,7 @@ export const es: Dictionary = {
     preparing: 'Preparando el cielo…',
   },
   controls: {
-    phenomena: 'Fenómenos raros',
+    phenomena: 'Descubrimientos',
     satellites: 'Satélites',
     members: 'Miembros del sistema',
     options: 'Opciones',
@@ -36,7 +36,7 @@ export const es: Dictionary = {
     aboutText:
       'Un universo artístico y procedural para la contemplación y el descubrimiento.',
     helpText:
-      'Haz clic o toca una estrella para seleccionarla. Haz doble clic o elige Acercarse para aproximarte. Arrastra para girar; usa la rueda, el gesto de pinza o −/+ para el zoom. Con el foco del teclado en la escena, las flechas cambian de astro, Intro acerca e Inicio vuelve a la galaxia. Escape cierra las opciones o sale del modo inmersivo.',
+      'Haz clic o toca una estrella para seleccionarla. Haz doble clic o elige Acercarse para aproximarte. Arrastra para girar; usa la rueda, el gesto de pinza o −/+ para el zoom. Con el foco del teclado en la escena, las flechas cambian de astro, Intro acerca e Inicio vuelve a la galaxia. Escape cierra las opciones o sale del modo inmersivo. Descubrir deja que el cielo te lleve de un lugar a otro, sin fin; cualquier gesto te devuelve el control.',
     system: 'Sistema',
   },
   quality: {
@@ -95,7 +95,8 @@ export const es: Dictionary = {
     previousBody: 'Astro anterior',
     nextBody: 'Astro siguiente',
     exploreBody: 'Explorar este astro',
-    discoverBody: 'Descubrir un astro',
+    discoverBody: 'Dejarse llevar por el cielo',
+    stopDrift: 'Retomar el control',
     tilt: 'Inclinación',
     tiltAuto: 'Auto · 60° máx.',
     tiltMax: (deg) => `${deg}° máx.`,
@@ -189,6 +190,17 @@ export const es: Dictionary = {
     central: 'Objeto compacto central',
     orbit: 'Orbita alrededor del agujero negro',
     empty: 'No hay fenómenos en el catálogo activo.',
+  },
+  discoveries: {
+    count: (n) =>
+      n === 0
+        ? 'Ningún descubrimiento'
+        : n === 1
+          ? '1 descubrimiento'
+          : `${n} descubrimientos`,
+    unknown: 'Aún sin descubrir',
+    empty: 'El cuaderno sigue vacío.',
+    found: (kind) => `Nuevo descubrimiento · ${kind}`,
   },
   binary: {
     label: 'Estrella doble',

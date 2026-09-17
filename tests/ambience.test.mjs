@@ -109,3 +109,29 @@ test('the region layer colours without ever covering the score', () => {
     regionAmbience(1, 'nebula').gain > regionAmbience(1, 'remnant').gain,
   );
 });
+
+test('a distant phenomenon is heard before it is seen, never louder than a hint', async () => {
+  const {
+    DISTANT_ATMOSPHERE_GAIN,
+    DISTANT_HEARING_NEAR,
+    DISTANT_HEARING_RANGE,
+    atmosphereGain,
+    distantPresence,
+  } = await import('../lib/ambience-parameters.ts');
+  assert.equal(distantPresence(DISTANT_HEARING_RANGE), 0);
+  assert.equal(distantPresence(10), 0);
+  assert.equal(distantPresence(DISTANT_HEARING_NEAR), 1);
+  assert.equal(distantPresence(Number.NaN), 0);
+  assert.ok(distantPresence(0.1) > distantPresence(0.2));
+  // The observed body keeps its full local layer; a distant one only adds a hint.
+  assert.equal(atmosphereGain('pulsar', 'pulsar', 0.8, null), 0.8);
+  assert.equal(
+    atmosphereGain('pulsar', 'gas-giant', 0.8, { kind: 'pulsar', presence: 1 }),
+    DISTANT_ATMOSPHERE_GAIN,
+  );
+  assert.equal(
+    atmosphereGain('gas-giant', 'gas-giant', 0.8, { kind: 'pulsar', presence: 1 }),
+    0.8,
+  );
+  assert.equal(atmosphereGain('comet', null, 0, null), 0);
+});

@@ -4,7 +4,7 @@ Le catalogue V2 permet des systèmes de tailles variables et des identités pers
 
 ## Trous noirs
 
-**Options → Phénomènes rares** donne accès aux trous noirs et aux pulsars du catalogue actif, regroupés par catégorie avec leur effectif. Le premier système en contient un ; les autres suivent une distribution déterministe de 0,3 % des systèmes. Les étoiles doubles ont leur propre catégorie, tronquée aux 24 premières destinations, l’effectif total restant affiché.
+Le premier système contient un trou noir ; les autres suivent une distribution déterministe de 0,3 % des systèmes. On les trouve en explorant, et **Options → Découvertes** garde ceux qu'on a déjà atteints (voir [Carnet de découvertes et dérive](#carnet-de-découvertes-et-dérive)).
 
 Un trou noir constitue une destination unique : disque et ombre partagent sa sélection. La caméra reste hors du disque et ne propose aucune exploration de surface. Le cadrage tient compte de l’enveloppe et du format de l’écran. Une ambiance grave utilise le graphe audio existant. Les contrôles sont traduits en français, anglais, espagnol et portugais du Portugal.
 
@@ -20,7 +20,7 @@ L’activation conserve les identités, rayons et orbites existants. Les pulsars
 
 ## Nébuleuses et vestiges de supernova
 
-Le lot 7 ajoute des régions : des volumes que la caméra traverse, sans centre solide, qui couvrent plusieurs systèmes. Elles ne sont ni des astres ni des systèmes, ne comptent pas dans la densité affichée et n'interceptent jamais un clic destiné à une étoile. On les atteint depuis **Options → Phénomènes rares** ou par leur repère à l'écran.
+Le lot 7 ajoute des régions : des volumes que la caméra traverse, sans centre solide, qui couvrent plusieurs systèmes. Elles ne sont ni des astres ni des systèmes, ne comptent pas dans la densité affichée et n'interceptent jamais un clic destiné à une étoile. On les atteint en explorant, par leur repère à l'écran, ou depuis **Options → Découvertes** une fois qu'on les a découvertes.
 
 Neuf nébuleuses sont réparties dans des complexes irréguliers par un tirage déterministe indépendant de la densité. Leurs identifiants restent stables. Rubans, lobes asymétriques et arcs creusés se déclinent dans huit palettes d’émission et de diffusion illustratives. Leur opacité est bornée pour que les étoiles restent lisibles au travers, y compris depuis l'intérieur du nuage.
 
@@ -96,6 +96,20 @@ Vue de près, une étoile porte une couronne et des éruptions (#25) décrites d
 Au palier 0, l’éruption reste lisible : arche, éclair, rubans et bulle. Une couche éteinte n’est pas dessinée. Hors éruption, il ne reste que la couronne, soit une passe de moins qu’avant la reprise.
 
 **Chargement.** Le module (6,4 ko gzip) ne fait pas partie du chemin de la première image : il se charge quand une première étoile obtient une surface détaillée, et se greffe à elle dès qu’il est prêt. L’effet n’apparaît qu’à partir de 35 px de rayon, donc bien après. Le contrôle de budget compte désormais le bloc three.js que ce découpage isole, pour ne pas s’alléger en trompe-l’œil.
+
+## Carnet de découvertes et dérive
+
+Rien dans l'interface n'annonce ce que la galaxie contient. Le panneau **Options → Découvertes** est un carnet : il ne liste que ce que le visiteur a déjà atteint, avec un compteur sans total. Une catégorie encore inconnue n'apparaît que comme une ligne « ??? ». Le carnet est propre au navigateur : il est gardé en stockage local, sous des identités persistantes, et survit donc aux changements de densité. Le paramètre `?reveal` affiche l'ancien catalogue complet, avec les effectifs, pour les démonstrations et les contrôles.
+
+Un phénomène est découvert **à l'arrivée de la caméra**, pas au clic : un corps quand la vue est rapprochée, une région quand elle est cadrée ou traversée. Les deux composantes d'une étoile double partagent une seule entrée. Une courte mention « Nouvelle découverte » apparaît en haut de l'écran pendant six secondes. Quand l'interface est au repos (inactivité ou dérive), elle reste visible mais atténuée.
+
+Pour que les visiteurs voient les phénomènes sans briser le quatrième mur, le guidage passe par la scène elle-même :
+
+- **Signes lointains.** Dans le shader des étoiles, sans passe ni texture supplémentaire, un pulsar lointain lance un bref éclat bleuté à chaque passage de faisceau, toutes les 4 à 10 secondes. Un trou noir lointain prend une teinte chaude, avec un cœur plus sombre et un liseré qui ondule lentement. En mouvement réduit, ces signes sont figés. Les comètes n'ont pas de signe visuel.
+- **Le son avant l'image.** Deux fois par seconde (une fois en mode économie), le moteur cherche le phénomène non sélectionné le plus proche de la caméra. Au-dessous d'environ un écart entre systèmes, son atmosphère sonore monte doucement, plafonnée à 35 % de sa présence rapprochée. Elle se mélange à celle de l'astre observé sans la remplacer.
+- **La dérive.** **Découvrir** lance un voyage sans fin : étoiles, vues de système, planètes (survolées de près une fois sur deux), nébuleuses, respirations en vue galaxie et phénomènes. Les trois premières étapes ne montrent que du ciel ordinaire, jamais le premier système. Ensuite, environ une destination sur quatre est un phénomène, en priorité un phénomène pas encore découvert. Les catégories sont tirées d'abord, pour que les nombreuses étoiles doubles n'étouffent pas les trous noirs. Une fois tout découvert, les phénomènes ne reviennent qu'environ une fois sur seize. Les vingt dernières destinations ne sont pas revisitées, et un même type d'étape ne revient jamais trois fois de suite.
+
+Chaque étape attend l'arrivée, puis s'arrête 25 à 60 secondes (15 à 25 en vue galaxie, ×1,5 en mouvement réduit), le temps d'une lente rotation de la caméra. Cette rotation est supprimée en mouvement réduit. La pause fige la dérive. L'interface s'efface au bout de 2 secondes au lieu de 10, et les repères de système sont masqués. Bouger la souris réaffiche l'interface sans arrêter la dérive. Un appui sur la scène, la molette, une touche, un repère ou n'importe quelle commande de navigation rend la main à l'endroit où l'on se trouve. Si un changement de densité retire l'astre suivi, la dérive passe à l'étape suivante. Le choix des étapes vit dans `lib/drift.ts`, un module pur et testé ; `?diagnostics=1&driftScale=0.1` raccourcit les arrêts pour les contrôles visuels.
 
 ## Rendu et ressources
 

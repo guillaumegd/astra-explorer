@@ -29,6 +29,7 @@ export type Dictionary = {
     nextBody: string;
     exploreBody: string;
     discoverBody: string;
+    stopDrift: string;
     tilt: string;
     tiltAuto: string;
     tiltMax: (deg: number) => string;
@@ -140,6 +141,12 @@ export type Dictionary = {
     central: string;
     orbit: string;
     empty: string;
+  };
+  discoveries: {
+    count: (n: number) => string;
+    unknown: string;
+    empty: string;
+    found: (kind: string) => string;
   };
   binary: {
     label: string;
