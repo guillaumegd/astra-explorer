@@ -475,10 +475,22 @@ export default function Home() {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !panel && !event.defaultPrevented)
         setImmersive(false);
+      // After a click on Découvrir focus sits on the button, not the scene:
+      // the drift's arrows must still work. The scene handles its own first
+      // and marks the event, so a focused canvas never skips twice.
+      if (
+        drifting &&
+        !panel &&
+        !event.defaultPrevented &&
+        (event.key === 'ArrowRight' || event.key === 'ArrowLeft')
+      ) {
+        event.preventDefault();
+        engine.current?.nextBody(event.key === 'ArrowRight' ? 1 : -1);
+      }
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [panel]);
+  }, [panel, drifting]);
   useEffect(() => {
     if (panel) panelHeading.current?.focus();
   }, [panel]);

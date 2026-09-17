@@ -1713,6 +1713,13 @@ export function createGalaxy(
     if (id !== null) select(id);
   };
   const key = (e: KeyboardEvent) => {
+    // During the drift, ← and → move on to the next random stop, as if the
+    // dwell had run out, rather than to the next body in catalogue order.
+    if (drift && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+      e.preventDefault();
+      takeDriftStep();
+      return;
+    }
     if (!['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) stopDrift();
     if (e.key === '+' || e.key === '=') {
       e.preventDefault();
@@ -3118,7 +3125,11 @@ export function createGalaxy(
       discovered = keys;
     },
     nextBody(direction) {
-      stopDrift();
+      // The dock's chevrons follow the keyboard: a drifting tour moves on.
+      if (drift) {
+        takeDriftStep();
+        return;
+      }
       select(
         ((selected?.id ?? -1) + direction + settings.density) %
           settings.density,
