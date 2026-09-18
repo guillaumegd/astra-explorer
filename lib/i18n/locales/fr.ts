@@ -36,7 +36,7 @@ export const fr: Dictionary = {
     aboutText:
       'Un univers artistique et procédural, conçu pour la contemplation et la découverte.',
     helpText:
-      'Cliquez ou touchez une étoile pour la sélectionner. Double-cliquez ou utilisez Approcher pour la rejoindre. Glissez pour tourner ; utilisez la molette, le pincement ou −/+ pour zoomer. Au clavier, placez le focus sur la scène : les flèches changent d’astre, Entrée rapproche, Début revient à la galaxie. Échap ferme les options ou quitte l’immersion. L’interface s’efface d’elle-même après un moment sans geste, et le geste suivant la ramène. Découvrir laisse le ciel vous emmener d’un lieu à l’autre, sans fin ; les flèches passent à l’étape suivante, et tout autre geste suffit à reprendre la main.',
+      'Cliquez ou touchez une étoile pour la sélectionner. Double-cliquez ou utilisez Approcher pour la rejoindre. Glissez pour tourner ; utilisez la molette, le pincement ou −/+ pour zoomer. Au clavier, placez le focus sur la scène : les flèches changent d’astre, Entrée rapproche, Début revient à la galaxie. Échap ferme les options ou quitte l’immersion. L’interface s’efface d’elle-même après un moment sans geste, et le geste suivant la ramène — sauf les flèches, qui poursuivent la visite sans la rappeler. Découvrir laisse le ciel vous emmener d’un lieu à l’autre, sans fin ; les flèches passent à l’étape suivante, et tout autre geste suffit à reprendre la main.',
     system: 'Système',
   },
   quality: {

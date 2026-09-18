@@ -5,6 +5,7 @@ import {
   REST_DELAY,
   canRest,
   restDelay,
+  wakesInterface,
 } from '../lib/interface-rest.ts';
 
 const awake = {
@@ -30,4 +31,12 @@ test('nothing that is being read or focused is taken away', () => {
 test('a drift alone never keeps the interface on screen', () => {
   assert.equal(canRest({ ...awake, drifting: true }), true);
   assert.equal(canRest({ ...awake, drifting: true, panel: true }), false);
+});
+
+test('stepping to the next body leaves a cleared screen cleared', () => {
+  assert.equal(wakesInterface('ArrowRight'), false);
+  assert.equal(wakesInterface('ArrowLeft'), false);
+  // Everything else is a visitor taking the controls back.
+  const keys = ['Escape', 'Enter', 'Home', ' ', 'ArrowUp', 'ArrowDown', 'a'];
+  for (const key of keys) assert.equal(wakesInterface(key), true, key);
 });

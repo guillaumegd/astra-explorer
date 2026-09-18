@@ -33,7 +33,7 @@ import { type BodyIdentity } from '@/lib/stellar-lod';
 import { catalogue } from '@/lib/catalogue/runtime';
 import type { RegionDefinition } from '@/lib/catalogue/types';
 import { localSystemRoot } from '@/lib/system-framing';
-import { canRest, restDelay } from '@/lib/interface-rest';
+import { canRest, restDelay, wakesInterface } from '@/lib/interface-rest';
 import {
   bodyDiscoveryKey,
   isRevealAll,
@@ -412,9 +412,12 @@ export default function Home() {
   // Fades the whole interface out after a stretch of inactivity for an
   // uninterrupted, contemplative view; any gesture brings it right back.
   // Immersive mode follows the same rule, having cleared the screen at once.
+  // The next/previous keys are the exception: they carry the view onward
+  // without calling the interface back over it.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
-    const wake = () => {
+    const wake = (event?: Event) => {
+      if (event instanceof KeyboardEvent && !wakesInterface(event.key)) return;
       setIdle(false);
       clearTimeout(timer);
       timer = setTimeout(() => {

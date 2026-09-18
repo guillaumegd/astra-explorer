@@ -27,3 +27,12 @@ export function restDelay(conditions: Pick<RestConditions, 'drifting'>) {
 export function canRest(conditions: RestConditions) {
   return !conditions.panel && !conditions.opening && !conditions.focusedControl;
 }
+
+/**
+ * Stepping to the next body, or to the next stop of a drift, is part of
+ * watching rather than of driving: those keys move the view and leave the
+ * interface where it is — away, if it had stepped aside.
+ */
+export function wakesInterface(key: string) {
+  return key !== 'ArrowLeft' && key !== 'ArrowRight';
+}
