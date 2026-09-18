@@ -236,6 +236,12 @@ summary:focus-visible {
   pointer-events: none;
   transition-duration: 0.9s;
 }
+/* The pointer is interface as well: it leaves with the bar, and the very move
+   that would show it again is the one that brings the bar back. */
+.observatory.is-quiet,
+.observatory.is-quiet * {
+  cursor: none;
+}
 .panel-dismiss {
   position: fixed;
   inset: 0;
