@@ -227,24 +227,14 @@ summary:focus-visible {
   color: #d6e8ff;
   background: #a9c8ec12;
 }
+/* At rest — and in immersive mode, which is the same rule asked for at once —
+   the interface goes away whole: nothing is left over the sky. It leaves in a
+   slow fade, and comes back quickly at the first gesture. */
 .is-quiet .signature,
 .is-quiet .observation-dock {
   opacity: 0;
   pointer-events: none;
-}
-.quiet-controls {
-  position: absolute;
-  right: 20px;
-  bottom: var(--dock-bottom);
-  z-index: 30;
-  display: flex;
-  opacity: 0.65;
-  border-radius: 12px;
-  background: #05070d80;
-}
-.quiet-controls:hover,
-.quiet-controls:focus-within {
-  opacity: 1;
+  transition-duration: 0.9s;
 }
 .panel-dismiss {
   position: fixed;
@@ -570,10 +560,12 @@ summary:focus-visible {
     filter: opacity(0);
   }
 }
-/* The drift frames systems for watching, not for clicking. */
-.is-drifting.is-quiet .system-marker:not(:focus-visible) {
+/* Markers are interface as well: a quiet screen keeps none of them, and a
+   system is then framed for watching, not for clicking. */
+.is-quiet .system-marker:not(:focus-visible) {
   opacity: 0;
   pointer-events: none;
+  transition-duration: 0.9s;
 }
 .destination-control[aria-pressed='true'] svg {
   animation: drift-orbit 12s linear infinite;
@@ -629,6 +621,7 @@ summary:focus-visible {
   transform: translate3d(var(--marker-x, 0px), var(--marker-y, 0px), 0)
     translate(-50%, -50%);
   z-index: 1;
+  transition: opacity 0.35s;
   width: 24px;
   height: 24px;
   padding: 0;
@@ -717,9 +710,6 @@ summary:focus-visible {
       45svh,
       calc(100svh - var(--dock-bottom) - var(--dock-height, 56px) - 120px)
     );
-  }
-  .quiet-controls {
-    right: 12px;
   }
   .icon-control[data-tooltip]::after {
     max-width: 135px;

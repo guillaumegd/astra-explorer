@@ -36,7 +36,7 @@ export const ptPT: Dictionary = {
     aboutText:
       'Um universo artístico e procedimental, feito para contemplar e descobrir.',
     helpText:
-      'Clique ou toque numa estrela para a selecionar. Faça duplo clique ou escolha Aproximar para se aproximar. Arraste para rodar; use a roda, o gesto de pinça ou −/+ para o zoom. Com o foco do teclado na cena, as setas mudam de astro, Enter aproxima e Home regressa à galáxia. Escape fecha as opções ou sai do modo imersivo. Descobrir deixa o céu levá-lo de um lugar para outro, sem fim; as setas passam para a paragem seguinte e qualquer outro gesto devolve-lhe o controlo.',
+      'Clique ou toque numa estrela para a selecionar. Faça duplo clique ou escolha Aproximar para se aproximar. Arraste para rodar; use a roda, o gesto de pinça ou −/+ para o zoom. Com o foco do teclado na cena, as setas mudam de astro, Enter aproxima e Home regressa à galáxia. Escape fecha as opções ou sai do modo imersivo. A interface desvanece-se após um momento sem gestos e o gesto seguinte traz de volta. Descobrir deixa o céu levá-lo de um lugar para outro, sem fim; as setas passam para a paragem seguinte e qualquer outro gesto devolve-lhe o controlo.',
     system: 'Sistema',
   },
   quality: {

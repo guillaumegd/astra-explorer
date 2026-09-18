@@ -33,6 +33,7 @@ import { type BodyIdentity } from '@/lib/stellar-lod';
 import { catalogue } from '@/lib/catalogue/runtime';
 import type { RegionDefinition } from '@/lib/catalogue/types';
 import { localSystemRoot } from '@/lib/system-framing';
+import { canRest, restDelay } from '@/lib/interface-rest';
 import {
   bodyDiscoveryKey,
   isRevealAll,
@@ -408,20 +409,22 @@ export default function Home() {
     // This only changes the optional soundtrack graph. It never starts audio.
     soundtrack.current?.setEconomy(quality === 'economy');
   }, [quality]);
-  // Fades the interface out after a stretch of inactivity for an uninterrupted,
-  // contemplative view; any activity brings it right back.
+  // Fades the whole interface out after a stretch of inactivity for an
+  // uninterrupted, contemplative view; any gesture brings it right back.
+  // Immersive mode follows the same rule, having cleared the screen at once.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const wake = () => {
       setIdle(false);
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const focusedControl =
+        const focusedControl = !!(
           dock.current?.contains(document.activeElement) &&
-          document.activeElement?.matches(':focus-visible');
-        if (!panel && !focusedControl && !opening) setIdle(true);
-        // The drift is for watching: its interface steps aside much sooner.
-      }, drifting ? 2000 : 10000);
+          document.activeElement?.matches(':focus-visible')
+        );
+        if (canRest({ panel: !!panel, opening, focusedControl, drifting }))
+          setIdle(true);
+      }, restDelay({ drifting }));
     };
     wake();
     const events = [
@@ -657,8 +660,20 @@ export default function Home() {
     const members = catalogue.getSystemMembers(selected.systemId);
     return localSystemRoot(selected, members);
   }, [selected]);
-  const hidden = immersive || (idle && !panel);
+  const hidden = idle && !panel;
   const openingVisible = opening && !error;
+  // Nothing invisible may hold the keyboard focus: when the bar fades out,
+  // the scene takes it back, where the arrows keep working.
+  useEffect(() => {
+    if (!hidden || openingVisible) return;
+    if (!dock.current?.contains(document.activeElement)) return;
+    mount.current?.querySelector('canvas')?.focus();
+  }, [hidden, openingVisible]);
+  // On a cleared screen a press only asks for the interface back; the scene
+  // must not read it as the choice of a star.
+  useEffect(() => {
+    engine.current?.setResting(hidden);
+  }, [hidden, ready]);
   const musicLabel = musicEnabled ? t.sound.disableMusic : t.sound.enableMusic;
   const title =
     panel === 'language' ? t.language.label : panel ? t.controls[panel] : '';
@@ -834,14 +849,19 @@ export default function Home() {
           </IconButton>
           <IconButton
             ref={immersiveButton}
-            label={t.view.enterImmersiveAria}
+            label={
+              immersive ? t.view.exitImmersiveAria : t.view.enterImmersiveAria
+            }
             aria-pressed={immersive}
             onClick={() => {
               setPanel(null);
-              setImmersive(true);
+              setImmersive(!immersive);
+              // Entering clears the screen at once; the next gesture brings
+              // this very bar back, the way out of immersion included.
+              setIdle(!immersive);
             }}
           >
-            <Maximize2 />
+            {immersive ? <Minimize2 /> : <Maximize2 />}
           </IconButton>
           <IconButton
             ref={languageButton}
@@ -867,28 +887,6 @@ export default function Home() {
           </IconButton>
         </fieldset>
       </div>
-      {hidden && !openingVisible && (
-        <div className="quiet-controls">
-          <IconButton
-            label={musicLabel}
-            aria-pressed={musicEnabled}
-            disabled={musicBusy}
-            onClick={() => void toggleMusic()}
-          >
-            {musicEnabled ? <Volume2 /> : <VolumeX />}
-          </IconButton>
-          <IconButton
-            label={t.view.exitImmersiveAria}
-            onClick={() => {
-              setImmersive(false);
-              setIdle(false);
-              requestAnimationFrame(() => immersiveButton.current?.focus());
-            }}
-          >
-            <Minimize2 />
-          </IconButton>
-        </div>
-      )}
       <Dialog.Root
         open={panel !== null}
         modal={false}

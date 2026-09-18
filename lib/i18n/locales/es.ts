@@ -36,7 +36,7 @@ export const es: Dictionary = {
     aboutText:
       'Un universo artístico y procedural para la contemplación y el descubrimiento.',
     helpText:
-      'Haz clic o toca una estrella para seleccionarla. Haz doble clic o elige Acercarse para aproximarte. Arrastra para girar; usa la rueda, el gesto de pinza o −/+ para el zoom. Con el foco del teclado en la escena, las flechas cambian de astro, Intro acerca e Inicio vuelve a la galaxia. Escape cierra las opciones o sale del modo inmersivo. Descubrir deja que el cielo te lleve de un lugar a otro, sin fin; las flechas pasan a la siguiente parada y cualquier otro gesto te devuelve el control.',
+      'Haz clic o toca una estrella para seleccionarla. Haz doble clic o elige Acercarse para aproximarte. Arrastra para girar; usa la rueda, el gesto de pinza o −/+ para el zoom. Con el foco del teclado en la escena, las flechas cambian de astro, Intro acerca e Inicio vuelve a la galaxia. Escape cierra las opciones o sale del modo inmersivo. La interfaz se desvanece tras un rato sin gestos y el siguiente gesto la devuelve. Descubrir deja que el cielo te lleve de un lugar a otro, sin fin; las flechas pasan a la siguiente parada y cualquier otro gesto te devuelve el control.',
     system: 'Sistema',
   },
   quality: {
