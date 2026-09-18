@@ -154,6 +154,8 @@ export type GalaxyEngine = {
   stopDrift: () => void;
   /** The visitor's notebook, so the drift can favour what is still unseen. */
   setDiscoveries: (keys: ReadonlySet<DiscoveryKey>) => void;
+  /** True while the interface has faded out and the screen is clear. */
+  setResting: (resting: boolean) => void;
   dispose: () => void;
 };
 
@@ -2010,12 +2012,17 @@ export function createGalaxy(
   let gesture = false;
   let startX = 0,
     startY = 0;
+  // With the interface faded out, a tap asks for it back and nothing more.
+  // Latched on the press: by the release, the interface is already awake.
+  let resting = false;
+  let pressedAtRest = false;
   const down = (e: PointerEvent) => {
     if (e.button !== 0) return;
     // Any press on the sky hands control back where the drift has led.
     stopDrift();
     if (touches.size === 0) {
       gesture = false;
+      pressedAtRest = resting;
       startX = e.clientX;
       startY = e.clientY;
     }
@@ -2062,7 +2069,8 @@ export function createGalaxy(
   };
   const up = (e: PointerEvent) => {
     if (!touches.has(e.pointerId)) return;
-    if (!gesture && touches.size === 1 && e.type === 'pointerup') click(e);
+    const tap = !gesture && touches.size === 1 && e.type === 'pointerup';
+    if (tap && !pressedAtRest) click(e);
     touches.delete(e.pointerId);
     if (renderer.domElement.hasPointerCapture(e.pointerId))
       renderer.domElement.releasePointerCapture(e.pointerId);
@@ -3411,6 +3419,9 @@ export function createGalaxy(
     stopDrift,
     setDiscoveries(keys) {
       discovered = keys;
+    },
+    setResting(next) {
+      resting = next;
     },
     nextBody(direction) {
       // The dock's chevrons follow the keyboard: a drifting tour moves on.

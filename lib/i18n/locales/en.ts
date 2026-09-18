@@ -36,7 +36,7 @@ export const en: Dictionary = {
     aboutText:
       'An artistic, procedural universe made for contemplation and discovery.',
     helpText:
-      'Click or tap a star to select it. Double-click or choose Approach to get closer. Drag to orbit; scroll, pinch or use −/+ to zoom. With keyboard focus on the scene, arrow keys change bodies, Enter approaches and Home returns to the galaxy. Escape closes options or exits immersive mode. Discover lets the sky carry you from one place to the next, endlessly; the arrow keys move on to the next stop, and any other gesture takes the controls back.',
+      'Click or tap a star to select it. Double-click or choose Approach to get closer. Drag to orbit; scroll, pinch or use −/+ to zoom. With keyboard focus on the scene, arrow keys change bodies, Enter approaches and Home returns to the galaxy. Escape closes options or exits immersive mode. The interface fades away after a while without a gesture, and the next gesture brings it back — except the arrow keys, which carry the visit on without calling it back. Discover lets the sky carry you from one place to the next, endlessly; the arrow keys move on to the next stop, and any other gesture takes the controls back.',
     system: 'System',
   },
   quality: {
